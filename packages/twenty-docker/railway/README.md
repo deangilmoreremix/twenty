@@ -54,17 +54,22 @@ CREATE EXTENSION IF NOT EXISTS "unaccent";
 
 2. Rename the service to `twenty-server`
 
-3. Set environment variables (copy from [`.env.railway.example`](./.env.railway.example)):
-   - `PG_DATABASE_URL` — your Supabase connection string
-   - `APP_SECRET` — generate with `openssl rand -base64 32`
-   - `SERVER_URL` — your Railway domain (e.g., `https://twenty.up.railway.app`)
-   - `FRONTEND_URL` — same as `SERVER_URL`
-   - `REDIS_URL` — `redis://redis:6379` (use this exact format; Railway resolves the service name to "redis" by default)
-   - `STORAGE_TYPE` — `local` for testing, `s3` for production
-   - `NODE_PORT` — `3000`
-   - `AUTH_GOOGLE_APIS_CALLBACK_URL` — `https://your-domain/auth/google/callback`
+3. **Generate a domain FIRST** (required for env var validation):
+   - Go to **Settings → Networking → Generate Domain**
+   - Copy your domain (e.g., `https://twenty.up.railway.app`)
 
-4. Generate a domain: **Settings → Networking → Generate Domain**
+4. **Set environment variables** (all URLs must use your actual domain):
+
+   | Variable                        | Value                                                                             |
+   | ------------------------------- | --------------------------------------------------------------------------------- |
+   | `PG_DATABASE_URL`               | `postgresql://postgres:[PASS]@db.[REF].supabase.co:6543/postgres?sslmode=require` |
+   | `APP_SECRET`                    | Generate with `openssl rand -base64 32`                                           |
+   | `SERVER_URL`                    | Your Railway domain (e.g., `https://twenty.up.railway.app`)                       |
+   | `FRONTEND_URL`                  | Same as SERVER_URL                                                                |
+   | `REDIS_URL`                     | `redis://redis:6379`                                                              |
+   | `STORAGE_TYPE`                  | `local`                                                                           |
+   | `NODE_PORT`                     | `3000`                                                                            |
+   | `AUTH_GOOGLE_APIS_CALLBACK_URL` | `https://your-domain.up.railway.app/auth/google/callback`                         |
 
 5. Set the **Docker build arg** (required for frontend to know the API URL):
    - Go to **Settings → Build → Build Args**
@@ -111,8 +116,10 @@ See [`.env.railway.example`](./.env.railway.example) for the complete list.
 
 | Issue                                            | Fix                                                                           |
 | ------------------------------------------------ | ----------------------------------------------------------------------------- |
-| `AUTH_GOOGLE_APIS_CALLBACK_URL` validation error | Set it even if not using Google auth                                          |
-| Worker crashes with ECONNREFUSED to Redis        | Check `REDIS_URL` references Railway Redis                                    |
+| `AUTH_GOOGLE_APIS_CALLBACK_URL` validation error | Must be set to a valid URL (https://...), even if not using Google auth       |
+| Worker crashes with ECONNREFUSED to Redis        | Use `redis://redis:6379` (hostname format, not `${{Redis.REDIS_URL}}`)        |
 | Database migrations fail                         | Use port 6543 (transaction pooler) in `PG_DATABASE_URL`                       |
 | Frontend blank page                              | `REACT_APP_SERVER_BASE_URL` must match deployed URL (set as Docker build arg) |
 | Storage errors                                   | Local storage is ephemeral on Railway — use S3 for production                 |
+| Railway build fails with "Invalid URL"           | Generate a domain FIRST, then set all URL env vars to that domain             |
+| Env vars rejected during validation              | Railway validates BEFORE build. Must use real URLs, not placeholder domains   |
