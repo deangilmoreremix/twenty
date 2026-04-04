@@ -59,7 +59,7 @@ CREATE EXTENSION IF NOT EXISTS "unaccent";
    - `APP_SECRET` — generate with `openssl rand -base64 32`
    - `SERVER_URL` — your Railway domain (e.g., `https://twenty.up.railway.app`)
    - `FRONTEND_URL` — same as `SERVER_URL`
-   - `REDIS_URL` — use Railway reference: `${{Redis.REDIS_URL}}`
+   - `REDIS_URL` — `redis://redis:6379` (use this exact format; Railway resolves the service name to "redis" by default)
    - `STORAGE_TYPE` — `local` for testing, `s3` for production
    - `NODE_PORT` — `3000`
    - `AUTH_GOOGLE_APIS_CALLBACK_URL` — `https://your-domain/auth/google/callback`
@@ -96,16 +96,16 @@ CREATE EXTENSION IF NOT EXISTS "unaccent";
 
 See [`.env.railway.example`](./.env.railway.example) for the complete list.
 
-| Variable                        | Required | Notes                                            |
-| ------------------------------- | -------- | ------------------------------------------------ |
-| `PG_DATABASE_URL`               | Yes      | Supabase connection string (port 6543)           |
-| `APP_SECRET`                    | Yes      | Same value on server + worker                    |
-| `REDIS_URL`                     | Yes      | `${{Redis.REDIS_URL}}` in Railway                |
-| `SERVER_URL`                    | Yes      | Public URL of server                             |
-| `FRONTEND_URL`                  | Yes      | Public URL of server                             |
-| `STORAGE_TYPE`                  | Yes      | `local` or `s3`                                  |
-| `AUTH_GOOGLE_APIS_CALLBACK_URL` | Yes      | Must be set even if not using Google auth        |
-| `EMAIL_DRIVER`                  | No       | Default: `logger`. Set to `smtp` for real emails |
+| Variable                        | Required | Notes                                                           |
+| ------------------------------- | -------- | --------------------------------------------------------------- |
+| `PG_DATABASE_URL`               | Yes      | Supabase connection string (port 6543)                          |
+| `APP_SECRET`                    | Yes      | Same value on server + worker                                   |
+| `REDIS_URL`                     | Yes      | `redis://redis:6379` (Railway service name defaults to "redis") |
+| `SERVER_URL`                    | Yes      | Public URL of server                                            |
+| `FRONTEND_URL`                  | Yes      | Public URL of server                                            |
+| `STORAGE_TYPE`                  | Yes      | `local` or `s3`                                                 |
+| `AUTH_GOOGLE_APIS_CALLBACK_URL` | Yes      | Must be set even if not using Google auth                       |
+| `EMAIL_DRIVER`                  | No       | Default: `logger`. Set to `smtp` for real emails                |
 
 ## Troubleshooting
 
