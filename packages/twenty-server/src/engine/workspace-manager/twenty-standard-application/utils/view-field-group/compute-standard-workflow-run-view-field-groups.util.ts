@@ -1,3 +1,5 @@
+import { msg } from '@lingui/core/macro';
+import { i18nLabel } from 'src/engine/workspace-manager/twenty-standard-application/utils/i18n-label.util';
 import { type FlatViewFieldGroup } from 'src/engine/metadata-modules/flat-view-field-group/types/flat-view-field-group.type';
 import {
   createStandardViewFieldGroupFlatMetadata,
@@ -15,33 +17,27 @@ export const computeStandardWorkflowRunViewFieldGroups = (
         context: {
           viewName: 'workflowRunRecordPageFields',
           viewFieldGroupName: 'general',
-          name: 'General',
+          name: i18nLabel(
+            msg({ message: `General`, context: 'viewFieldGroup.name' }),
+          ),
           position: 0,
           isVisible: true,
         },
       }),
-    workflowRunRecordPageFieldsAdditional:
-      createStandardViewFieldGroupFlatMetadata({
+    workflowRunRecordPageFieldsSystem: createStandardViewFieldGroupFlatMetadata(
+      {
         ...args,
         objectName: 'workflowRun',
         context: {
           viewName: 'workflowRunRecordPageFields',
-          viewFieldGroupName: 'additional',
-          name: 'Additional',
+          viewFieldGroupName: 'system',
+          name: i18nLabel(
+            msg({ message: `System`, context: 'viewFieldGroup.name' }),
+          ),
           position: 1,
           isVisible: true,
         },
-      }),
-    workflowRunRecordPageFieldsOther: createStandardViewFieldGroupFlatMetadata({
-      ...args,
-      objectName: 'workflowRun',
-      context: {
-        viewName: 'workflowRunRecordPageFields',
-        viewFieldGroupName: 'other',
-        name: 'Other',
-        position: 2,
-        isVisible: true,
       },
-    }),
+    ),
   };
 };

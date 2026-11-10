@@ -13,8 +13,9 @@ import { isFieldMorphRelation } from '@/object-record/record-field/ui/types/guar
 
 import { useRecordFieldValue } from '@/object-record/record-store/hooks/useRecordFieldValue';
 
-import { type ObjectRecord } from '@/object-record/types/ObjectRecord';
+import { type FieldMorphRelationManyToOneValue } from '@/object-record/record-field/ui/types/FieldMetadata';
 import { isDefined } from 'twenty-shared/utils';
+import { doNotTranslate } from 'twenty-shared/i18n';
 
 export const useMorphRelationToOneFieldDisplay = () => {
   const { recordId, fieldDefinition, maxWidth } = useContext(FieldContext);
@@ -23,7 +24,9 @@ export const useMorphRelationToOneFieldDisplay = () => {
   );
 
   if (!isDefined(chipGeneratorPerObjectPerField)) {
-    throw new Error('Chip generator per object per field is not defined');
+    throw new Error(
+      doNotTranslate('Chip generator per object per field is not defined'),
+    );
   }
 
   assertFieldMetadata(
@@ -34,10 +37,12 @@ export const useMorphRelationToOneFieldDisplay = () => {
 
   const button = fieldDefinition.editButtonIcon;
 
-  const morphFieldValueWithObjectName = useRecordFieldValue<{
-    objectNameSingular: string;
-    value: ObjectRecord;
-  }>(recordId, fieldDefinition.metadata.fieldName, fieldDefinition);
+  const morphFieldValueWithObjectName =
+    useRecordFieldValue<FieldMorphRelationManyToOneValue>(
+      recordId,
+      fieldDefinition.metadata.fieldName,
+      fieldDefinition,
+    );
 
   if (!isDefined(morphFieldValueWithObjectName)) {
     return {
@@ -61,11 +66,14 @@ export const useMorphRelationToOneFieldDisplay = () => {
     !isDefined(fieldDefinition.metadata.objectMetadataNameSingular) ||
     !isNonEmptyString(fieldDefinition.metadata.objectMetadataNameSingular)
   ) {
-    throw new Error('Object metadata name singular is not a non-empty string');
+    throw new Error(
+      doNotTranslate('Object metadata name singular is not a non-empty string'),
+    );
   }
 
   return {
     fieldDefinition,
+    foreignKeyFieldValue: morphFieldValueWithObjectName.foreignKeyFieldValue,
     morphFieldValuesWithObjectName: morphFieldValueWithObjectName,
     maxWidth: maxWidthForField,
     recordId,

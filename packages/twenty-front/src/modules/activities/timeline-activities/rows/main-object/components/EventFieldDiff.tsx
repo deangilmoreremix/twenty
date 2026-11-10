@@ -3,13 +3,17 @@ import { styled } from '@linaria/react';
 import { EventFieldDiffLabel } from '@/activities/timeline-activities/rows/main-object/components/EventFieldDiffLabel';
 import { EventFieldDiffValue } from '@/activities/timeline-activities/rows/main-object/components/EventFieldDiffValue';
 import { EventFieldDiffValueEffect } from '@/activities/timeline-activities/rows/main-object/components/EventFieldDiffValueEffect';
+import { EventRelationFieldDiffValues } from '@/activities/timeline-activities/rows/main-object/components/EventRelationFieldDiffValues';
+import { isRelationFieldChangeValue } from '@/activities/timeline-activities/utils/relationFieldChangeValue';
 import { type FieldMetadataItem } from '@/object-metadata/types/FieldMetadataItem';
 import { type EnrichedObjectMetadataItem } from '@/object-metadata/types/EnrichedObjectMetadataItem';
 import { Trans } from '@lingui/react/macro';
-import { themeCssVariables } from 'twenty-ui/theme-constants';
+import { FieldMetadataType } from 'twenty-shared/types';
+import { themeCssVariables } from 'twenty-ui/theme';
+import { doNotTranslate } from 'twenty-shared/i18n';
 
 type EventFieldDiffProps = {
-  diffRecord: Record<string, any>;
+  fieldDiff: { before: unknown; after: unknown };
   mainObjectMetadataItem: EnrichedObjectMetadataItem;
   fieldMetadataItem: FieldMetadataItem | undefined;
   diffArtificialRecordStoreId: string;
@@ -31,21 +35,45 @@ const StyledEmptyValue = styled.div`
   color: ${themeCssVariables.font.color.tertiary};
 `;
 
+const StyledArrowContainer = styled.span`
+  color: ${themeCssVariables.font.color.secondary};
+`;
+
 export const EventFieldDiff = ({
-  diffRecord,
+  fieldDiff,
   mainObjectMetadataItem,
   fieldMetadataItem,
   diffArtificialRecordStoreId,
 }: EventFieldDiffProps) => {
   if (!fieldMetadataItem) {
-    throw new Error('fieldMetadataItem is required');
+    throw new Error(doNotTranslate('fieldMetadataItem is required'));
   }
+
+  const isRelationFieldDiff =
+    fieldMetadataItem.type === FieldMetadataType.RELATION &&
+    (isRelationFieldChangeValue(fieldDiff.before) ||
+      isRelationFieldChangeValue(fieldDiff.after));
+
+  if (isRelationFieldDiff) {
+    return (
+      <StyledEventFieldDiffContainer>
+        <EventFieldDiffLabel fieldMetadataItem={fieldMetadataItem} />
+        <StyledArrowContainer>→</StyledArrowContainer>
+        <EventRelationFieldDiffValues
+          fieldDiff={fieldDiff}
+          fieldMetadataItem={fieldMetadataItem}
+        />
+      </StyledEventFieldDiffContainer>
+    );
+  }
+
+  const diffRecord = fieldDiff.after as Record<string, unknown> | undefined;
 
   const isValueEmpty = (value: unknown): boolean =>
     value === null || value === undefined || value === '';
 
-  const isObjectEmpty = (obj: Record<string, unknown>): boolean =>
-    Object.values(obj).every(isValueEmpty);
+  const isObjectEmpty = (objectValue: Record<string, unknown>): boolean =>
+    Object.values(objectValue).every(isValueEmpty);
 
   const isUpdatedToEmpty =
     isValueEmpty(diffRecord) ||
@@ -55,7 +83,8 @@ export const EventFieldDiff = ({
 
   return (
     <StyledEventFieldDiffContainer>
-      <EventFieldDiffLabel fieldMetadataItem={fieldMetadataItem} />→
+      <EventFieldDiffLabel fieldMetadataItem={fieldMetadataItem} />
+      <StyledArrowContainer>→</StyledArrowContainer>
       {isUpdatedToEmpty ? (
         <StyledEmptyValue>
           <Trans>Empty</Trans>

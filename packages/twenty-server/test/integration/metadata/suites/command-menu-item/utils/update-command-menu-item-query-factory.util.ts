@@ -8,11 +8,18 @@ export type UpdateCommandMenuItemFactoryInput = UpdateCommandMenuItemInput;
 const DEFAULT_COMMAND_MENU_ITEM_GQL_FIELDS = `
   id
   workflowVersionId
+  engineComponentKey
   label
   icon
   isPinned
   availabilityType
   availabilityObjectMetadataId
+  navigationTargetObjectMetadataId
+  payload {
+    ... on PathCommandMenuItemPayload {
+      path
+    }
+  }
   applicationId
   createdAt
   updatedAt

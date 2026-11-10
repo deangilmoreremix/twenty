@@ -4,26 +4,24 @@ import { type EmailAddress } from 'addressparser';
 import { MessageParticipantRole } from 'twenty-shared/types';
 import { isDefined } from 'twenty-shared/utils';
 
-import { type ConnectedAccountWorkspaceEntity } from 'src/modules/connected-account/standard-objects/connected-account.workspace-entity';
+import { type ConnectedAccountEntity } from 'src/engine/metadata-modules/connected-account/entities/connected-account.entity';
 import { MessageDirection } from 'src/modules/messaging/common/enums/message-direction.enum';
 import { computeMessageDirection } from 'src/modules/messaging/message-import-manager/drivers/gmail/utils/compute-message-direction.util';
 import { MicrosoftImportDriverException } from 'src/modules/messaging/message-import-manager/drivers/microsoft/exceptions/microsoft-import-driver.exception';
 import { type MicrosoftGraphBatchResponse } from 'src/modules/messaging/message-import-manager/drivers/microsoft/services/microsoft-get-messages.interface';
-import { type MessageWithParticipants } from 'src/modules/messaging/message-import-manager/types/message';
+import { extractMicrosoftFileAttachments } from 'src/modules/messaging/message-import-manager/drivers/microsoft/utils/extract-microsoft-file-attachments.util';
+import { type MessageWithParticipants } from 'src/modules/messaging/message-import-manager/types/message.type';
+import { buildReplyToParticipants } from 'src/modules/messaging/message-import-manager/utils/build-reply-to-participants.util';
+import { extractMessageTextWithoutQuotedHistory } from 'src/modules/messaging/message-import-manager/utils/extract-message-text-without-quoted-history.util';
 import { formatAddressObjectAsParticipants } from 'src/modules/messaging/message-import-manager/utils/format-address-object-as-participants.util';
-import { safeParseEmailAddress } from 'src/modules/messaging/message-import-manager/utils/safe-parse.util';
+import { safeParseEmailAddress } from 'src/modules/messaging/message-import-manager/utils/safe-parse-email-address.util';
 
 import { MicrosoftFetchByBatchService } from './microsoft-fetch-by-batch.service';
 import { MicrosoftMessagesImportErrorHandler } from './microsoft-messages-import-error-handler.service';
 
 type ConnectedAccountType = Pick<
-  ConnectedAccountWorkspaceEntity,
-  | 'accessToken'
-  | 'refreshToken'
-  | 'id'
-  | 'provider'
-  | 'handle'
-  | 'handleAliases'
+  ConnectedAccountEntity,
+  'id' | 'provider' | 'handle' | 'handleAliases'
 >;
 
 @Injectable()
@@ -79,6 +77,10 @@ export class MicrosoftGetMessagesService {
 
     const messages = parsedResponses.map((response) => {
       if ('error' in response) {
+        if (response.error.statusCode === 404) {
+          return undefined;
+        }
+
         throw new MicrosoftImportDriverException(
           response.error.message,
           response.error.code,
@@ -89,6 +91,12 @@ export class MicrosoftGetMessagesService {
       const safeParseFrom = response?.from?.emailAddress
         ? [safeParseEmailAddress(response.from.emailAddress)]
         : [];
+
+      const safeParseReplyTo = response?.replyTo
+        ?.filter(isDefined)
+        .map((recipient: { emailAddress: EmailAddress }) =>
+          safeParseEmailAddress(recipient.emailAddress),
+        );
 
       const safeParseTo = response?.toRecipients
         ?.filter(isDefined)
@@ -115,6 +123,7 @@ export class MicrosoftGetMessagesService {
               MessageParticipantRole.FROM,
             )
           : []),
+        ...buildReplyToParticipants(safeParseReplyTo, safeParseFrom[0]),
         ...(safeParseTo
           ? formatAddressObjectAsParticipants(
               safeParseTo,
@@ -135,12 +144,17 @@ export class MicrosoftGetMessagesService {
           : []),
       ];
 
+      const text = extractMessageTextWithoutQuotedHistory(
+        response.body?.contentType === 'text'
+          ? { text: response.body?.content }
+          : { html: response.body?.content },
+      );
+
       return {
         externalId: response.id,
         subject: response.subject || '',
         receivedAt: new Date(response.receivedDateTime),
-        text:
-          response.body?.contentType === 'text' ? response.body?.content : '',
+        text,
         headerMessageId: response.internetMessageId,
         messageThreadExternalId: response.conversationId,
         direction: response.from
@@ -150,10 +164,12 @@ export class MicrosoftGetMessagesService {
             )
           : MessageDirection.INCOMING,
         participants,
-        attachments: [],
+        attachments: extractMicrosoftFileAttachments(response.attachments),
         messageFolderExternalIds: response.parentFolderId
           ? [response.parentFolderId]
           : [],
+        isDraft: response.isDraft ?? false,
+        messageHeaders: response.internetMessageHeaders ?? [],
       };
     });
 
@@ -165,7 +181,7 @@ export class MicrosoftGetMessagesService {
       return [];
     }
 
-    // oxlint-disable-next-line @typescripttypescript/no-explicit-any
+    // oxlint-disable-next-line typescript/no-explicit-any
     return batchResponse.responses.map((response: any) => {
       if (response.status === 200) {
         return response.body;

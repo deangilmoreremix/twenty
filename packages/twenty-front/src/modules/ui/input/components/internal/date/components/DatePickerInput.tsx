@@ -1,4 +1,5 @@
 import { styled } from '@linaria/react';
+import { useLingui } from '@lingui/react/macro';
 import { useEffect, useState } from 'react';
 import { useIMask } from 'react-imask';
 
@@ -9,42 +10,61 @@ import { MIN_DATE } from '@/ui/input/components/internal/date/constants/MinDate'
 import { useParseDateInputStringToJSDate } from '@/ui/input/components/internal/date/hooks/useParseDateInputStringToJSDate';
 import { useParsePlainDateToDateInputString } from '@/ui/input/components/internal/date/hooks/useParsePlainDateToDateInputString';
 import { getDateMask } from '@/ui/input/components/internal/date/utils/getDateMask';
+import { type FormFieldInputVariant } from '@/ui/input/types/FormFieldInputVariant';
 
 import { useParseDateInputStringToPlainDate } from '@/ui/input/components/internal/date/hooks/useParseDateInputStringToPlainDate';
 import { useParseJSDateToIMaskDateInputString } from '@/ui/input/components/internal/date/hooks/useParseJSDateToIMaskDateInputString';
 import { isDefined } from 'twenty-shared/utils';
-import { themeCssVariables } from 'twenty-ui/theme-constants';
+import { themeCssVariables } from 'twenty-ui/theme';
 
-const StyledInputContainer = styled.div`
+const StyledInputContainer = styled.div<{
+  $variant: FormFieldInputVariant;
+}>`
   align-items: center;
-  border-bottom: 1px solid ${themeCssVariables.border.color.light};
-  border-top-left-radius: ${themeCssVariables.border.radius.md};
-  border-top-right-radius: ${themeCssVariables.border.radius.md};
+  border-bottom: ${({ $variant }) =>
+    $variant === 'transparent'
+      ? 'none'
+      : `1px solid ${themeCssVariables.border.color.light}`};
   display: flex;
-  height: ${themeCssVariables.spacing[8]};
+  height: ${({ $variant }) =>
+    $variant === 'transparent'
+      ? themeCssVariables.spacing[6]
+      : themeCssVariables.spacing[8]};
   width: 100%;
+
+  &:focus-within {
+    box-shadow: inset 0 -1px 0 ${themeCssVariables.color.blue};
+  }
 `;
 
-const StyledInput = styled.input<{ hasError?: boolean }>`
+const StyledInput = styled.input<{
+  $variant: FormFieldInputVariant;
+}>`
   background: transparent;
   border: none;
-  color: ${({ hasError }) =>
-    hasError
-      ? themeCssVariables.color.red
-      : themeCssVariables.font.color.primary};
+  color: ${themeCssVariables.font.color.primary};
   font-size: ${themeCssVariables.font.size.md};
-  font-weight: 500;
+  font-weight: ${({ $variant }) =>
+    $variant === 'transparent' ? themeCssVariables.font.weight.regular : 500};
   outline: none;
-  padding: 4px 8px 4px 8px;
+  padding: ${({ $variant }) => ($variant === 'transparent' ? '0' : '4px 8px')};
   width: 100%;
 `;
 
 type DatePickerInputProps = {
   onChange?: (date: string | null) => void;
   date: string | null;
+  readonly?: boolean;
+  variant?: FormFieldInputVariant;
 };
 
-export const DatePickerInput = ({ date, onChange }: DatePickerInputProps) => {
+export const DatePickerInput = ({
+  date,
+  onChange,
+  readonly = false,
+  variant = 'default',
+}: DatePickerInputProps) => {
+  const { t } = useLingui();
   const { dateFormat } = useDateTimeFormat();
 
   const [internalDate, setInternalDate] = useState(date);
@@ -71,7 +91,7 @@ export const DatePickerInput = ({ date, onChange }: DatePickerInputProps) => {
     ? (parsePlainDateToDateInputString(internalDate) ?? undefined)
     : undefined;
 
-  const { ref, setValue, value } = useIMask(
+  const { ref, setValue, value } = useIMask<HTMLInputElement>(
     {
       mask: Date,
       pattern,
@@ -95,17 +115,24 @@ export const DatePickerInput = ({ date, onChange }: DatePickerInputProps) => {
   );
 
   useEffect(() => {
-    if (isDefined(date) && internalDate !== date) {
+    if (internalDate !== date) {
       setInternalDate(date);
-      setValue(parsePlainDateToDateInputString(date));
+      if (isDefined(date)) {
+        setValue(parsePlainDateToDateInputString(date));
+      } else {
+        setValue('');
+      }
     }
   }, [date, internalDate, parsePlainDateToDateInputString, setValue]);
 
   return (
-    <StyledInputContainer>
+    <StyledInputContainer $variant={variant}>
       <StyledInput
+        $variant={variant}
         type="text"
-        ref={ref as any}
+        aria-label={t`Date`}
+        disabled={readonly}
+        ref={ref}
         value={value}
         onChange={() => {}} // Prevent React warning
       />

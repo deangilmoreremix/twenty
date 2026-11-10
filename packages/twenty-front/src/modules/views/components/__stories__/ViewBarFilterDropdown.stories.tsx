@@ -2,28 +2,34 @@ import { type Meta, type StoryObj } from '@storybook/react-vite';
 import { useEffect, useMemo, useState } from 'react';
 
 import { contextStoreCurrentViewIdComponentState } from '@/context-store/states/contextStoreCurrentViewIdComponentState';
-import { CoreObjectNamePlural } from '@/object-metadata/types/CoreObjectNamePlural';
+import { StandardObjectNamePlural } from '@/object-metadata/types/StandardObjectNamePlural';
 import { ObjectFilterDropdownComponentInstanceContext } from '@/object-record/object-filter-dropdown/states/contexts/ObjectFilterDropdownComponentInstanceContext';
 import { RecordIndexContextProvider } from '@/object-record/record-index/contexts/RecordIndexContext';
 import { RecordTableComponentInstanceContext } from '@/object-record/record-table/states/context/RecordTableComponentInstanceContext';
 import { useSetAtomComponentState } from '@/ui/utilities/state/jotai/hooks/useSetAtomComponentState';
 import { ViewBarFilterDropdown } from '@/views/components/ViewBarFilterDropdown';
 import { ViewComponentInstanceContext } from '@/views/states/contexts/ViewComponentInstanceContext';
-import { CoreObjectNameSingular } from 'twenty-shared/types';
+import {
+  StandardObjectNameSingular,
+  RecordFilterGroupLogicalOperator,
+  ViewFilterOperand,
+} from 'twenty-shared/types';
 
 import { MAIN_CONTEXT_STORE_INSTANCE_ID } from '@/context-store/constants/MainContextStoreInstanceId';
 import { RecordComponentInstanceContextsWrapper } from '@/object-record/components/RecordComponentInstanceContextsWrapper';
 import { currentRecordFieldsComponentState } from '@/object-record/record-field/states/currentRecordFieldsComponentState';
 import { type RecordField } from '@/object-record/record-field/types/RecordField';
+import { currentRecordFilterGroupsComponentState } from '@/object-record/record-filter-group/states/currentRecordFilterGroupsComponentState';
+import { currentRecordFiltersComponentState } from '@/object-record/record-filter/states/currentRecordFiltersComponentState';
 import { useRecordIndexFieldMetadataDerivedStates } from '@/object-record/record-index/hooks/useRecordIndexFieldMetadataDerivedStates';
 import { jotaiStore } from '@/ui/utilities/state/jotai/jotaiStore';
 import { ViewBarFilterDropdownIds } from '@/views/constants/ViewBarFilterDropdownIds';
-import { userEvent, within } from 'storybook/test';
+import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { ComponentDecorator } from 'twenty-ui/testing';
 import { ContextStoreDecorator } from '~/testing/decorators/ContextStoreDecorator';
 import { IconsProviderDecorator } from '~/testing/decorators/IconsProviderDecorator';
 import { ObjectMetadataItemsDecorator } from '~/testing/decorators/ObjectMetadataItemsDecorator';
-import { SnackBarDecorator } from '~/testing/decorators/SnackBarDecorator';
+import { ToastDecorator } from '~/testing/decorators/ToastDecorator';
 import { mockedViews } from '~/testing/mock-data/generated/metadata/views/mock-views-data';
 import { getTestEnrichedObjectMetadataItemsMock } from '~/testing/utils/getTestEnrichedObjectMetadataItemsMock';
 import { setTestViewsInMetadataStore } from '~/testing/utils/setTestViewsInMetadataStore';
@@ -35,7 +41,7 @@ const meta: Meta<typeof ViewBarFilterDropdown> = {
     (Story) => {
       const companyObjectMetadataItem =
         getTestEnrichedObjectMetadataItemsMock().find(
-          (item) => item.nameSingular === CoreObjectNameSingular.Company,
+          (item) => item.nameSingular === StandardObjectNameSingular.Company,
         )!;
       const instanceId = companyObjectMetadataItem.id;
 
@@ -100,8 +106,8 @@ const meta: Meta<typeof ViewBarFilterDropdown> = {
             objectPermissionsByObjectMetadataId: {},
             indexIdentifierUrl: () => '',
             onIndexRecordsLoaded: () => {},
-            objectNamePlural: CoreObjectNamePlural.Company,
-            objectNameSingular: CoreObjectNameSingular.Company,
+            objectNamePlural: StandardObjectNamePlural.Company,
+            objectNameSingular: StandardObjectNameSingular.Company,
             objectMetadataItem: companyObjectMetadataItem,
             recordIndexId: instanceId,
             viewBarInstanceId: instanceId,
@@ -133,7 +139,7 @@ const meta: Meta<typeof ViewBarFilterDropdown> = {
     },
     ContextStoreDecorator,
     ObjectMetadataItemsDecorator,
-    SnackBarDecorator,
+    ToastDecorator,
     ComponentDecorator,
     IconsProviderDecorator,
   ],
@@ -147,8 +153,14 @@ export const Default: Story = {
     const canvas = within(canvasElement.ownerDocument.body);
 
     const filterButton = await canvas.findByText('Filter');
+    const filterTrigger = filterButton.closest('button');
 
+    await expect(filterTrigger).toBeInstanceOf(HTMLButtonElement);
+    await expect(filterTrigger).not.toHaveAttribute('data-popup-open');
     await userEvent.click(filterButton);
+    await waitFor(() =>
+      expect(filterTrigger).toHaveAttribute('data-popup-open', ''),
+    );
 
     const textFilter = await canvas.findByText('Tagline');
 
@@ -161,6 +173,10 @@ export const Default: Story = {
     const containsOption = await canvas.findByText("Doesn't contain");
 
     await userEvent.click(containsOption);
+    await userEvent.click(filterButton);
+    await waitFor(() =>
+      expect(filterTrigger).not.toHaveAttribute('data-popup-open'),
+    );
   },
 };
 
@@ -189,5 +205,103 @@ export const Number: Story = {
     const dateFilter = await canvas.findByText('Employees');
 
     await userEvent.click(dateFilter);
+  },
+};
+
+const MOCK_ROOT_FILTER_GROUP_ID = 'test-root-filter-group-id';
+
+export const AdvancedFilterCountBadge: Story = {
+  decorators: [
+    (Story) => {
+      const companyObjectMetadataItem =
+        getTestEnrichedObjectMetadataItemsMock().find(
+          (item) => item.nameSingular === StandardObjectNameSingular.Company,
+        )!;
+      const instanceId = companyObjectMetadataItem.id;
+
+      const setCurrentRecordFilterGroups = useSetAtomComponentState(
+        currentRecordFilterGroupsComponentState,
+        instanceId,
+      );
+
+      const setCurrentRecordFilters = useSetAtomComponentState(
+        currentRecordFiltersComponentState,
+        instanceId,
+      );
+
+      const firstFieldMetadataItem = companyObjectMetadataItem.fields[0];
+
+      useEffect(() => {
+        setCurrentRecordFilterGroups([
+          {
+            id: MOCK_ROOT_FILTER_GROUP_ID,
+            logicalOperator: RecordFilterGroupLogicalOperator.AND,
+            positionInRecordFilterGroup: 0,
+          },
+        ]);
+
+        setCurrentRecordFilters([
+          {
+            id: 'filter-1',
+            fieldMetadataId: firstFieldMetadataItem.id,
+            value: 'test-value-1',
+            displayValue: 'Test 1',
+            type: 'TEXT',
+            operand: ViewFilterOperand.CONTAINS,
+            label: firstFieldMetadataItem.label,
+            recordFilterGroupId: MOCK_ROOT_FILTER_GROUP_ID,
+            positionInRecordFilterGroup: 0,
+          },
+          {
+            id: 'filter-2',
+            fieldMetadataId: firstFieldMetadataItem.id,
+            value: 'test-value-2',
+            displayValue: 'Test 2',
+            type: 'TEXT',
+            operand: ViewFilterOperand.CONTAINS,
+            label: firstFieldMetadataItem.label,
+            recordFilterGroupId: MOCK_ROOT_FILTER_GROUP_ID,
+            positionInRecordFilterGroup: 1,
+          },
+          {
+            id: 'filter-3',
+            fieldMetadataId: firstFieldMetadataItem.id,
+            value: 'test-value-3',
+            displayValue: 'Test 3',
+            type: 'TEXT',
+            operand: ViewFilterOperand.CONTAINS,
+            label: firstFieldMetadataItem.label,
+            recordFilterGroupId: MOCK_ROOT_FILTER_GROUP_ID,
+            positionInRecordFilterGroup: 2,
+          },
+        ]);
+      }, [
+        setCurrentRecordFilterGroups,
+        setCurrentRecordFilters,
+        firstFieldMetadataItem,
+      ]);
+
+      return <Story />;
+    },
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement.ownerDocument.body);
+
+    const filterButton = await canvas.findByText('Filter');
+
+    await userEvent.click(filterButton);
+
+    const advancedFilterButton = await canvas.findByText('Advanced filter');
+
+    expect(advancedFilterButton).toBeVisible();
+
+    const badge = await canvas.findByText('3');
+    const badgeStyle = getComputedStyle(badge);
+
+    await expect(badge).toBeVisible();
+    await expect(badge).toHaveStyle({
+      backgroundColor: badgeStyle.getPropertyValue('--t-accent-tertiary'),
+      color: badgeStyle.getPropertyValue('--t-accent-accent11'),
+    });
   },
 };

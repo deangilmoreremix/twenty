@@ -25,6 +25,49 @@ const mockCompanyObjectMetadataItem: EnrichedObjectMetadataItem = {
 } as EnrichedObjectMetadataItem;
 
 describe('computeStepOutputSchema', () => {
+  describe('SEND_CHAT_MESSAGE', () => {
+    it('only outputs the conversation when nothing waits for approval', () => {
+      const result = computeStepOutputSchema({
+        step: {
+          type: 'SEND_CHAT_MESSAGE',
+          settings: {
+            input: { workspaceMemberId: '', title: '', text: 'Hello' },
+          },
+        } as any,
+        objectMetadataItems: [],
+      });
+
+      expect(Object.keys(result ?? {})).toEqual(['threadId']);
+    });
+
+    it('outputs the decision when an action waits for approval', () => {
+      const result = computeStepOutputSchema({
+        step: {
+          type: 'SEND_CHAT_MESSAGE',
+          settings: {
+            input: {
+              workspaceMemberId: '',
+              title: '',
+              text: 'Approve?',
+              toolCall: { toolName: 'update_one_company', arguments: {} },
+            },
+          },
+        } as any,
+        objectMetadataItems: [],
+      });
+
+      expect(Object.keys(result ?? {})).toEqual([
+        'threadId',
+        'outcome',
+        'toolName',
+        'feedback',
+        'error',
+        'arguments',
+        'output',
+      ]);
+    });
+  });
+
   describe('PERSISTED_OUTPUT_SCHEMA_TYPES', () => {
     it('should return undefined for CODE step type', () => {
       const result = computeStepOutputSchema({
@@ -56,6 +99,15 @@ describe('computeStepOutputSchema', () => {
     it('should return undefined for ITERATOR step type', () => {
       const result = computeStepOutputSchema({
         step: { type: 'ITERATOR', settings: {} } as any,
+        objectMetadataItems: [],
+      });
+
+      expect(result).toBeUndefined();
+    });
+
+    it('should return undefined for LOGIC_FUNCTION step type', () => {
+      const result = computeStepOutputSchema({
+        step: { type: 'LOGIC_FUNCTION', settings: {} } as any,
         objectMetadataItems: [],
       });
 
@@ -150,7 +202,7 @@ describe('computeStepOutputSchema', () => {
       expect(result).toEqual({});
     });
 
-    it('should return empty object for GLOBAL availability', () => {
+    it('should expose only metadata for GLOBAL availability', () => {
       const result = computeStepOutputSchema({
         step: {
           type: 'MANUAL',
@@ -159,10 +211,22 @@ describe('computeStepOutputSchema', () => {
         objectMetadataItems: [mockCompanyObjectMetadataItem],
       });
 
-      expect(result).toEqual({});
+      expect(result).not.toHaveProperty('payload');
+      expect((result as any).metadata).toMatchObject({
+        isLeaf: false,
+        type: 'object',
+        label: 'Metadata',
+        value: {
+          workspaceMemberId: {
+            isLeaf: true,
+            type: 'string',
+            label: 'Workspace Member ID',
+          },
+        },
+      });
     });
 
-    it('should return record output schema for SINGLE_RECORD availability', () => {
+    it('should nest the record under payload and expose metadata for SINGLE_RECORD availability', () => {
       const result = computeStepOutputSchema({
         step: {
           type: 'MANUAL',
@@ -176,11 +240,19 @@ describe('computeStepOutputSchema', () => {
         objectMetadataItems: [mockCompanyObjectMetadataItem],
       });
 
-      expect(result).toHaveProperty('_outputSchemaType', 'RECORD');
-      expect(result).toHaveProperty('object');
+      expect((result as any).payload).toMatchObject({
+        isLeaf: false,
+        label: 'Record',
+      });
+      expect((result as any).payload.value).toHaveProperty(
+        '_outputSchemaType',
+        'RECORD',
+      );
+      expect((result as any).payload.value).toHaveProperty('object');
+      expect(result).toHaveProperty('metadata');
     });
 
-    it('should return array indicator for BULK_RECORDS availability', () => {
+    it('should nest the array indicator under payload and expose metadata for BULK_RECORDS availability', () => {
       const result = computeStepOutputSchema({
         step: {
           type: 'MANUAL',
@@ -194,12 +266,17 @@ describe('computeStepOutputSchema', () => {
         objectMetadataItems: [mockCompanyObjectMetadataItem],
       });
 
-      expect(result).toHaveProperty('companies');
-      expect((result as any).companies).toMatchObject({
+      expect((result as any).payload).toMatchObject({
+        isLeaf: false,
+        label: 'Records',
+      });
+      expect((result as any).payload.value).toHaveProperty('companies');
+      expect((result as any).payload.value.companies).toMatchObject({
         isLeaf: true,
         label: 'Companies',
         type: 'array',
       });
+      expect(result).toHaveProperty('metadata');
     });
 
     it('should return empty object when object metadata is not found for SINGLE_RECORD', () => {
@@ -345,6 +422,55 @@ describe('computeStepOutputSchema', () => {
     });
   });
 
+  describe('WAIT_FOR_EVENT step', () => {
+    it('should expose the record of the event and whether the wait timed out', () => {
+      const result = computeStepOutputSchema({
+        step: {
+          type: 'WAIT_FOR_EVENT',
+          settings: { input: { eventName: 'company.updated' } },
+        } as any,
+        objectMetadataItems: [mockCompanyObjectMetadataItem],
+      });
+
+      expect(Object.keys(result ?? {})).toEqual([
+        'record',
+        'recordId',
+        'hasTimedOut',
+        'before',
+        'updatedFields',
+      ]);
+      expect((result as any).record.label).toBe('Company');
+    });
+
+    it('should not expose update details for events that are not updates', () => {
+      const result = computeStepOutputSchema({
+        step: {
+          type: 'WAIT_FOR_EVENT',
+          settings: { input: { eventName: 'company.created' } },
+        } as any,
+        objectMetadataItems: [mockCompanyObjectMetadataItem],
+      });
+
+      expect(Object.keys(result ?? {})).toEqual([
+        'record',
+        'recordId',
+        'hasTimedOut',
+      ]);
+    });
+
+    it('should return empty object when the event cannot be parsed', () => {
+      const result = computeStepOutputSchema({
+        step: {
+          type: 'WAIT_FOR_EVENT',
+          settings: { input: { eventName: 'company' } },
+        } as any,
+        objectMetadataItems: [mockCompanyObjectMetadataItem],
+      });
+
+      expect(result).toEqual({});
+    });
+  });
+
   describe('FORM step', () => {
     it('should return empty object when form fields are not defined', () => {
       const result = computeStepOutputSchema({
@@ -391,9 +517,45 @@ describe('computeStepOutputSchema', () => {
   });
 
   describe('SEND_EMAIL step', () => {
-    it('should return success boolean schema', () => {
+    it('should return success and sent message identifier schema', () => {
       const result = computeStepOutputSchema({
         step: { type: 'SEND_EMAIL', settings: {} } as any,
+        objectMetadataItems: [],
+      });
+
+      expect(result).toEqual({
+        success: {
+          isLeaf: true,
+          type: FieldMetadataType.BOOLEAN,
+          label: 'Success',
+          value: true,
+        },
+        headerMessageId: {
+          isLeaf: true,
+          type: FieldMetadataType.TEXT,
+          label: 'Message-ID header',
+          value: '',
+        },
+        messageId: {
+          isLeaf: true,
+          type: FieldMetadataType.TEXT,
+          label: 'Message record ID',
+          value: '',
+        },
+        messageThreadId: {
+          isLeaf: true,
+          type: FieldMetadataType.TEXT,
+          label: 'Message thread ID',
+          value: '',
+        },
+      });
+    });
+  });
+
+  describe('DRAFT_EMAIL step', () => {
+    it('should return success boolean schema', () => {
+      const result = computeStepOutputSchema({
+        step: { type: 'DRAFT_EMAIL', settings: {} } as any,
         objectMetadataItems: [],
       });
 
@@ -409,20 +571,13 @@ describe('computeStepOutputSchema', () => {
   });
 
   describe('AI_AGENT step', () => {
-    it('should return response schema', () => {
+    it('should return undefined for AI_AGENT step type', () => {
       const result = computeStepOutputSchema({
         step: { type: 'AI_AGENT', settings: {} } as any,
         objectMetadataItems: [],
       });
 
-      expect(result).toEqual({
-        response: {
-          isLeaf: true,
-          type: FieldMetadataType.TEXT,
-          label: 'Response',
-          value: null,
-        },
-      });
+      expect(result).toBeUndefined();
     });
   });
 
@@ -461,8 +616,8 @@ describe('shouldComputeOutputSchemaOnFrontend', () => {
     expect(shouldComputeOutputSchemaOnFrontend('HTTP_REQUEST')).toBe(false);
   });
 
-  it('should return true for AI_AGENT', () => {
-    expect(shouldComputeOutputSchemaOnFrontend('AI_AGENT')).toBe(true);
+  it('should return false for AI_AGENT', () => {
+    expect(shouldComputeOutputSchemaOnFrontend('AI_AGENT')).toBe(false);
   });
 
   it('should return false for WEBHOOK', () => {
@@ -471,6 +626,10 @@ describe('shouldComputeOutputSchemaOnFrontend', () => {
 
   it('should return false for ITERATOR', () => {
     expect(shouldComputeOutputSchemaOnFrontend('ITERATOR')).toBe(false);
+  });
+
+  it('should return false for LOGIC_FUNCTION', () => {
+    expect(shouldComputeOutputSchemaOnFrontend('LOGIC_FUNCTION')).toBe(false);
   });
 
   it('should return true for DATABASE_EVENT', () => {

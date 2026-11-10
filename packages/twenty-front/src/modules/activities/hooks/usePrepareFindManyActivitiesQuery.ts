@@ -1,46 +1,58 @@
-import { findActivitiesOperationSignatureFactory } from '@/activities/graphql/operation-signatures/factories/findActivitiesOperationSignatureFactory';
 import { type ActivityTargetableObject } from '@/activities/types/ActivityTargetableEntity';
 import { type Note } from '@/activities/types/Note';
-import { type NoteTarget } from '@/activities/types/NoteTarget';
 import { type Task } from '@/activities/types/Task';
-import { type TaskTarget } from '@/activities/types/TaskTarget';
 import { useApolloCoreClient } from '@/object-metadata/hooks/useApolloCoreClient';
 import { useObjectMetadataItem } from '@/object-metadata/hooks/useObjectMetadataItem';
 import { useObjectMetadataItems } from '@/object-metadata/hooks/useObjectMetadataItems';
-import { CoreObjectNameSingular } from 'twenty-shared/types';
+import { type StandardObjectNameSingular } from 'twenty-shared/types';
 import { useGetRecordFromCache } from '@/object-record/cache/hooks/useGetRecordFromCache';
 import { useUpsertFindManyRecordsQueryInCache } from '@/object-record/cache/hooks/useUpsertFindManyRecordsQueryInCache';
 import { getRecordFromCache } from '@/object-record/cache/utils/getRecordFromCache';
+import { generateDepthRecordGqlFieldsFromObject } from '@/object-record/graphql/record-gql-fields/utils/generateDepthRecordGqlFieldsFromObject';
 import { useObjectPermissions } from '@/object-record/hooks/useObjectPermissions';
+import { useObjectMorphJunctionConfigOrThrow } from '@/object-record/record-field/ui/hooks/useObjectMorphJunctionConfigOrThrow';
+import { findTargetFieldInfo } from '@/object-record/record-field/ui/utils/junction/findTargetFieldInfo';
+import { getJunctionRecordsFromRecord } from '@/object-record/record-field/ui/utils/junction/getJunctionRecordsFromRecord';
+import { getRelatedRecordIdFromJunction } from '@/object-record/record-field/ui/utils/junction/getRelatedRecordIdFromJunction';
 import { type ObjectRecord } from '@/object-record/types/ObjectRecord';
-import { useIsFeatureEnabled } from '@/workspace/hooks/useIsFeatureEnabled';
 import { isDefined } from 'twenty-shared/utils';
-import { FeatureFlagKey } from '~/generated-metadata/graphql';
+import { doNotTranslate } from 'twenty-shared/i18n';
 import { sortByAscString } from '~/utils/array/sortByAscString';
+import { useMemo } from 'react';
 
 export const usePrepareFindManyActivitiesQuery = ({
   activityObjectNameSingular,
 }: {
-  activityObjectNameSingular: CoreObjectNameSingular;
+  activityObjectNameSingular: StandardObjectNameSingular;
 }) => {
   const { objectMetadataItem: objectMetadataItemActivity } =
     useObjectMetadataItem({
       objectNameSingular: activityObjectNameSingular,
     });
 
+  const { objectMetadataItems } = useObjectMetadataItems();
+
+  const activityRecordGqlFields = useMemo(
+    () =>
+      generateDepthRecordGqlFieldsFromObject({
+        objectMetadataItem: objectMetadataItemActivity,
+        objectMetadataItems,
+        depth: 1,
+      }),
+    [objectMetadataItemActivity, objectMetadataItems],
+  );
+
   const getActivityFromCache = useGetRecordFromCache({
     objectNameSingular: activityObjectNameSingular,
+    recordGqlFields: activityRecordGqlFields,
   });
 
   const cache = useApolloCoreClient().cache;
-  const { objectMetadataItems } = useObjectMetadataItems();
   const { objectPermissionsByObjectMetadataId } = useObjectPermissions();
-  const isNoteTargetMigrated = useIsFeatureEnabled(
-    FeatureFlagKey.IS_NOTE_TARGET_MIGRATED,
-  );
-  const isTaskTargetMigrated = useIsFeatureEnabled(
-    FeatureFlagKey.IS_TASK_TARGET_MIGRATED,
-  );
+
+  const morphJunctionConfig = useObjectMorphJunctionConfigOrThrow({
+    objectNameSingular: activityObjectNameSingular,
+  });
 
   const { upsertFindManyRecordsQueryInCache: upsertFindManyActivitiesInCache } =
     useUpsertFindManyRecordsQueryInCache({
@@ -64,7 +76,9 @@ export const usePrepareFindManyActivitiesQuery = ({
 
     if (!targetableObjectMetadataItem) {
       throw new Error(
-        `Cannot find object metadata item for targetable object ${targetableObject.targetObjectNameSingular}`,
+        doNotTranslate(
+          `Cannot find object metadata item for targetable object ${targetableObject.targetObjectNameSingular}`,
+        ),
       );
     }
 
@@ -76,34 +90,39 @@ export const usePrepareFindManyActivitiesQuery = ({
       objectPermissionsByObjectMetadataId,
     });
 
-    const activityTargets: (TaskTarget | NoteTarget)[] =
-      targetableObjectRecord?.taskTargets ??
-      targetableObjectRecord?.noteTargets ??
-      [];
+    const { junctionObjectMetadata, sourceField, sourceJoinColumnName } =
+      morphJunctionConfig;
 
-    const activityTargetIds = [
+    const junctionFieldName = findTargetFieldInfo(
+      targetableObjectMetadataItem.fields,
+      junctionObjectMetadata.id,
+      objectMetadataItems,
+    )?.fieldName;
+
+    const activityTargets = isDefined(junctionFieldName)
+      ? getJunctionRecordsFromRecord({
+          record: targetableObjectRecord ?? {},
+          junctionFieldName,
+        })
+      : [];
+
+    const activityIds = [
       ...new Set(
         activityTargets
-          .map((activityTarget) => activityTarget.id)
+          .map((activityTarget) =>
+            getRelatedRecordIdFromJunction({
+              junctionRecord: activityTarget,
+              relationFieldName: sourceField.name,
+              joinColumnName: sourceJoinColumnName,
+            }),
+          )
           .filter(isDefined),
       ),
     ];
 
-    const activities: (Task | Note)[] = activityTargetIds
-      .map((activityTargetId) => {
-        const activityTarget = activityTargets.find(
-          (activityTarget) => activityTarget.id === activityTargetId,
-        );
-
-        if (!activityTarget) {
-          return undefined;
-        }
-
-        return getActivityFromCache<Task | Note>(activityTarget.activityId);
-      })
+    const activities: (Task | Note)[] = activityIds
+      .map((activityId) => getActivityFromCache<Task | Note>(activityId))
       .filter(isDefined);
-
-    const activityIds = [...new Set(activities.map((activity) => activity.id))];
 
     const nextFindManyActivitiesQueryFilter = {
       filter: {
@@ -120,23 +139,13 @@ export const usePrepareFindManyActivitiesQuery = ({
       return a.createdAt > b.createdAt ? -1 : 1;
     });
 
-    const FIND_ACTIVITIES_OPERATION_SIGNATURE =
-      findActivitiesOperationSignatureFactory({
-        objectNameSingular: activityObjectNameSingular,
-        objectMetadataItems,
-        isMorphRelation:
-          activityObjectNameSingular === CoreObjectNameSingular.Task
-            ? isTaskTargetMigrated
-            : isNoteTargetMigrated,
-      });
-
     upsertFindManyActivitiesInCache({
       objectRecordsToOverwrite: filteredActivities,
       queryVariables: {
         ...nextFindManyActivitiesQueryFilter,
         orderBy: [{ createdAt: 'DescNullsFirst' }],
       },
-      recordGqlFields: FIND_ACTIVITIES_OPERATION_SIGNATURE.fields,
+      recordGqlFields: activityRecordGqlFields,
       computeReferences: true,
     });
   };

@@ -1,6 +1,6 @@
-import { useCommandMenuItemsDraftState } from '@/command-menu-item/server-items/common/hooks/useCommandMenuItemsDraftState';
+import { objectColorsDraftState } from '@/layout-customization/states/objectColorsDraftState';
+import { useCommandMenuItemsDraftState } from '@/command-menu-item/hooks/useCommandMenuItemsDraftState';
 import { activeCustomizationPageLayoutIdsState } from '@/layout-customization/states/activeCustomizationPageLayoutIdsState';
-import { type DraftPageLayout } from '@/page-layout/types/DraftPageLayout';
 import { useNavigationMenuItemsDraftState } from '@/navigation-menu-item/edit/hooks/useNavigationMenuItemsDraftState';
 import { fieldsWidgetGroupsDraftComponentState } from '@/page-layout/states/fieldsWidgetGroupsDraftComponentState';
 import { fieldsWidgetGroupsPersistedComponentState } from '@/page-layout/states/fieldsWidgetGroupsPersistedComponentState';
@@ -8,12 +8,16 @@ import { fieldsWidgetUngroupedFieldsDraftComponentState } from '@/page-layout/st
 import { fieldsWidgetUngroupedFieldsPersistedComponentState } from '@/page-layout/states/fieldsWidgetUngroupedFieldsPersistedComponentState';
 import { pageLayoutDraftComponentState } from '@/page-layout/states/pageLayoutDraftComponentState';
 import { pageLayoutPersistedComponentState } from '@/page-layout/states/pageLayoutPersistedComponentState';
+import { recordTableWidgetViewDraftComponentState } from '@/page-layout/states/recordTableWidgetViewDraftComponentState';
+import { recordTableWidgetViewPersistedComponentState } from '@/page-layout/states/recordTableWidgetViewPersistedComponentState';
+import { toDraftPageLayout } from '@/page-layout/utils/toDraftPageLayout';
 import { atom, useAtomValue } from 'jotai';
 import { useMemo } from 'react';
 import { isDefined } from 'twenty-shared/utils';
 import { isDeeplyEqual } from '~/utils/isDeeplyEqual';
 
 export const useIsLayoutCustomizationDirty = () => {
+  const objectColorsDraft = useAtomValue(objectColorsDraftState.atom);
   const { isDirty: isNavigationDirty } = useNavigationMenuItemsDraftState();
   const { isDirty: isCommandMenuItemsDirty } = useCommandMenuItemsDraftState();
 
@@ -41,17 +45,7 @@ export const useIsLayoutCustomizationDirty = () => {
             continue;
           }
 
-          const persistedAsDraft: DraftPageLayout = {
-            id: persisted.id,
-            name: persisted.name,
-            type: persisted.type,
-            objectMetadataId: persisted.objectMetadataId,
-            tabs: persisted.tabs,
-            defaultTabToFocusOnMobileAndSidePanelId:
-              persisted.defaultTabToFocusOnMobileAndSidePanelId,
-          };
-
-          if (!isDeeplyEqual(draft, persistedAsDraft)) {
+          if (!isDeeplyEqual(draft, toDraftPageLayout(persisted))) {
             return true;
           }
 
@@ -86,6 +80,26 @@ export const useIsLayoutCustomizationDirty = () => {
           if (!isDeeplyEqual(ungroupedFieldsDraft, ungroupedFieldsPersisted)) {
             return true;
           }
+
+          const recordTableWidgetViewDraft = get(
+            recordTableWidgetViewDraftComponentState.atomFamily({
+              instanceId: pageLayoutId,
+            }),
+          );
+          const recordTableWidgetViewPersisted = get(
+            recordTableWidgetViewPersistedComponentState.atomFamily({
+              instanceId: pageLayoutId,
+            }),
+          );
+
+          if (
+            !isDeeplyEqual(
+              recordTableWidgetViewDraft,
+              recordTableWidgetViewPersisted,
+            )
+          ) {
+            return true;
+          }
         }
 
         return false;
@@ -97,6 +111,9 @@ export const useIsLayoutCustomizationDirty = () => {
 
   return {
     isDirty:
-      isNavigationDirty || isAnyPageLayoutDirty || isCommandMenuItemsDirty,
+      Object.keys(objectColorsDraft).length > 0 ||
+      isNavigationDirty ||
+      isAnyPageLayoutDirty ||
+      isCommandMenuItemsDirty,
   };
 };

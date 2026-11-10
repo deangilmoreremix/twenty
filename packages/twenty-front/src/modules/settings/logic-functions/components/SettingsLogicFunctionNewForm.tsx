@@ -1,13 +1,13 @@
 import { type LogicFunctionFormValues } from '@/logic-functions/hooks/useLogicFunctionUpdateFormState';
 import { SettingsOptionCardContentCounter } from '@/settings/components/SettingsOptions/SettingsOptionCardContentCounter';
-import { SettingsOptionCardContentToggle } from '@/settings/components/SettingsOptions/SettingsOptionCardContentToggle';
 import { SettingsTextInput } from '@/ui/input/components/SettingsTextInput';
 import { TextArea } from '@/ui/input/components/TextArea';
 import { styled } from '@linaria/react';
-import { t } from '@lingui/core/macro';
-import { H2Title, IconClockHour8, IconTool } from 'twenty-ui/display';
-import { Card, Section } from 'twenty-ui/layout';
-import { themeCssVariables } from 'twenty-ui/theme-constants';
+import { Section } from 'twenty-ui/components/layout';
+import { IconClockHour8 } from 'twenty-ui/icon';
+import { Card } from 'twenty-ui/primitives/surfaces';
+import { themeCssVariables } from 'twenty-ui/theme';
+import { useLingui } from '@lingui/react/macro';
 
 const StyledInputsContainer = styled.div`
   display: flex;
@@ -26,12 +26,13 @@ export const SettingsLogicFunctionNewForm = ({
   ) => (value: LogicFunctionFormValues[TKey]) => void;
   readonly?: boolean;
 }) => {
+  const { t } = useLingui();
   const descriptionTextAreaId = `${formValues.name}-description`;
   const nameTextInputId = `${formValues.name}-name`;
 
   return (
-    <Section>
-      <H2Title
+    <Section.Root>
+      <Section.Header
         title={t`About`}
         description={t`Name and describe your function`}
       />
@@ -49,21 +50,12 @@ export const SettingsLogicFunctionNewForm = ({
           textAreaId={descriptionTextAreaId}
           placeholder={t`Description`}
           minRows={4}
+          maxRows={5}
           value={formValues.description}
           onChange={onChange('description')}
           readOnly={readonly}
         />
-        <Card rounded>
-          <SettingsOptionCardContentToggle
-            Icon={IconTool}
-            title={t`Available as tool`}
-            description={t`When enabled, AI agents and workflow automations can discover and call this function`}
-            checked={formValues.isTool}
-            onChange={onChange('isTool')}
-            disabled={readonly}
-          />
-        </Card>
-        <Card rounded>
+        <Card.Root>
           <SettingsOptionCardContentCounter
             Icon={IconClockHour8}
             title={t`Timeout`}
@@ -74,8 +66,8 @@ export const SettingsLogicFunctionNewForm = ({
             maxValue={900}
             disabled={readonly}
           />
-        </Card>
+        </Card.Root>
       </StyledInputsContainer>
-    </Section>
+    </Section.Root>
   );
 };

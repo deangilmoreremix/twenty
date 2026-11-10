@@ -132,18 +132,20 @@ describe('geo-map GraphQL queries', () => {
         queryDefinition.selectionSet.selections[0].selectionSet;
       const fields = selectionSet.selections.map((s: any) => s.name.value);
 
+      expect(fields).toContain('street');
       expect(fields).toContain('state');
       expect(fields).toContain('postcode');
       expect(fields).toContain('city');
       expect(fields).toContain('country');
       expect(fields).toContain('location');
-      expect(fields).toHaveLength(5);
+      expect(fields).toHaveLength(6);
     });
 
     it('should match the expected query string', () => {
       const expectedQuery = gql`
         query GetAddressDetails($placeId: String!, $token: String!) {
           getAddressDetails(placeId: $placeId, token: $token) {
+            street
             state
             postcode
             city
@@ -165,7 +167,6 @@ describe('geo-map GraphQL queries', () => {
   describe('query validation', () => {
     it('should have valid GraphQL syntax for both queries', () => {
       expect(() => {
-        // This will throw if the query is malformed
         expect(GET_AUTOCOMPLETE_QUERY.definitions[0]).toBeDefined();
         expect(GET_PLACE_DETAILS_QUERY.definitions[0]).toBeDefined();
       }).not.toThrow();
@@ -175,11 +176,9 @@ describe('geo-map GraphQL queries', () => {
       const autocompleteQuery = GET_AUTOCOMPLETE_QUERY.definitions[0] as any;
       const detailsQuery = GET_PLACE_DETAILS_QUERY.definitions[0] as any;
 
-      // Both should use PascalCase for query names
       expect(autocompleteQuery.name.value).toMatch(/^[A-Z][a-zA-Z]*$/);
       expect(detailsQuery.name.value).toMatch(/^[A-Z][a-zA-Z]*$/);
 
-      // Both should use camelCase for field names
       const autocompleteFields =
         autocompleteQuery.selectionSet.selections[0].selectionSet.selections;
       const detailsFields =

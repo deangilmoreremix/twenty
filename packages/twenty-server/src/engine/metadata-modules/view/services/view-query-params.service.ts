@@ -5,10 +5,11 @@ import {
   RecordFilterGroupLogicalOperator,
   type RecordGqlOperationFilter,
   ViewFilterGroupLogicalOperator,
+  ViewSortDirection,
   ViewType,
 } from 'twenty-shared/types';
 import {
-  computeRecordGqlOperationFilter,
+  convertViewFilterValueToString,
   isDefined,
   type RecordFilter,
   type RecordFilterGroup,
@@ -19,10 +20,17 @@ import { type ObjectRecordOrderBy } from 'src/engine/api/graphql/workspace-query
 import { WorkspaceManyOrAllFlatEntityMapsCacheService } from 'src/engine/metadata-modules/flat-entity/services/workspace-many-or-all-flat-entity-maps-cache.service';
 import { findFlatEntityByIdInFlatEntityMapsOrThrow } from 'src/engine/metadata-modules/flat-entity/utils/find-flat-entity-by-id-in-flat-entity-maps-or-throw.util';
 import { findFlatEntityByIdInFlatEntityMaps } from 'src/engine/metadata-modules/flat-entity/utils/find-flat-entity-by-id-in-flat-entity-maps.util';
-import { ViewSortDirection } from 'src/engine/metadata-modules/view-sort/enums/view-sort-direction';
 import { DEFAULT_TIMEZONE } from 'src/engine/metadata-modules/view/constants/default-timezone.constant';
+import {
+  generateViewExceptionMessage,
+  ViewException,
+  ViewExceptionCode,
+  ViewExceptionMessageKey,
+} from 'src/engine/metadata-modules/view/exceptions/view.exception';
 import { ViewService } from 'src/engine/metadata-modules/view/services/view.service';
-import { GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspace-datasource/global-workspace-orm.manager';
+import { isViewVisibleToUser } from 'src/engine/metadata-modules/view/utils/is-view-visible-to-user.util';
+import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
+import { computeRecordGqlOperationFilterFromFlatMaps } from 'src/engine/utils/compute-record-gql-operation-filter-from-flat-maps.util';
 import { type WorkspaceMemberWorkspaceEntity } from 'src/modules/workspace-member/standard-objects/workspace-member.workspace-entity';
 
 export type ViewQueryParams = {
@@ -38,21 +46,36 @@ export class ViewQueryParamsService {
   constructor(
     private readonly viewService: ViewService,
     private readonly flatEntityMapsCacheService: WorkspaceManyOrAllFlatEntityMapsCacheService,
-    private readonly globalWorkspaceOrmManager: GlobalWorkspaceOrmManager,
+    private readonly workspaceOrmManager: WorkspaceOrmManager,
   ) {}
 
-  async resolveViewToQueryParams(
-    viewId: string,
-    workspaceId: string,
-    currentWorkspaceMemberId?: string,
-  ): Promise<ViewQueryParams> {
+  async resolveViewToQueryParams({
+    viewId,
+    workspaceId,
+    currentWorkspaceMemberId,
+    currentUserWorkspaceId,
+  }: {
+    viewId: string;
+    workspaceId: string;
+    currentWorkspaceMemberId?: string;
+    currentUserWorkspaceId?: string;
+  }): Promise<ViewQueryParams> {
     const view = await this.viewService.findByIdWithRelations(
       viewId,
       workspaceId,
     );
 
-    if (!view) {
-      throw new Error(`View with id ${viewId} not found`);
+    if (
+      !isDefined(view) ||
+      !isViewVisibleToUser(view, currentUserWorkspaceId)
+    ) {
+      throw new ViewException(
+        generateViewExceptionMessage(
+          ViewExceptionMessageKey.VIEW_NOT_FOUND,
+          viewId,
+        ),
+        ViewExceptionCode.VIEW_NOT_FOUND,
+      );
     }
 
     const { flatObjectMetadataMaps, flatFieldMetadataMaps } =
@@ -69,7 +92,6 @@ export class ViewQueryParamsService {
     });
 
     const timeZone = await this.getWorkspaceMemberTimezoneIfAvailable(
-      workspaceId,
       currentWorkspaceMemberId,
     );
 
@@ -80,16 +102,19 @@ export class ViewQueryParamsService {
           flatEntityMaps: flatFieldMetadataMaps,
         });
 
-        if (!field) return null;
+        if (!field) {
+          return null;
+        }
 
         return {
           id: viewFilter.id,
           fieldMetadataId: viewFilter.fieldMetadataId,
-          value: viewFilter.value ?? '',
-          type: field.type,
+          value: convertViewFilterValueToString(viewFilter.value ?? ''),
           recordFilterGroupId: viewFilter.viewFilterGroupId,
           operand: viewFilter.operand,
           subFieldName: viewFilter.subFieldName,
+          relationTargetFieldMetadataId:
+            viewFilter.relationTargetFieldMetadataId ?? null,
         } as RecordFilter;
       })
       .filter(isDefined);
@@ -105,33 +130,9 @@ export class ViewQueryParamsService {
           : RecordFilterGroupLogicalOperator.AND,
     }));
 
-    const fields = recordFilters
-      .map((filter) => {
-        const field = findFlatEntityByIdInFlatEntityMaps({
-          flatEntityId: filter.fieldMetadataId,
-          flatEntityMaps: flatFieldMetadataMaps,
-        });
-
-        if (!field) return null;
-
-        return {
-          id: field.id,
-          name: field.name,
-          type: field.type,
-          label: field.label,
-          options: field.options?.map((opt) => ({
-            id: opt.id ?? '',
-            label: opt.label,
-            value: opt.value,
-            color: 'color' in opt ? opt.color : undefined,
-            position: opt.position,
-          })),
-        };
-      })
-      .filter(isDefined);
-
-    const filter = computeRecordGqlOperationFilter({
-      fields,
+    const filter = computeRecordGqlOperationFilterFromFlatMaps({
+      flatFieldMetadataMaps,
+      flatObjectMetadataMaps,
       recordFilters,
       recordFilterGroups,
       filterValueDependencies: { currentWorkspaceMemberId, timeZone },
@@ -144,7 +145,9 @@ export class ViewQueryParamsService {
           flatEntityMaps: flatFieldMetadataMaps,
         });
 
-        if (!field) return null;
+        if (!field) {
+          return null;
+        }
 
         return {
           [field.name]:
@@ -165,7 +168,6 @@ export class ViewQueryParamsService {
   }
 
   private async getWorkspaceMemberTimezoneIfAvailable(
-    workspaceId: string,
     currentWorkspaceMemberId?: string,
   ): Promise<string> {
     if (!isDefined(currentWorkspaceMemberId)) {
@@ -174,8 +176,7 @@ export class ViewQueryParamsService {
 
     try {
       const workspaceMemberRepository =
-        await this.globalWorkspaceOrmManager.getRepository<WorkspaceMemberWorkspaceEntity>(
-          workspaceId,
+        this.workspaceOrmManager.getRepositoryWithoutPermissionChecks<WorkspaceMemberWorkspaceEntity>(
           'workspaceMember',
         );
 

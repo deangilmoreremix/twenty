@@ -1,24 +1,21 @@
 import { z } from 'zod';
 
-import { WorkflowActionType } from 'src/modules/workflow/workflow-executor/workflow-actions/types/workflow-action-type.enum';
+import { workflowStepConnectionOptionsSchema } from 'src/modules/workflow/workflow-tools/tools/schemas/workflow-step-connection-options.schema';
 import {
   type WorkflowToolContext,
   type WorkflowToolDependencies,
 } from 'src/modules/workflow/workflow-tools/types/workflow-tool-dependencies.type';
 
 const createWorkflowVersionEdgeSchema = z.object({
-  workflowVersionId: z.string().describe('The ID of the workflow version'),
-  source: z.string().describe('The ID of the source step'),
-  target: z.string().describe('The ID of the target step'),
-  sourceConnectionOptions: z
-    .object({
-      connectedStepType: z.literal(WorkflowActionType.ITERATOR),
-      settings: z.object({
-        isConnectedToLoop: z.boolean(),
-      }),
-    })
-    .optional()
-    .describe('Optional connection options for iterator steps'),
+  coreWorkflowVersionId: z
+    .string()
+    .uuid()
+    .describe('The core workflow version UUID'),
+  source: z
+    .union([z.literal('trigger'), z.string().uuid()])
+    .describe('The source step: "trigger" or a step UUID'),
+  target: z.string().uuid().describe('The UUID of the target step'),
+  sourceConnectionOptions: workflowStepConnectionOptionsSchema.optional(),
 });
 
 type CreateWorkflowVersionEdgeInput = z.infer<
@@ -26,7 +23,7 @@ type CreateWorkflowVersionEdgeInput = z.infer<
 >;
 
 export const createCreateWorkflowVersionEdgeTool = (
-  deps: Pick<WorkflowToolDependencies, 'workflowVersionEdgeService'>,
+  deps: Pick<WorkflowToolDependencies, 'coreWorkflowVersionMutationService'>,
   context: WorkflowToolContext,
 ) => ({
   name: 'create_workflow_version_edge' as const,
@@ -35,11 +32,12 @@ export const createCreateWorkflowVersionEdgeTool = (
   inputSchema: createWorkflowVersionEdgeSchema,
   execute: async (parameters: CreateWorkflowVersionEdgeInput) => {
     try {
-      return await deps.workflowVersionEdgeService.createWorkflowVersionEdge({
+      return await deps.coreWorkflowVersionMutationService.createEdge({
         source: parameters.source,
         target: parameters.target,
-        workflowVersionId: parameters.workflowVersionId,
+        coreWorkflowVersionId: parameters.coreWorkflowVersionId,
         workspaceId: context.workspaceId,
+        userWorkspaceId: context.userWorkspaceId,
         sourceConnectionOptions: parameters.sourceConnectionOptions,
       });
     } catch (error) {

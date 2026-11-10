@@ -1,12 +1,34 @@
 import { LogicFunctionExecutionResult } from '@/logic-functions/components/LogicFunctionExecutionResult';
 import { LogicFunctionLogs } from '@/logic-functions/components/LogicFunctionLogs';
+import { type LogicFunctionFormValues } from '@/logic-functions/hooks/useLogicFunctionUpdateFormState';
+import { useExecuteLogicFunction } from '@/logic-functions/hooks/useExecuteLogicFunction';
+import {
+  buildDatabaseEventPayload,
+  buildHttpPayload,
+  buildToolPayloadFromSchema,
+  type TriggerKind,
+} from '@/settings/logic-functions/utils/getTriggerSamplePayload';
 import { styled } from '@linaria/react';
 import { useLingui } from '@lingui/react/macro';
-import { H2Title, IconPlayerPlay } from 'twenty-ui/display';
-import { Button, CodeEditor, CoreEditorHeader } from 'twenty-ui/input';
-import { Section } from 'twenty-ui/layout';
-import { themeCssVariables } from 'twenty-ui/theme-constants';
-import { useExecuteLogicFunction } from '@/logic-functions/hooks/useExecuteLogicFunction';
+import { isDefined } from 'twenty-shared/utils';
+import { Section } from 'twenty-ui/components/layout';
+import { CodeEditor, CodeEditorHeader } from 'twenty-ui/components/code-editor';
+import {
+  IconClock,
+  IconDatabase,
+  IconPlayerPlay,
+  IconTool,
+  IconWebhook,
+  type IconComponent,
+} from 'twenty-ui/icon';
+import { Button } from 'twenty-ui/primitives/input';
+import { themeCssVariables } from 'twenty-ui/theme';
+
+type TriggerButton = {
+  kind: TriggerKind;
+  label: string;
+  Icon: IconComponent;
+};
 
 const StyledInputsContainer = styled.div`
   display: flex;
@@ -19,13 +41,27 @@ const StyledCodeEditorContainer = styled.div`
   flex-direction: column;
 `;
 
+const StyledTriggerButtonRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: ${themeCssVariables.spacing[2]};
+`;
+
+const StyledTriggerLabel = styled.span`
+  color: ${themeCssVariables.font.color.light};
+  font-size: ${themeCssVariables.font.size.xs};
+  font-weight: ${themeCssVariables.font.weight.semiBold};
+`;
+
 export const SettingsLogicFunctionTestTab = ({
   handleExecute,
   logicFunctionId,
+  formValues,
   isTesting = false,
 }: {
   handleExecute: () => void;
   logicFunctionId: string;
+  formValues: LogicFunctionFormValues;
   isTesting?: boolean;
 }) => {
   const { t } = useLingui();
@@ -35,7 +71,36 @@ export const SettingsLogicFunctionTestTab = ({
       logicFunctionId,
     });
 
-  const onChange = (value: string) => {
+  const {
+    httpRouteTriggerSettings,
+    cronTriggerSettings,
+    databaseEventTriggerSettings,
+    toolTriggerSettings,
+  } = formValues;
+
+  const triggerButtons: TriggerButton[] = [];
+  if (isDefined(httpRouteTriggerSettings)) {
+    triggerButtons.push({ kind: 'http', label: t`HTTP`, Icon: IconWebhook });
+  }
+  if (isDefined(cronTriggerSettings)) {
+    triggerButtons.push({ kind: 'cron', label: t`Cron`, Icon: IconClock });
+  }
+  if (isDefined(databaseEventTriggerSettings)) {
+    triggerButtons.push({
+      kind: 'databaseEvent',
+      label: t`Database event`,
+      Icon: IconDatabase,
+    });
+  }
+  if (isDefined(toolTriggerSettings)) {
+    triggerButtons.push({ kind: 'tool', label: t`AI tool`, Icon: IconTool });
+  }
+
+  const onChange = (value: string | undefined) => {
+    if (!isDefined(value)) {
+      return;
+    }
+
     try {
       updateLogicFunctionInput(JSON.parse(value));
     } catch {
@@ -43,27 +108,66 @@ export const SettingsLogicFunctionTestTab = ({
     }
   };
 
+  const fillSamplePayload = (kind: TriggerKind) => {
+    const payload = (() => {
+      switch (kind) {
+        case 'http':
+          return isDefined(httpRouteTriggerSettings)
+            ? buildHttpPayload(httpRouteTriggerSettings)
+            : {};
+        case 'cron':
+          return {};
+        case 'databaseEvent':
+          return isDefined(databaseEventTriggerSettings)
+            ? buildDatabaseEventPayload(databaseEventTriggerSettings)
+            : {};
+        case 'tool':
+          return buildToolPayloadFromSchema(toolTriggerSettings?.inputSchema);
+      }
+    })();
+    updateLogicFunctionInput(payload);
+  };
+
   return (
-    <Section>
-      <H2Title
+    <Section.Root>
+      <Section.Header
         title={t`Test your function`}
-        description={t`Insert a JSON input, then press "Run" to test your function.`}
+        description={t`Insert a JSON input, then press "Run Function".`}
       />
       <StyledInputsContainer>
+        {triggerButtons.length > 0 && (
+          <div>
+            <StyledTriggerLabel>{t`Fill with sample input from`}</StyledTriggerLabel>
+            <StyledTriggerButtonRow>
+              {triggerButtons.map((trigger) => (
+                <Button
+                  key={trigger.kind}
+                  startIcon={
+                    isDefined(trigger.Icon) ? <trigger.Icon /> : undefined
+                  }
+                  size="sm"
+                  onClick={() => fillSamplePayload(trigger.kind)}
+                  variant="outline"
+                >
+                  {trigger.label}
+                </Button>
+              ))}
+            </StyledTriggerButtonRow>
+          </div>
+        )}
         <StyledCodeEditorContainer>
-          <CoreEditorHeader
+          <CodeEditorHeader
             title={t`Input`}
-            rightNodes={[
+            endElement={
               <Button
-                title={t`Run Function`}
-                variant="primary"
-                accent="blue"
-                size="small"
-                Icon={IconPlayerPlay}
+                size="sm"
+                startIcon={<IconPlayerPlay />}
                 onClick={handleExecute}
                 disabled={isTesting}
-              />,
-            ]}
+                variant="solid"
+                color="accent"
+              >{t`Run Function`}</Button>
+            }
           />
           <CodeEditor
             value={JSON.stringify(logicFunctionTestData.input, null, 4)}
@@ -72,6 +176,7 @@ export const SettingsLogicFunctionTestTab = ({
             onChange={onChange}
             variant="with-header"
             resizable
+            resizeLabel={t`Resize input`}
           />
         </StyledCodeEditorContainer>
         <LogicFunctionExecutionResult
@@ -87,6 +192,6 @@ export const SettingsLogicFunctionTestTab = ({
           </StyledCodeEditorContainer>
         )}
       </StyledInputsContainer>
-    </Section>
+    </Section.Root>
   );
 };

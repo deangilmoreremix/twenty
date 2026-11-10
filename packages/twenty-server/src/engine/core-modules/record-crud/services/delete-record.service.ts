@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 
 import { isDefined, isValidUuid } from 'twenty-shared/utils';
-import { canObjectBeManagedByWorkflow } from 'twenty-shared/workflow';
+import { canObjectBeManagedByAutomation } from 'twenty-shared/workflow';
 
 import { CommonDeleteOneQueryRunnerService } from 'src/engine/api/common/common-query-runners/common-delete-one-query-runner.service';
 import { CommonDestroyOneQueryRunnerService } from 'src/engine/api/common/common-query-runners/common-destroy-one-query-runner.service';
@@ -42,25 +42,25 @@ export class DeleteRecordService {
         });
 
       if (
-        !canObjectBeManagedByWorkflow({
+        !canObjectBeManagedByAutomation({
           nameSingular: flatObjectMetadata.nameSingular,
-          isSystem: flatObjectMetadata.isSystem,
         })
       ) {
         throw new RecordCrudException(
-          'Failed to delete: Object cannot be deleted by workflow',
+          'Failed to delete: Object cannot be deleted by automation',
           RecordCrudExceptionCode.INVALID_REQUEST,
         );
       }
 
       if (soft) {
-        const deletedRecord = await this.commonDeleteOneRunner.execute(
-          {
-            id: objectRecordId,
-            selectedFields,
-          },
-          queryRunnerContext,
-        );
+        const { results: deletedRecord } =
+          await this.commonDeleteOneRunner.execute(
+            {
+              id: objectRecordId,
+              selectedFields,
+            },
+            queryRunnerContext,
+          );
 
         this.logger.log(`Record soft deleted successfully from ${objectName}`);
 
@@ -69,8 +69,9 @@ export class DeleteRecordService {
           message: `Record soft deleted successfully from ${objectName}`,
           result: deletedRecord,
         };
-      } else {
-        const destroyedRecord = await this.commonDestroyOneRunner.execute(
+      }
+      const { results: destroyedRecord } =
+        await this.commonDestroyOneRunner.execute(
           {
             id: objectRecordId,
             selectedFields,
@@ -78,16 +79,15 @@ export class DeleteRecordService {
           queryRunnerContext,
         );
 
-        this.logger.log(
-          `Record permanently deleted successfully from ${objectName}`,
-        );
+      this.logger.log(
+        `Record permanently deleted successfully from ${objectName}`,
+      );
 
-        return {
-          success: true,
-          message: `Record permanently deleted successfully from ${objectName}`,
-          result: destroyedRecord,
-        };
-      }
+      return {
+        success: true,
+        message: `Record permanently deleted successfully from ${objectName}`,
+        result: destroyedRecord,
+      };
     } catch (error) {
       if (error instanceof RecordCrudException) {
         return {

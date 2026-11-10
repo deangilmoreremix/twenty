@@ -1,6 +1,4 @@
 import { isLayoutCustomizationModeEnabledState } from '@/layout-customization/states/isLayoutCustomizationModeEnabledState';
-import { MAIN_CONTEXT_STORE_INSTANCE_ID } from '@/context-store/constants/MainContextStoreInstanceId';
-import { contextStoreIsPageInEditModeComponentState } from '@/context-store/states/contextStoreIsPageInEditModeComponentState';
 import { currentPageLayoutIdState } from '@/page-layout/states/currentPageLayoutIdState';
 import { fieldsWidgetEditorModeDraftComponentState } from '@/page-layout/states/fieldsWidgetEditorModeDraftComponentState';
 import { fieldsWidgetEditorModePersistedComponentState } from '@/page-layout/states/fieldsWidgetEditorModePersistedComponentState';
@@ -12,9 +10,11 @@ import { hasInitializedFieldsWidgetGroupsDraftComponentState } from '@/page-layo
 import { isDashboardInEditModeComponentState } from '@/page-layout/states/isDashboardInEditModeComponentState';
 import { pageLayoutCurrentLayoutsComponentState } from '@/page-layout/states/pageLayoutCurrentLayoutsComponentState';
 import { pageLayoutDraftComponentState } from '@/page-layout/states/pageLayoutDraftComponentState';
+import { pageLayoutEditingWidgetIdComponentState } from '@/page-layout/states/pageLayoutEditingWidgetIdComponentState';
 import { pageLayoutIsInitializedComponentState } from '@/page-layout/states/pageLayoutIsInitializedComponentState';
 import { pageLayoutPersistedComponentState } from '@/page-layout/states/pageLayoutPersistedComponentState';
 import { convertPageLayoutToTabLayouts } from '@/page-layout/utils/convertPageLayoutToTabLayouts';
+import { toDraftPageLayout } from '@/page-layout/utils/toDraftPageLayout';
 import { useCloseAnyOpenDropdown } from '@/ui/layout/dropdown/hooks/useCloseAnyOpenDropdown';
 import { useStore } from 'jotai';
 import { useCallback } from 'react';
@@ -39,13 +39,7 @@ export const useExecuteTasksOnAnyLocationChange = () => {
           pageLayoutDraftComponentState.atomFamily({
             instanceId: pageLayoutId,
           }),
-          {
-            id: pageLayoutPersisted.id,
-            name: pageLayoutPersisted.name,
-            type: pageLayoutPersisted.type,
-            objectMetadataId: pageLayoutPersisted.objectMetadataId,
-            tabs: pageLayoutPersisted.tabs,
-          },
+          toDraftPageLayout(pageLayoutPersisted),
         );
 
         const tabLayouts = convertPageLayoutToTabLayouts(pageLayoutPersisted);
@@ -120,22 +114,18 @@ export const useExecuteTasksOnAnyLocationChange = () => {
         {},
       );
 
+      store.set(
+        pageLayoutEditingWidgetIdComponentState.atomFamily({
+          instanceId: pageLayoutId,
+        }),
+        null,
+      );
+
       store.set(currentPageLayoutIdState.atom, null);
     }
-
-    store.set(
-      contextStoreIsPageInEditModeComponentState.atomFamily({
-        instanceId: MAIN_CONTEXT_STORE_INSTANCE_ID,
-      }),
-      false,
-    );
   }, [store]);
 
-  /**
-   * Be careful to put idempotent tasks here.
-   *
-   * Because it might be called multiple times.
-   */
+  // Tasks here must be idempotent: this can run several times per location change.
   const executeTasksOnAnyLocationChange = () => {
     closeAnyOpenDropdown();
 

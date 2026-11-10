@@ -5,16 +5,17 @@ import { splitPageLayoutWithRelated } from '@/metadata-store/utils/splitPageLayo
 import { splitViewWithRelated } from '@/metadata-store/utils/splitViewWithRelated';
 import { FIND_MANY_OBJECT_METADATA_ITEMS } from '@/object-metadata/graphql/queries';
 import { transformPageLayout } from '@/page-layout/utils/transformPageLayout';
-import { logicFunctionsState } from '@/settings/logic-functions/states/logicFunctionsState';
 import { useApolloClient } from '@apollo/client/react';
-import { useStore } from 'jotai';
 import { useCallback } from 'react';
 import { isDefined } from 'twenty-shared/utils';
 import {
   FindAllViewsDocument,
   FindManyCommandMenuItemsDocument,
   FindAllRecordPageLayoutsDocument,
+  FindAllRecordFormPageLayoutsDocument,
   FindFieldsWidgetViewsDocument,
+  FindTableWidgetViewsDocument,
+  FindManyFrontComponentsDocument,
   FindManyLogicFunctionsDocument,
   FindManyNavigationMenuItemsDocument,
   type ObjectMetadataItemsQuery,
@@ -43,8 +44,19 @@ const PAGE_LAYOUTS_GROUP_KEYS: MetadataEntityKey[] = [
   'pageLayoutWidgets',
 ];
 
-const INDEX_VIEW_TYPES = [ViewType.TABLE, ViewType.KANBAN, ViewType.CALENDAR];
+const INDEX_VIEW_TYPES = [
+  ViewType.TABLE,
+  ViewType.KANBAN,
+  ViewType.CALENDAR,
+  ViewType.LIST,
+];
 const FIELDS_WIDGET_VIEW_TYPES = [ViewType.FIELDS_WIDGET];
+const WIDGET_VIEW_TYPES = [
+  ViewType.TABLE_WIDGET,
+  ViewType.KANBAN_WIDGET,
+  ViewType.LIST_WIDGET,
+  ViewType.CALENDAR_WIDGET,
+];
 
 const hasOverlap = (
   staleKeys: MetadataEntityKey[],
@@ -53,7 +65,6 @@ const hasOverlap = (
 
 export const useLoadStaleMetadataEntities = () => {
   const client = useApolloClient();
-  const store = useStore();
   const { replaceDraft, applyChanges } = useUpdateMetadataStoreDraft();
 
   const loadStaleMetadataEntities = useCallback(
@@ -95,58 +106,74 @@ export const useLoadStaleMetadataEntities = () => {
               variables: { viewTypes: FIELDS_WIDGET_VIEW_TYPES },
               fetchPolicy: 'network-only',
             }),
-          ]).then(([indexViewsResult, fieldsWidgetViewsResult]) => {
-            const allViews = [
-              ...(indexViewsResult.data?.getViews ?? []),
-              ...(fieldsWidgetViewsResult.data?.getViews ?? []),
-            ];
+            client.query({
+              query: FindTableWidgetViewsDocument,
+              variables: { viewTypes: WIDGET_VIEW_TYPES },
+              fetchPolicy: 'network-only',
+            }),
+          ]).then(
+            ([
+              indexViewsResult,
+              fieldsWidgetViewsResult,
+              tableWidgetViewsResult,
+            ]) => {
+              const allViews = [
+                ...(indexViewsResult.data?.getViews ?? []),
+                ...(fieldsWidgetViewsResult.data?.getViews ?? []),
+                ...(tableWidgetViewsResult.data?.getViews ?? []),
+              ];
 
-            const {
-              flatViews,
-              flatViewFields,
-              flatViewFilters,
-              flatViewSorts,
-              flatViewGroups,
-              flatViewFilterGroups,
-              flatViewFieldGroups,
-            } = splitViewWithRelated(allViews);
+              const {
+                flatViews,
+                flatViewFields,
+                flatViewFilters,
+                flatViewSorts,
+                flatViewGroups,
+                flatViewFilterGroups,
+                flatViewFieldGroups,
+              } = splitViewWithRelated(allViews);
 
-            replaceDraft('views', flatViews);
-            replaceDraft('viewFields', flatViewFields);
-            replaceDraft('viewFilters', flatViewFilters);
-            replaceDraft('viewSorts', flatViewSorts);
-            replaceDraft('viewGroups', flatViewGroups);
-            replaceDraft('viewFilterGroups', flatViewFilterGroups);
-            replaceDraft('viewFieldGroups', flatViewFieldGroups);
-          }),
+              replaceDraft('views', flatViews);
+              replaceDraft('viewFields', flatViewFields);
+              replaceDraft('viewFilters', flatViewFilters);
+              replaceDraft('viewSorts', flatViewSorts);
+              replaceDraft('viewGroups', flatViewGroups);
+              replaceDraft('viewFilterGroups', flatViewFilterGroups);
+              replaceDraft('viewFieldGroups', flatViewFieldGroups);
+            },
+          ),
         );
       }
 
       if (hasOverlap(staleEntityKeys, PAGE_LAYOUTS_GROUP_KEYS)) {
         fetchPromises.push(
-          client
-            .query({
+          Promise.all([
+            client.query({
               query: FindAllRecordPageLayoutsDocument,
               fetchPolicy: 'network-only',
-            })
-            .then((result) => {
-              if (!isDefined(result.data?.getPageLayouts)) {
-                return;
-              }
-
-              const transformed =
-                result.data.getPageLayouts.map(transformPageLayout);
-
-              const {
-                flatPageLayouts,
-                flatPageLayoutTabs,
-                flatPageLayoutWidgets,
-              } = splitPageLayoutWithRelated(transformed);
-
-              replaceDraft('pageLayouts', flatPageLayouts);
-              replaceDraft('pageLayoutTabs', flatPageLayoutTabs);
-              replaceDraft('pageLayoutWidgets', flatPageLayoutWidgets);
             }),
+            client.query({
+              query: FindAllRecordFormPageLayoutsDocument,
+              fetchPolicy: 'network-only',
+            }),
+          ]).then(([recordPageResult, recordFormResult]) => {
+            const allPageLayouts = [
+              ...(recordPageResult.data?.getPageLayouts ?? []),
+              ...(recordFormResult.data?.getPageLayouts ?? []),
+            ];
+
+            const transformed = allPageLayouts.map(transformPageLayout);
+
+            const {
+              flatPageLayouts,
+              flatPageLayoutTabs,
+              flatPageLayoutWidgets,
+            } = splitPageLayoutWithRelated(transformed);
+
+            replaceDraft('pageLayouts', flatPageLayouts);
+            replaceDraft('pageLayoutTabs', flatPageLayoutTabs);
+            replaceDraft('pageLayoutWidgets', flatPageLayoutWidgets);
+          }),
         );
       }
 
@@ -162,10 +189,6 @@ export const useLoadStaleMetadataEntities = () => {
                 return;
               }
 
-              store.set(
-                logicFunctionsState.atom,
-                result.data.findManyLogicFunctions,
-              );
               replaceDraft(
                 'logicFunctions',
                 result.data.findManyLogicFunctions,
@@ -211,10 +234,36 @@ export const useLoadStaleMetadataEntities = () => {
         );
       }
 
-      await Promise.all(fetchPromises);
+      if (staleEntityKeys.includes('frontComponents')) {
+        fetchPromises.push(
+          client
+            .query({
+              query: FindManyFrontComponentsDocument,
+              fetchPolicy: 'network-only',
+            })
+            .then((result) => {
+              if (!isDefined(result.data?.frontComponents)) {
+                return;
+              }
+
+              replaceDraft('frontComponents', result.data.frontComponents);
+            }),
+        );
+      }
+
+      const settledFetches = await Promise.allSettled(fetchPromises);
+
       applyChanges();
+
+      const firstRejectedFetch = settledFetches.find(
+        (settledFetch) => settledFetch.status === 'rejected',
+      );
+
+      if (isDefined(firstRejectedFetch)) {
+        throw firstRejectedFetch.reason;
+      }
     },
-    [client, store, replaceDraft, applyChanges],
+    [client, replaceDraft, applyChanges],
   );
 
   return { loadStaleMetadataEntities };

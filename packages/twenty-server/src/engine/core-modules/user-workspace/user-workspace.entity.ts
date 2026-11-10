@@ -1,6 +1,5 @@
 import { Field, ObjectType, registerEnumType } from '@nestjs/graphql';
 
-import { IDField } from '@ptc-org/nestjs-query-graphql';
 import {
   PermissionFlagType,
   PermissionsOnAllObjectRecords,
@@ -25,7 +24,8 @@ import { TwoFactorAuthenticationMethodSummaryDTO } from 'src/engine/core-modules
 import { TwoFactorAuthenticationMethodEntity } from 'src/engine/core-modules/two-factor-authentication/entities/two-factor-authentication-method.entity';
 import { UserEntity } from 'src/engine/core-modules/user/user.entity';
 import { ObjectPermissionDTO } from 'src/engine/metadata-modules/object-permission/dtos/object-permission.dto';
-import { WorkspaceRelatedEntity } from 'src/engine/workspace-manager/types/workspace-related-entity';
+import { ObjectRecordsPermissionsDTO } from 'src/engine/permissions/dtos/object-records-permissions.dto';
+import { WorkspaceRelatedEntity } from 'src/engine/workspace-manager/types/workspace-related-entity.type';
 
 registerEnumType(PermissionFlagType, {
   name: 'PermissionFlagType',
@@ -48,7 +48,7 @@ registerEnumType(PermissionsOnAllObjectRecords, {
 @Index('IDX_USER_WORKSPACE_USER_ID', ['userId'])
 @Index('IDX_USER_WORKSPACE_WORKSPACE_ID', ['workspaceId'])
 export class UserWorkspaceEntity extends WorkspaceRelatedEntity {
-  @IDField(() => UUIDScalarType)
+  @Field(() => UUIDScalarType)
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
@@ -95,12 +95,24 @@ export class UserWorkspaceEntity extends WorkspaceRelatedEntity {
   @Field(() => [PermissionFlagType], { nullable: true })
   permissionFlags?: PermissionFlagType[];
 
-  @Field(() => [ObjectPermissionDTO], { nullable: true })
+  @Field(() => [ObjectRecordsPermissionsDTO], { nullable: true })
+  objectRecordsPermissions?: ObjectRecordsPermissionsDTO[];
+
+  @Field(() => [ObjectPermissionDTO], {
+    nullable: true,
+    deprecationReason: 'Use objectRecordsPermissions',
+  })
   objectPermissions?: ObjectPermissionDTO[];
 
-  @Field(() => [ObjectPermissionDTO], { nullable: true })
+  @Field(() => [ObjectPermissionDTO], {
+    nullable: true,
+    deprecationReason: 'Use objectRecordsPermissions',
+  })
   objectsPermissions?: ObjectPermissionDTO[];
 
   @Field(() => [TwoFactorAuthenticationMethodSummaryDTO], { nullable: true })
   twoFactorAuthenticationMethodSummary?: TwoFactorAuthenticationMethodSummaryDTO[];
+
+  @Field(() => Boolean, { nullable: true })
+  isImpersonating?: boolean;
 }

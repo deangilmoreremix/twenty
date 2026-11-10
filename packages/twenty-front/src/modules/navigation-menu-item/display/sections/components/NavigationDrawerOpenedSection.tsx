@@ -1,41 +1,34 @@
-import { useParams } from 'react-router-dom';
-
-import { useWorkspaceNavigationMenuItems } from '@/navigation-menu-item/display/hooks/useWorkspaceNavigationMenuItems';
+import { useIdentifyActiveNavigationMenuItems } from '@/navigation-menu-item/display/hooks/useIdentifyActiveNavigationMenuItems';
 import { NavigationDrawerSectionForObjectMetadataItems } from '@/object-metadata/components/NavigationDrawerSectionForObjectMetadataItems';
 import { useFilteredObjectMetadataItems } from '@/object-metadata/hooks/useFilteredObjectMetadataItems';
 import { useLingui } from '@lingui/react/macro';
 import { isDefined } from 'twenty-shared/utils';
-import { AnimatedExpandableContainer } from 'twenty-ui/layout';
+import { Collapsible } from 'twenty-ui/primitives/layout';
 
 export const NavigationDrawerOpenedSection = () => {
   const { t } = useLingui();
 
   const { activeObjectMetadataItems } = useFilteredObjectMetadataItems();
 
-  const { objectMetadataIdsInWorkspaceNav } = useWorkspaceNavigationMenuItems();
-
-  const {
-    objectNamePlural: currentObjectNamePlural,
-    objectNameSingular: currentObjectNameSingular,
-  } = useParams();
+  const { objectMetadataIdForOpenedSection } =
+    useIdentifyActiveNavigationMenuItems();
 
   const objectMetadataItem = activeObjectMetadataItems.find(
-    (item) =>
-      item.namePlural === currentObjectNamePlural ||
-      item.nameSingular === currentObjectNameSingular,
+    (item) => item.id === objectMetadataIdForOpenedSection,
   );
-  const shouldShowOpenedSection = isDefined(objectMetadataItem)
-    ? !objectMetadataIdsInWorkspaceNav.has(objectMetadataItem.id)
-    : false;
+
+  if (!isDefined(objectMetadataItem)) {
+    return null;
+  }
 
   return (
-    <AnimatedExpandableContainer isExpanded={shouldShowOpenedSection}>
-      <NavigationDrawerSectionForObjectMetadataItems
-        sectionTitle={t`Opened`}
-        objectMetadataItems={
-          isDefined(objectMetadataItem) ? [objectMetadataItem] : []
-        }
-      />
-    </AnimatedExpandableContainer>
+    <Collapsible.Root open>
+      <Collapsible.Panel>
+        <NavigationDrawerSectionForObjectMetadataItems
+          sectionTitle={t`Opened`}
+          objectMetadataItems={[objectMetadataItem]}
+        />
+      </Collapsible.Panel>
+    </Collapsible.Root>
   );
 };

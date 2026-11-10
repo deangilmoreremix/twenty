@@ -3,7 +3,6 @@ import { type RecordFilter } from '@/object-record/record-filter/types/RecordFil
 import { type ColumnDefinition } from '@/object-record/record-table/types/ColumnDefinition';
 import { type ViewField } from '@/views/types/ViewField';
 import { type ViewFilter } from '@/views/types/ViewFilter';
-import { mapColumnDefinitionsToViewFields } from '@/views/utils/mapColumnDefinitionToViewField';
 import { mapViewFieldsToColumnDefinitions } from '@/views/utils/mapViewFieldsToColumnDefinitions';
 import { mapViewFiltersToFilters } from '@/views/utils/mapViewFiltersToFilters';
 import { ViewFilterOperand } from 'twenty-shared/types';
@@ -43,6 +42,8 @@ describe('mapViewFiltersToFilters', () => {
         type: FieldMetadataType.FULL_NAME,
         positionInRecordFilterGroup: undefined,
         recordFilterGroupId: undefined,
+        subFieldName: undefined,
+        relationTargetFieldMetadataId: null,
       },
     ];
     expect(
@@ -60,7 +61,7 @@ describe('mapViewFieldsToColumnDefinitions', () => {
         position: 1,
         size: 1,
         isVisible: false,
-        isOverridden: false,
+        isActive: true,
         definition: {
           fieldMetadataId: '1',
           label: 'label 1',
@@ -79,7 +80,7 @@ describe('mapViewFieldsToColumnDefinitions', () => {
         position: 2,
         size: 2,
         isVisible: false,
-        isOverridden: false,
+        isActive: true,
         definition: {
           fieldMetadataId: '2',
           label: 'label 2',
@@ -98,7 +99,7 @@ describe('mapViewFieldsToColumnDefinitions', () => {
         position: 3,
         size: 3,
         isVisible: true,
-        isOverridden: false,
+        isActive: true,
         definition: {
           fieldMetadataId: '3',
           label: 'label 3',
@@ -165,51 +166,5 @@ describe('mapViewFieldsToColumnDefinitions', () => {
     });
 
     expect(actualColumnDefinitions).toEqual(expectedColumnDefinitions);
-  });
-});
-
-describe('mapColumnDefinitionsToViewFields', () => {
-  it('should map ColumnDefinitions to ViewFields, setting defaults and using viewFieldId if present', () => {
-    const columnDefinitions = [
-      {
-        fieldMetadataId: 1,
-        position: 1,
-        isVisible: true,
-        viewFieldId: 'custom-id-1',
-      },
-      {
-        fieldMetadataId: 2,
-        position: 2,
-        size: 200,
-        isVisible: false,
-      },
-    ];
-
-    const expectedViewFields = [
-      {
-        id: 'custom-id-1',
-        fieldMetadataId: 1,
-        position: 1,
-        isVisible: true,
-        isOverridden: false,
-        definition: columnDefinitions[0],
-        size: undefined,
-      },
-      {
-        id: '',
-        fieldMetadataId: 2,
-        position: 2,
-        size: 200,
-        isVisible: false,
-        isOverridden: false,
-        definition: columnDefinitions[1],
-      },
-    ];
-
-    const actualViewFields = mapColumnDefinitionsToViewFields(
-      columnDefinitions as unknown as ColumnDefinition<FieldMetadata>[],
-    );
-
-    expect(actualViewFields).toEqual(expectedViewFields);
   });
 });

@@ -1,3 +1,5 @@
+import { msg } from '@lingui/core/macro';
+import { i18nLabel } from 'src/engine/workspace-manager/twenty-standard-application/utils/i18n-label.util';
 import { type FlatViewFieldGroup } from 'src/engine/metadata-modules/flat-view-field-group/types/flat-view-field-group.type';
 import {
   createStandardViewFieldGroupFlatMetadata,
@@ -14,30 +16,49 @@ export const computeStandardPersonViewFieldGroups = (
       context: {
         viewName: 'personRecordPageFields',
         viewFieldGroupName: 'general',
-        name: 'General',
+        name: i18nLabel(
+          msg({ message: `General`, context: 'viewFieldGroup.name' }),
+        ),
         position: 0,
         isVisible: true,
       },
     }),
-    personRecordPageFieldsAdditional: createStandardViewFieldGroupFlatMetadata({
+    personRecordPageFieldsWork: createStandardViewFieldGroupFlatMetadata({
       ...args,
       objectName: 'person',
       context: {
         viewName: 'personRecordPageFields',
-        viewFieldGroupName: 'additional',
-        name: 'Additional',
+        viewFieldGroupName: 'work',
+        name: i18nLabel(
+          msg({ message: `Work`, context: 'viewFieldGroup.name' }),
+        ),
         position: 1,
         isVisible: true,
       },
     }),
-    personRecordPageFieldsOther: createStandardViewFieldGroupFlatMetadata({
+    personRecordPageFieldsSocial: createStandardViewFieldGroupFlatMetadata({
       ...args,
       objectName: 'person',
       context: {
         viewName: 'personRecordPageFields',
-        viewFieldGroupName: 'other',
-        name: 'Other',
+        viewFieldGroupName: 'social',
+        name: i18nLabel(
+          msg({ message: `Social`, context: 'viewFieldGroup.name' }),
+        ),
         position: 2,
+        isVisible: true,
+      },
+    }),
+    personRecordPageFieldsSystem: createStandardViewFieldGroupFlatMetadata({
+      ...args,
+      objectName: 'person',
+      context: {
+        viewName: 'personRecordPageFields',
+        viewFieldGroupName: 'system',
+        name: i18nLabel(
+          msg({ message: `System`, context: 'viewFieldGroup.name' }),
+        ),
+        position: 3,
         isVisible: true,
       },
     }),

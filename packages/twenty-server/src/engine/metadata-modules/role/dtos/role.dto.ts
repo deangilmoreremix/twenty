@@ -7,7 +7,7 @@ import { WorkspaceMemberDTO } from 'src/engine/core-modules/user/dtos/workspace-
 import { AgentDTO } from 'src/engine/metadata-modules/ai/ai-agent/dtos/agent.dto';
 import { FieldPermissionDTO } from 'src/engine/metadata-modules/object-permission/dtos/field-permission.dto';
 import { ObjectPermissionDTO } from 'src/engine/metadata-modules/object-permission/dtos/object-permission.dto';
-import { PermissionFlagDTO } from 'src/engine/metadata-modules/permission-flag/dtos/permission-flag.dto';
+import { RolePermissionFlagDTO } from 'src/engine/metadata-modules/role-permission-flag/dtos/role-permission-flag.dto';
 import { type RoleTargetEntity } from 'src/engine/metadata-modules/role-target/role-target.entity';
 import { RowLevelPermissionPredicateGroupDTO } from 'src/engine/metadata-modules/row-level-permission-predicate/dtos/row-level-permission-predicate-group.dto';
 import { RowLevelPermissionPredicateDTO } from 'src/engine/metadata-modules/row-level-permission-predicate/dtos/row-level-permission-predicate.dto';
@@ -35,6 +35,9 @@ export class RoleDTO {
   @Field(() => UUIDScalarType, { nullable: true })
   universalIdentifier?: string;
 
+  @Field(() => UUIDScalarType)
+  applicationId: string;
+
   @Field({ nullable: false })
   label: string;
 
@@ -59,13 +62,13 @@ export class RoleDTO {
   @HideField()
   roleTargets?: Relation<RoleTargetEntity[]>;
 
-  @Field(() => [WorkspaceMemberDTO], { nullable: true })
+  @Field(() => [WorkspaceMemberDTO])
   workspaceMembers?: WorkspaceMemberDTO[];
 
-  @Field(() => [AgentDTO], { nullable: true })
+  @Field(() => [AgentDTO])
   agents?: AgentDTO[];
 
-  @Field(() => [ApiKeyForRoleDTO], { nullable: true })
+  @Field(() => [ApiKeyForRoleDTO])
   apiKeys?: ApiKeyForRoleDTO[];
 
   @Field({ nullable: false })
@@ -73,6 +76,9 @@ export class RoleDTO {
 
   @Field({ nullable: false })
   canAccessAllTools: boolean;
+
+  @Field({ nullable: false })
+  canAccessAllAgentChatChannels: boolean;
 
   @Field({ nullable: false })
   canReadAllObjectRecords: boolean;
@@ -86,14 +92,17 @@ export class RoleDTO {
   @Field({ nullable: false })
   canDestroyAllObjectRecords: boolean;
 
-  @Field(() => [PermissionFlagDTO], { nullable: true })
-  permissionFlags?: PermissionFlagDTO[];
+  @Field(() => [RolePermissionFlagDTO], { nullable: true })
+  permissionFlags?: RolePermissionFlagDTO[];
 
   @Field(() => [ObjectPermissionDTO], { nullable: true })
   objectPermissions?: ObjectPermissionDTO[];
 
   @Field(() => [FieldPermissionDTO], { nullable: true })
   fieldPermissions?: FieldPermissionDTO[];
+
+  @Field(() => [FieldPermissionDTO], { nullable: true })
+  rowLevelPermissionFieldPermissions?: FieldPermissionDTO[];
 
   @Field(() => [RowLevelPermissionPredicateDTO], { nullable: true })
   rowLevelPermissionPredicates?: RowLevelPermissionPredicateDTO[];

@@ -1,80 +1,25 @@
-import { styled } from '@linaria/react';
 import { isDefined } from 'twenty-shared/utils';
-import {
-  IconColumnInsertRight,
-  OverflowingTextWithTooltip,
-} from 'twenty-ui/display';
 
-import { NavigationMenuItemType, SidePanelPages } from 'twenty-shared/types';
-import { useNavigationMenuItemSectionItems } from '@/navigation-menu-item/display/hooks/useNavigationMenuItemSectionItems';
-import { selectedNavigationMenuItemIdInEditModeState } from '@/navigation-menu-item/common/states/selectedNavigationMenuItemIdInEditModeState';
-import { SidePanelAskAIInfo } from '@/side-panel/components/SidePanelAskAIInfo';
-import { SidePanelFolderInfo } from '@/side-panel/components/SidePanelFolderInfo';
-import { SidePanelLinkInfo } from '@/side-panel/components/SidePanelLinkInfo';
+import { SidePanelAskAiInfo } from '@/side-panel/components/SidePanelAskAiInfo';
 import { SidePanelMultipleRecordsInfo } from '@/side-panel/components/SidePanelMultipleRecordsInfo';
-import { SidePanelObjectViewRecordInfo } from '@/side-panel/components/SidePanelObjectViewRecordInfo';
-import { SidePanelPageInfoLayout } from '@/side-panel/components/SidePanelPageInfoLayout';
+import { HeaderIdentifier } from '@/ui/layout/page/components/HeaderIdentifier';
 import { SidePanelPageLayoutInfo } from '@/side-panel/components/SidePanelPageLayoutInfo';
-import { SidePanelRecordInfo } from '@/side-panel/components/SidePanelRecordInfo';
+import { SidePanelSendCampaignInfo } from '@/side-panel/components/SidePanelSendCampaignInfo';
 import { SidePanelWorkflowStepInfo } from '@/side-panel/components/SidePanelWorkflowStepInfo';
-import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomStateValue';
+import { SidePanelPages } from 'twenty-shared/types';
+import { useTheme } from 'twenty-ui/theme';
 
-import { type SidePanelContextChipProps } from '@/side-panel/components/SidePanelContextChip';
-import { useContext } from 'react';
-import { ThemeContext, themeCssVariables } from 'twenty-ui/theme-constants';
-const StyledPageTitle = styled.div`
-  color: ${themeCssVariables.font.color.primary};
-  font-size: ${themeCssVariables.font.size.sm};
-  font-weight: ${themeCssVariables.font.weight.semiBold};
-`;
+import { type SidePanelContextChipProps } from '@/side-panel/types/SidePanelContextChipProps';
 
 type SidePanelPageInfoProps = {
   pageChip: SidePanelContextChipProps | undefined;
 };
 
 export const SidePanelPageInfo = ({ pageChip }: SidePanelPageInfoProps) => {
-  const { theme } = useContext(ThemeContext);
-  const selectedNavigationMenuItemIdInEditMode = useAtomStateValue(
-    selectedNavigationMenuItemIdInEditModeState,
-  );
-  const items = useNavigationMenuItemSectionItems();
+  const theme = useTheme();
 
   if (!isDefined(pageChip)) {
     return null;
-  }
-
-  const isNavigationMenuItemEditPage =
-    pageChip.page?.page === SidePanelPages.NavigationMenuItemEdit;
-  const selectedNavItem = isNavigationMenuItemEditPage
-    ? items.find((item) => item.id === selectedNavigationMenuItemIdInEditMode)
-    : undefined;
-
-  if (isNavigationMenuItemEditPage && isDefined(selectedNavItem)) {
-    const navItemType = selectedNavItem.type;
-
-    if (navItemType === NavigationMenuItemType.FOLDER) {
-      return <SidePanelFolderInfo />;
-    }
-
-    if (navItemType === NavigationMenuItemType.LINK) {
-      return <SidePanelLinkInfo />;
-    }
-
-    if (
-      navItemType === NavigationMenuItemType.OBJECT ||
-      navItemType === NavigationMenuItemType.VIEW ||
-      navItemType === NavigationMenuItemType.RECORD
-    ) {
-      return <SidePanelObjectViewRecordInfo />;
-    }
-  }
-
-  const isRecordPage = pageChip.page?.page === SidePanelPages.ViewRecord;
-
-  if (isRecordPage && isDefined(pageChip.page?.pageId)) {
-    return (
-      <SidePanelRecordInfo sidePanelPageInstanceId={pageChip.page.pageId} />
-    );
   }
 
   const isWorkflowStepPage = pageChip.page?.page
@@ -94,19 +39,14 @@ export const SidePanelPageInfo = ({ pageChip }: SidePanelPageInfoProps) => {
     );
   }
 
-  const isPageLayoutPage = pageChip.page?.page
-    ? [
-        SidePanelPages.PageLayoutWidgetTypeSelect,
-        SidePanelPages.PageLayoutGraphTypeSelect,
-        SidePanelPages.PageLayoutIframeSettings,
-        SidePanelPages.PageLayoutTabSettings,
-        SidePanelPages.PageLayoutFieldsSettings,
-        SidePanelPages.PageLayoutRecordTableSettings,
-      ].includes(pageChip.page?.page)
-    : false;
+  const pageLayoutSidePanelTarget = pageChip.page?.pageLayoutSidePanelTarget;
 
-  if (isPageLayoutPage) {
-    return <SidePanelPageLayoutInfo />;
+  if (isDefined(pageLayoutSidePanelTarget)) {
+    return (
+      <SidePanelPageLayoutInfo
+        pageLayoutId={pageLayoutSidePanelTarget.pageLayoutId}
+      />
+    );
   }
 
   const isMultipleRecordsPage =
@@ -120,29 +60,47 @@ export const SidePanelPageInfo = ({ pageChip }: SidePanelPageInfoProps) => {
     );
   }
 
-  const isAskAIPage = pageChip.page?.page === SidePanelPages.AskAI;
+  const isSendCampaignPage =
+    pageChip.page?.page === SidePanelPages.SendCampaign;
 
-  if (isAskAIPage) {
-    return <SidePanelAskAIInfo />;
-  }
-
-  if (pageChip.page?.page === SidePanelPages.NavigationMenuAddItem) {
+  if (isSendCampaignPage && isDefined(pageChip.page?.pageId)) {
     return (
-      <SidePanelPageInfoLayout
-        icon={
-          <IconColumnInsertRight
-            size={theme.icon.size.md}
-            color={theme.font.color.tertiary}
-          />
-        }
-        title={<OverflowingTextWithTooltip text={pageChip.text ?? ''} />}
+      <SidePanelSendCampaignInfo
+        sidePanelPageInstanceId={pageChip.page.pageId}
       />
     );
   }
 
-  return (
-    <StyledPageTitle>
-      <OverflowingTextWithTooltip text={pageChip.text ?? ''} />
-    </StyledPageTitle>
-  );
+  const isAskAiPage = pageChip.page?.page === SidePanelPages.AskAI;
+
+  if (isAskAiPage) {
+    return <SidePanelAskAiInfo />;
+  }
+
+  const shouldShowPageIcon = pageChip.page?.page
+    ? [
+        SidePanelPages.EmailBlockSettings,
+        SidePanelPages.EmailPageStyle,
+        SidePanelPages.EmailBlockStyle,
+        SidePanelPages.AddToMessageList,
+        SidePanelPages.ShareRecord,
+        SidePanelPages.MergeWithRecord,
+      ].includes(pageChip.page.page)
+    : false;
+
+  if (shouldShowPageIcon && isDefined(pageChip.page)) {
+    const PageIcon = pageChip.page.pageIcon;
+
+    return (
+      <HeaderIdentifier
+        icon={
+          <PageIcon size={theme.icon.size.md} stroke={theme.icon.stroke.sm} />
+        }
+        iconColor={theme.font.color.tertiary}
+        title={pageChip.text ?? ''}
+      />
+    );
+  }
+
+  return <HeaderIdentifier title={pageChip.text ?? ''} />;
 };

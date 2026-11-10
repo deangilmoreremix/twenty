@@ -1,50 +1,13 @@
 import crypto from 'crypto';
-import { promises as fs } from 'fs';
-import { join } from 'path';
-import { tmpdir } from 'os';
 
 import request from 'supertest';
-import * as tar from 'tar';
 import { type DataSource } from 'typeorm';
+import { createAppTarball } from 'test/integration/metadata/suites/application/utils/create-app-tarball.util';
 import { uploadAppTarball } from 'test/integration/metadata/suites/application/utils/upload-app-tarball.util';
 
-const TEST_WORKSPACE_ID = '20202020-1c25-4d02-bf25-6aeccf7ea419';
+import { SEED_APPLE_WORKSPACE_ID } from 'src/engine/workspace-manager/dev-seeder/core/constants/seeder-workspaces.constant';
 
-const createTestTarball = async (
-  files: Record<string, string>,
-): Promise<Buffer> => {
-  const tempId = crypto.randomUUID();
-  const sourceDir = join(tmpdir(), `test-tarball-src-${tempId}`);
-  const tarballPath = join(tmpdir(), `test-tarball-${tempId}.tar.gz`);
-
-  await fs.mkdir(sourceDir, { recursive: true });
-
-  for (const [name, content] of Object.entries(files)) {
-    const filePath = join(sourceDir, name);
-    const dir = filePath.substring(0, filePath.lastIndexOf('/'));
-
-    if (dir !== sourceDir) {
-      await fs.mkdir(dir, { recursive: true });
-    }
-    await fs.writeFile(filePath, content);
-  }
-
-  await tar.create(
-    {
-      file: tarballPath,
-      gzip: true,
-      cwd: sourceDir,
-    },
-    Object.keys(files),
-  );
-
-  const buffer = await fs.readFile(tarballPath);
-
-  await fs.rm(sourceDir, { recursive: true, force: true });
-  await fs.rm(tarballPath, { force: true });
-
-  return buffer;
-};
+const TEST_WORKSPACE_ID = SEED_APPLE_WORKSPACE_ID;
 
 const createValidManifest = (universalIdentifier: string) =>
   JSON.stringify({
@@ -68,6 +31,8 @@ const createValidManifest = (universalIdentifier: string) =>
     views: [],
     navigationMenuItems: [],
     pageLayouts: [],
+    pageLayoutTabs: [],
+    pageLayoutWidgets: [],
   });
 
 const insertRegistrationWithSource = async (
@@ -125,7 +90,7 @@ describe('App Distribution (integration)', () => {
 
   describe('Upload tarball via GraphQL', () => {
     it('should reject tarball without manifest.json', async () => {
-      const tarball = await createTestTarball({
+      const tarball = await createAppTarball({
         'readme.txt': 'no manifest here',
       });
 
@@ -146,7 +111,7 @@ describe('App Distribution (integration)', () => {
       const uid = crypto.randomUUID();
       const manifest = createValidManifest(uid);
 
-      const tarball = await createTestTarball({
+      const tarball = await createAppTarball({
         'manifest.json': manifest,
         'package.json': JSON.stringify({
           name: 'test-app',
@@ -173,11 +138,47 @@ describe('App Distribution (integration)', () => {
       expect(rows[0].sourceType).toBe('tarball');
     });
 
-    it('should update existing tarball registration on re-upload', async () => {
+    it('should reject a tarball whose manifest identifier is not a valid UUID', async () => {
+      const tarball = await createAppTarball({
+        'manifest.json': createValidManifest('not-a-uuid'),
+        'package.json': JSON.stringify({ name: 'test-app', version: '1.0.0' }),
+      });
+
+      const { errors } = await uploadAppTarball({
+        tarballBuffer: tarball,
+        expectToFail: true,
+      });
+
+      expect(errors).toBeDefined();
+    });
+
+    it('should reject a tarball whose manifest has no application identifier', async () => {
+      const tarball = await createAppTarball({
+        'manifest.json': JSON.stringify({
+          application: {
+            displayName: 'App Without Identifier',
+            description: 'A test app',
+            applicationVariables: {},
+            packageJsonChecksum: null,
+            yarnLockChecksum: null,
+          },
+        }),
+        'package.json': JSON.stringify({ name: 'test-app', version: '1.0.0' }),
+      });
+
+      const { errors } = await uploadAppTarball({
+        tarballBuffer: tarball,
+        expectToFail: true,
+      });
+
+      expect(errors).toBeDefined();
+    });
+
+    it('should fail to update existing version', async () => {
       const uid = crypto.randomUUID();
       const manifest = createValidManifest(uid);
 
-      const tarball = await createTestTarball({
+      const tarball = await createAppTarball({
         'manifest.json': manifest,
         'package.json': JSON.stringify({
           name: 'test-app',
@@ -192,8 +193,52 @@ describe('App Distribution (integration)', () => {
 
       createdRegistrationIds.push(firstResult.data!.uploadAppTarball.id);
 
-      const secondResult = await uploadAppTarball({
+      const { errors } = await uploadAppTarball({
         tarballBuffer: tarball,
+        universalIdentifier: uid,
+        expectToFail: true,
+      });
+
+      expect(errors).toBeDefined();
+
+      expect(
+        errors?.some((error: { message: string }) =>
+          error.message.includes(
+            'version must be higher than the currently deployed version',
+          ),
+        ),
+      ).toBe(true);
+    });
+
+    it('should update existing tarball registration on re-upload', async () => {
+      const uid = crypto.randomUUID();
+      const manifest = createValidManifest(uid);
+
+      const firstTarball = await createAppTarball({
+        'manifest.json': manifest,
+        'package.json': JSON.stringify({
+          name: 'test-app',
+          version: '1.1.0',
+        }),
+      });
+
+      const firstResult = await uploadAppTarball({
+        tarballBuffer: firstTarball,
+        universalIdentifier: uid,
+      });
+
+      createdRegistrationIds.push(firstResult.data!.uploadAppTarball.id);
+
+      const secondTarball = await createAppTarball({
+        'manifest.json': manifest,
+        'package.json': JSON.stringify({
+          name: 'test-app',
+          version: '1.2.0',
+        }),
+      });
+
+      const secondResult = await uploadAppTarball({
+        tarballBuffer: secondTarball,
         universalIdentifier: uid,
       });
 
@@ -217,7 +262,7 @@ describe('App Distribution (integration)', () => {
       createdRegistrationIds.push(regId);
 
       const manifest = createValidManifest(uid);
-      const tarball = await createTestTarball({
+      const tarball = await createAppTarball({
         'manifest.json': manifest,
         'package.json': JSON.stringify({
           name: 'test-app',
@@ -251,7 +296,7 @@ describe('App Distribution (integration)', () => {
       createdRegistrationIds.push(regId);
 
       const manifest = createValidManifest(uid);
-      const tarball = await createTestTarball({
+      const tarball = await createAppTarball({
         'manifest.json': manifest,
         'package.json': JSON.stringify({
           name: 'test-app',

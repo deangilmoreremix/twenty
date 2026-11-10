@@ -1,31 +1,13 @@
 import { gql } from 'graphql-tag';
-import { makeMetadataAPIRequest } from 'test/integration/metadata/suites/utils/make-metadata-api-request.util';
-import { makeMetadataAPIRequestWithMemberRole } from 'test/integration/metadata/suites/utils/make-metadata-api-request-with-member-role.util';
-import { updateFeatureFlag } from 'test/integration/metadata/suites/utils/update-feature-flag.util';
-import { FeatureFlagKey } from 'twenty-shared/types';
+import { makeMetadataApiRequestWithMemberRole } from 'test/integration/metadata/suites/utils/make-metadata-api-request-with-member-role.util';
+import { makeMetadataApiRequest } from 'test/integration/metadata/suites/utils/make-metadata-api-request.util';
 
 import { CONNECTED_ACCOUNT_DATA_SEED_IDS } from 'src/engine/workspace-manager/dev-seeder/data/constants/connected-account-data-seeds.constant';
 
 describe('connectedAccountResolver (e2e)', () => {
-  beforeAll(async () => {
-    await updateFeatureFlag({
-      featureFlag: FeatureFlagKey.IS_CONNECTED_ACCOUNT_MIGRATED,
-      value: true,
-      expectToFail: false,
-    });
-  });
-
-  afterAll(async () => {
-    await updateFeatureFlag({
-      featureFlag: FeatureFlagKey.IS_CONNECTED_ACCOUNT_MIGRATED,
-      value: false,
-      expectToFail: false,
-    });
-  });
-
   describe('myConnectedAccounts', () => {
-    it('should return only the current user connected accounts', async () => {
-      const response = await makeMetadataAPIRequest({
+    it('should not return another user private connected account', async () => {
+      const response = await makeMetadataApiRequest({
         query: gql`
           query MyConnectedAccounts {
             myConnectedAccounts {
@@ -41,18 +23,124 @@ describe('connectedAccountResolver (e2e)', () => {
       expect(response.body.errors).toBeUndefined();
 
       const accounts = response.body.data.myConnectedAccounts;
-      const accountIds = accounts.map(
+      const accountIds = accounts.map((account: { id: string }) => account.id);
+
+      expect(accountIds).toContain(CONNECTED_ACCOUNT_DATA_SEED_IDS.JANE);
+      expect(accountIds).not.toContain(CONNECTED_ACCOUNT_DATA_SEED_IDS.JONY);
+    });
+
+    it('should return a workspace-shared account owned by someone else', async () => {
+      const response = await makeMetadataApiRequestWithMemberRole({
+        query: gql`
+          query MyConnectedAccounts {
+            myConnectedAccounts {
+              id
+              handle
+            }
+          }
+        `,
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.body.errors).toBeUndefined();
+
+      const accountIds = response.body.data.myConnectedAccounts.map(
         (account: { id: string }) => account.id,
       );
 
-      expect(accountIds).toContain(CONNECTED_ACCOUNT_DATA_SEED_IDS.JANE);
-      expect(accountIds).not.toContain(
-        CONNECTED_ACCOUNT_DATA_SEED_IDS.JONY,
+      expect(accountIds).toContain(
+        CONNECTED_ACCOUNT_DATA_SEED_IDS.SUPPORT_GROUP,
       );
     });
 
+    it('should not offer an archived workspace-shared account to other members', async () => {
+      const response = await makeMetadataApiRequestWithMemberRole({
+        query: gql`
+          query MyConnectedAccounts {
+            myConnectedAccounts {
+              id
+            }
+          }
+        `,
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.body.errors).toBeUndefined();
+
+      const accountIds = response.body.data.myConnectedAccounts.map(
+        (account: { id: string }) => account.id,
+      );
+
+      expect(accountIds).not.toContain(
+        CONNECTED_ACCOUNT_DATA_SEED_IDS.TIM_SHARED_ARCHIVED,
+      );
+    });
+
+    it('should list the caller own accounts before workspace-shared ones', async () => {
+      const response = await makeMetadataApiRequestWithMemberRole({
+        query: gql`
+          query MyConnectedAccounts {
+            myConnectedAccounts {
+              id
+            }
+          }
+        `,
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.body.errors).toBeUndefined();
+
+      const accountIds = response.body.data.myConnectedAccounts.map(
+        (account: { id: string }) => account.id,
+      );
+
+      expect(
+        accountIds.indexOf(CONNECTED_ACCOUNT_DATA_SEED_IDS.JONY),
+      ).toBeLessThan(
+        accountIds.indexOf(CONNECTED_ACCOUNT_DATA_SEED_IDS.SUPPORT_GROUP),
+      );
+    });
+
+    it('should resolve the account of every message channel the caller can see', async () => {
+      const channelsResponse = await makeMetadataApiRequestWithMemberRole({
+        query: gql`
+          query MyMessageChannels {
+            myMessageChannels {
+              id
+              connectedAccountId
+            }
+          }
+        `,
+      });
+
+      const accountsResponse = await makeMetadataApiRequestWithMemberRole({
+        query: gql`
+          query MyConnectedAccounts {
+            myConnectedAccounts {
+              id
+            }
+          }
+        `,
+      });
+
+      expect(channelsResponse.body.errors).toBeUndefined();
+      expect(accountsResponse.body.errors).toBeUndefined();
+
+      const accountIds = accountsResponse.body.data.myConnectedAccounts.map(
+        (account: { id: string }) => account.id,
+      );
+      const channelAccountIds =
+        channelsResponse.body.data.myMessageChannels.map(
+          (messageChannel: { connectedAccountId: string }) =>
+            messageChannel.connectedAccountId,
+        );
+
+      expect(channelAccountIds.length).toBeGreaterThan(0);
+      expect(accountIds).toEqual(expect.arrayContaining(channelAccountIds));
+    });
+
     it('should not return sensitive fields', async () => {
-      const response = await makeMetadataAPIRequest({
+      const response = await makeMetadataApiRequest({
         query: gql`
           query MyConnectedAccounts {
             myConnectedAccounts {
@@ -88,7 +176,7 @@ describe('connectedAccountResolver (e2e)', () => {
     });
 
     it('should reject requesting hidden fields via GraphQL', async () => {
-      const response = await makeMetadataAPIRequest({
+      const response = await makeMetadataApiRequest({
         query: gql`
           query MyConnectedAccounts {
             myConnectedAccounts {
@@ -105,53 +193,9 @@ describe('connectedAccountResolver (e2e)', () => {
     });
   });
 
-  describe('connectedAccounts (admin listing)', () => {
-    it('should return all workspace accounts for admin', async () => {
-      const response = await makeMetadataAPIRequest({
-        query: gql`
-          query ConnectedAccounts {
-            connectedAccounts {
-              id
-              handle
-              provider
-            }
-          }
-        `,
-      });
-
-      expect(response.status).toBe(200);
-      expect(response.body.errors).toBeUndefined();
-
-      const accounts = response.body.data.connectedAccounts;
-      const accountIds = accounts.map(
-        (account: { id: string }) => account.id,
-      );
-
-      expect(accountIds).toContain(CONNECTED_ACCOUNT_DATA_SEED_IDS.JANE);
-      expect(accountIds).toContain(CONNECTED_ACCOUNT_DATA_SEED_IDS.JONY);
-    });
-
-    it('should also be accessible for member role (tool permission)', async () => {
-      const response = await makeMetadataAPIRequestWithMemberRole({
-        query: gql`
-          query ConnectedAccounts {
-            connectedAccounts {
-              id
-              handle
-            }
-          }
-        `,
-      });
-
-      expect(response.status).toBe(200);
-      expect(response.body.errors).toBeUndefined();
-      expect(response.body.data.connectedAccounts).toBeDefined();
-    });
-  });
-
   describe('deleteConnectedAccount', () => {
     it('should allow deleting own account', async () => {
-      const response = await makeMetadataAPIRequest({
+      const response = await makeMetadataApiRequest({
         query: gql`
           mutation DeleteConnectedAccount($id: UUID!) {
             deleteConnectedAccount(id: $id) {
@@ -170,7 +214,7 @@ describe('connectedAccountResolver (e2e)', () => {
     });
 
     it('should deny deleting another user account', async () => {
-      const response = await makeMetadataAPIRequest({
+      const response = await makeMetadataApiRequest({
         query: gql`
           mutation DeleteConnectedAccount($id: UUID!) {
             deleteConnectedAccount(id: $id) {
@@ -183,6 +227,79 @@ describe('connectedAccountResolver (e2e)', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.errors?.[0]?.extensions?.code).toBe('FORBIDDEN');
+    });
+
+    it('should deny a member deleting a workspace-shared account owned by someone else', async () => {
+      const response = await makeMetadataApiRequestWithMemberRole({
+        query: gql`
+          mutation DeleteConnectedAccount($id: UUID!) {
+            deleteConnectedAccount(id: $id) {
+              id
+            }
+          }
+        `,
+        variables: { id: CONNECTED_ACCOUNT_DATA_SEED_IDS.SUPPORT_GROUP },
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.body.errors?.[0]?.extensions?.code).toBe('FORBIDDEN');
+    });
+
+    it('should keep a denied member able to use the workspace-shared account', async () => {
+      const response = await makeMetadataApiRequestWithMemberRole({
+        query: gql`
+          query MyMessageChannels($connectedAccountId: UUID) {
+            myMessageChannels(connectedAccountId: $connectedAccountId) {
+              id
+            }
+          }
+        `,
+        variables: {
+          connectedAccountId: CONNECTED_ACCOUNT_DATA_SEED_IDS.SUPPORT_GROUP,
+        },
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.body.errors).toBeUndefined();
+      expect(response.body.data.myMessageChannels.length).toBeGreaterThan(0);
+    });
+
+    it('should allow a member deleting a workspace-shared account they own', async () => {
+      const response = await makeMetadataApiRequestWithMemberRole({
+        query: gql`
+          mutation DeleteConnectedAccount($id: UUID!) {
+            deleteConnectedAccount(id: $id) {
+              id
+            }
+          }
+        `,
+        variables: { id: CONNECTED_ACCOUNT_DATA_SEED_IDS.JONY_SHARED },
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.body.errors).toBeUndefined();
+      expect(response.body.data.deleteConnectedAccount.id).toBe(
+        CONNECTED_ACCOUNT_DATA_SEED_IDS.JONY_SHARED,
+      );
+    });
+
+    it('should allow an admin deleting a workspace-shared account', async () => {
+      const response = await makeMetadataApiRequest({
+        query: gql`
+          mutation DeleteConnectedAccount($id: UUID!) {
+            deleteConnectedAccount(id: $id) {
+              id
+            }
+          }
+        `,
+        variables: { id: CONNECTED_ACCOUNT_DATA_SEED_IDS.CONTACT_GROUP },
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.body.errors).toBeUndefined();
+      expect(response.body.data.deleteConnectedAccount.id).toBe(
+        CONNECTED_ACCOUNT_DATA_SEED_IDS.CONTACT_GROUP,
+      );
     });
   });
 });

@@ -16,13 +16,6 @@ export const TOO_MANY_ROOT_RESOLVERS_QUERY_GQL_FIELDS = gql`
         }
       }
     }
-    favorites {
-      edges {
-        node {
-          id
-        }
-      }
-    }
     tasks {
       edges {
         node {
@@ -86,13 +79,6 @@ export const TOO_MANY_ROOT_RESOLVERS_QUERY_GQL_FIELDS = gql`
         }
       }
     }
-    calendarChannels {
-      edges {
-        node {
-          id
-        }
-      }
-    }
     calendarChannelEventAssociations {
       edges {
         node {
@@ -101,13 +87,6 @@ export const TOO_MANY_ROOT_RESOLVERS_QUERY_GQL_FIELDS = gql`
       }
     }
     messageThreads {
-      edges {
-        node {
-          id
-        }
-      }
-    }
-    messageChannels {
       edges {
         node {
           id
@@ -142,7 +121,28 @@ export const TOO_MANY_ROOT_RESOLVERS_QUERY_GQL_FIELDS = gql`
         }
       }
     }
-    workflowAutomatedTriggers {
+    dashboards {
+      edges {
+        node {
+          id
+        }
+      }
+    }
+    messages {
+      edges {
+        node {
+          id
+        }
+      }
+    }
+    messageParticipants {
+      edges {
+        node {
+          id
+        }
+      }
+    }
+    workspaceMembers {
       edges {
         node {
           id

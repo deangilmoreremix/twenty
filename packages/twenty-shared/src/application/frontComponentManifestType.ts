@@ -1,20 +1,34 @@
+import { type FRONT_COMPONENT_WIDGET_PAGE_LAYOUT_TYPES } from '@/application/constants/FrontComponentWidgetPageLayoutTypes';
 import { type SyncableEntityOptions } from '@/application/syncableEntityOptionsType';
+import {
+  type CommandMenuCoreObjectName,
+  type CommandMenuItemAvailabilityType,
+} from '@/types';
+import { type PageLayoutType } from '@/types/page-layout/PageLayoutType';
 
 export type CommandMenuItemManifest = SyncableEntityOptions & {
   label: string;
   shortLabel?: string;
+  /** @deprecated icon will be ignored in favor of application icon */
   icon?: string;
   isPinned?: boolean;
-  availabilityType?: 'GLOBAL' | 'RECORD_SELECTION' | 'FALLBACK';
+  availabilityType?: CommandMenuItemAvailabilityType;
   availabilityObjectUniversalIdentifier?: string;
+  availabilityCoreObjectName?: CommandMenuCoreObjectName;
   frontComponentUniversalIdentifier: string;
   conditionalAvailabilityExpression?: string;
+  conditionalPinnedExpression?: string;
 };
 
-export type FrontComponentCommandManifest = Omit<
-  CommandMenuItemManifest,
-  'frontComponentUniversalIdentifier'
->;
+export type FrontComponentWidgetPageLayoutType =
+  (typeof FRONT_COMPONENT_WIDGET_PAGE_LAYOUT_TYPES)[number];
+
+export type FrontComponentWidgetAvailabilityManifest =
+  | {
+      pageLayoutType: PageLayoutType.RECORD_PAGE;
+      objectUniversalIdentifiers?: string[];
+    }
+  | { pageLayoutType: PageLayoutType.DASHBOARD };
 
 export type FrontComponentManifest = {
   universalIdentifier: string;
@@ -25,6 +39,6 @@ export type FrontComponentManifest = {
   builtComponentChecksum: string;
   componentName: string;
   isHeadless?: boolean;
+  widgetAvailability?: FrontComponentWidgetAvailabilityManifest;
   usesSdkClient?: boolean;
-  command?: FrontComponentCommandManifest;
 };

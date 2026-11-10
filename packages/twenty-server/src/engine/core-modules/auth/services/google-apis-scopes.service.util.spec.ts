@@ -2,7 +2,7 @@ import { getGoogleApisOauthScopes } from 'src/engine/core-modules/auth/utils/get
 
 import { includesExpectedScopes } from './google-apis-scopes.service.util';
 
-describe('GoogleAPIScopesService', () => {
+describe('GoogleApiScopesService', () => {
   describe('includesExpectedScopes', () => {
     it('should return true when all expected scopes are present', () => {
       const scopes = [
@@ -92,24 +92,7 @@ describe('GoogleAPIScopesService', () => {
       expect(result).toBe(false);
     });
 
-    it('should work with the current Google API scopes when draft email is disabled', () => {
-      const actualGoogleScopes = [
-        'https://www.googleapis.com/auth/calendar.events',
-        'https://www.googleapis.com/auth/gmail.readonly',
-        'https://www.googleapis.com/auth/gmail.send',
-        'https://www.googleapis.com/auth/profile.emails.read',
-        'https://www.googleapis.com/auth/userinfo.email',
-        'https://www.googleapis.com/auth/userinfo.profile',
-        'openid',
-      ];
-      const expectedScopes = getGoogleApisOauthScopes(false);
-
-      const result = includesExpectedScopes(actualGoogleScopes, expectedScopes);
-
-      expect(result).toBe(true);
-    });
-
-    it('should work with the current Google API scopes when draft email is enabled', () => {
+    it('should work with the current Google API scopes', () => {
       const actualGoogleScopes = [
         'https://www.googleapis.com/auth/calendar.events',
         'https://www.googleapis.com/auth/gmail.readonly',
@@ -120,7 +103,7 @@ describe('GoogleAPIScopesService', () => {
         'https://www.googleapis.com/auth/userinfo.profile',
         'openid',
       ];
-      const expectedScopes = getGoogleApisOauthScopes(true);
+      const expectedScopes = getGoogleApisOauthScopes();
 
       const result = includesExpectedScopes(actualGoogleScopes, expectedScopes);
 

@@ -3,16 +3,18 @@ import { useSidePanelWorkflowNavigation } from '@/side-panel/pages/workflow/hook
 import { sidePanelNavigationStackState } from '@/side-panel/states/sidePanelNavigationStackState';
 import { useAtomComponentState } from '@/ui/utilities/state/jotai/hooks/useAtomComponentState';
 import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateValue';
+import { useSetAtomState } from '@/ui/utilities/state/jotai/hooks/useSetAtomState';
 import { workflowVisualizerWorkflowIdComponentState } from '@/workflow/states/workflowVisualizerWorkflowIdComponentState';
 import { useResetWorkflowInsertStepIds } from '@/workflow/workflow-diagram/hooks/useResetWorkflowInsertStepIds';
 import { workflowSelectedNodeComponentState } from '@/workflow/workflow-diagram/states/workflowSelectedNodeComponentState';
 import { type WorkflowDiagramStepNodeData } from '@/workflow/workflow-diagram/types/WorkflowDiagram';
 import { getWorkflowNodeIconKey } from '@/workflow/workflow-diagram/utils/getWorkflowNodeIconKey';
 import { WorkflowDiagramStepNodeEditableContent } from '@/workflow/workflow-diagram/workflow-nodes/components/WorkflowDiagramStepNodeEditableContent';
-import { useSetAtomState } from '@/ui/utilities/state/jotai/hooks/useSetAtomState';
+import { useDeleteStep } from '@/workflow/workflow-steps/hooks/useDeleteStep';
+import { useDuplicateStep } from '@/workflow/workflow-steps/hooks/useDuplicateStep';
 import { useContext } from 'react';
 import { isDefined } from 'twenty-shared/utils';
-import { useIcons } from 'twenty-ui/display';
+import { useIcons } from 'twenty-ui/icon/provider';
 
 export const WorkflowDiagramStepNodeEditable = ({
   id,
@@ -22,6 +24,8 @@ export const WorkflowDiagramStepNodeEditable = ({
   data: WorkflowDiagramStepNodeData;
 }) => {
   const { getIcon } = useIcons();
+  const { deleteStep } = useDeleteStep();
+  const { duplicateStep } = useDuplicateStep();
 
   const workflowVisualizerWorkflowId = useAtomComponentStateValue(
     workflowVisualizerWorkflowIdComponentState,
@@ -33,11 +37,16 @@ export const WorkflowDiagramStepNodeEditable = ({
 
   const selected = workflowSelectedNode === id;
 
-  const { openWorkflowEditStepInSidePanel } = useSidePanelWorkflowNavigation();
+  const {
+    openWorkflowEditStepInSidePanel,
+    openWorkflowEditStepTypeInSidePanel,
+    openWorkflowTriggerTypeInSidePanel,
+  } = useSidePanelWorkflowNavigation();
 
   const { resetWorkflowInsertStepIds } = useResetWorkflowInsertStepIds();
 
-  const { isInSidePanel } = useContext(CommandMenuContext);
+  const { commandMenuContextApi } = useContext(CommandMenuContext);
+  const isInSidePanel = commandMenuContextApi.isInSidePanel;
 
   const setSidePanelNavigationStack = useSetAtomState(
     sidePanelNavigationStackState,
@@ -53,15 +62,30 @@ export const WorkflowDiagramStepNodeEditable = ({
     setWorkflowSelectedNode(id);
 
     if (isDefined(workflowVisualizerWorkflowId)) {
-      openWorkflowEditStepInSidePanel(
-        workflowVisualizerWorkflowId,
-        data.name,
-        getIcon(getWorkflowNodeIconKey(data)),
-        id,
-      );
+      openWorkflowEditStepInSidePanel({
+        workflowId: workflowVisualizerWorkflowId,
+        title: data.name,
+        icon: getIcon(getWorkflowNodeIconKey(data)),
+        stepId: id,
+      });
+    }
+  };
 
+  const handleChangeNode = () => {
+    if (!isDefined(workflowVisualizerWorkflowId)) {
       return;
     }
+
+    if (data.nodeType === 'trigger') {
+      openWorkflowTriggerTypeInSidePanel(workflowVisualizerWorkflowId);
+      return;
+    }
+
+    openWorkflowEditStepTypeInSidePanel(workflowVisualizerWorkflowId);
+  };
+
+  const handleDelete = () => {
+    deleteStep(data.stepId);
   };
 
   return (
@@ -70,6 +94,13 @@ export const WorkflowDiagramStepNodeEditable = ({
       data={data}
       selected={selected}
       onClick={handleClick}
+      onChangeNode={handleChangeNode}
+      onDuplicateNode={
+        data.nodeType === 'action'
+          ? () => duplicateStep({ stepId: data.stepId })
+          : undefined
+      }
+      onDelete={handleDelete}
     />
   );
 };

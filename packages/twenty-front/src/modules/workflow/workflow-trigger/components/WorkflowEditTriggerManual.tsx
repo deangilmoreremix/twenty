@@ -1,5 +1,5 @@
-import { isDefined } from 'twenty-shared/utils';
 import { useFilteredObjectMetadataItems } from '@/object-metadata/hooks/useFilteredObjectMetadataItems';
+import { useObjectMetadataSelectHelpers } from '@/object-metadata/hooks/useObjectMetadataSelectHelpers';
 import { IconPicker } from '@/ui/input/components/IconPicker';
 import { Select } from '@/ui/input/components/Select';
 import { SelectControl } from '@/ui/input/components/SelectControl';
@@ -13,10 +13,11 @@ import { getManualTriggerDefaultSettings } from '@/workflow/workflow-trigger/uti
 import { styled } from '@linaria/react';
 import { useLingui } from '@lingui/react/macro';
 import { QUERY_MAX_RECORDS } from 'twenty-shared/constants';
+import { isDefined } from 'twenty-shared/utils';
 import { TRIGGER_STEP_ID } from 'twenty-shared/workflow';
-import { useIcons } from 'twenty-ui/display';
-import { type SelectOption } from 'twenty-ui/input';
-import { themeCssVariables } from 'twenty-ui/theme-constants';
+import { useIcons } from 'twenty-ui/icon/provider';
+import { type SelectOption } from 'twenty-ui/primitives/input';
+import { themeCssVariables } from 'twenty-ui/theme';
 
 type WorkflowEditTriggerManualProps = {
   trigger: WorkflowManualTrigger;
@@ -44,6 +45,8 @@ const StyledDescription = styled.span`
   margin-top: 1px;
 `;
 
+const MANUAL_TRIGGER_VISIBLE_ICON_COUNT = 72;
+
 const StyledIconPickerContainer = styled.div`
   display: flex;
   flex-direction: column;
@@ -56,6 +59,8 @@ export const WorkflowEditTriggerManual = ({
   const { t } = useLingui();
 
   const { getIcon } = useIcons();
+  const { getSelectIconPropsFromObjectMetadataItem } =
+    useObjectMetadataSelectHelpers();
   const maxRecordsFormatted = QUERY_MAX_RECORDS.toLocaleString();
 
   const { activeNonSystemObjectMetadataItems } =
@@ -65,7 +70,7 @@ export const WorkflowEditTriggerManual = ({
     activeNonSystemObjectMetadataItems.map((item) => ({
       label: item.labelPlural,
       value: item.nameSingular,
-      Icon: getIcon(item.icon),
+      ...getSelectIconPropsFromObjectMetadataItem(item),
     }));
 
   const availability = trigger.settings.availability;
@@ -90,7 +95,10 @@ export const WorkflowEditTriggerManual = ({
           fullWidth
           disabled={triggerOptions.readonly}
           value={availability?.type}
-          options={MANUAL_TRIGGER_AVAILABILITY_TYPE_OPTIONS}
+          options={MANUAL_TRIGGER_AVAILABILITY_TYPE_OPTIONS.map((option) => ({
+            ...option,
+            label: t(option.label),
+          }))}
           onChange={(availabilityType) => {
             if (triggerOptions.readonly === true) {
               return;
@@ -106,7 +114,7 @@ export const WorkflowEditTriggerManual = ({
               }),
             });
           }}
-          dropdownOffset={{ y: 4 }}
+          dropdownSideOffset={4}
           dropdownWidth={GenericDropdownContentWidth.ExtraLarge}
         />
 
@@ -141,20 +149,22 @@ export const WorkflowEditTriggerManual = ({
                 },
               });
             }}
-            dropdownOffset={{ y: 4 }}
+            dropdownSideOffset={4}
             dropdownWidth={GenericDropdownContentWidth.ExtraLarge}
+            withSearchInput
           />
         ) : null}
 
         <IconPicker
           dropdownId="workflow-edit-manual-trigger-icon"
           selectedIconKey={trigger.settings.icon}
-          dropdownOffset={{ y: -12 }}
+          dropdownSideOffset={-12}
           dropdownWidth={GenericDropdownContentWidth.ExtraLarge}
-          maxIconsVisible={9 * 8} // 9 columns * 8 lines
+          maxIconsVisible={MANUAL_TRIGGER_VISIBLE_ICON_COUNT}
           disabled={triggerOptions.readonly}
           clickableComponent={
             <StyledIconPickerContainer
+              aria-label={t`Command Icon`}
               onClick={(e) => {
                 if (triggerOptions.readonly === true) {
                   e.stopPropagation();
@@ -195,7 +205,10 @@ export const WorkflowEditTriggerManual = ({
           description={t`Display a button in the top navbar to trigger this workflow`}
           fullWidth
           value={trigger.settings.isPinned}
-          options={MANUAL_TRIGGER_IS_PINNED_OPTIONS}
+          options={MANUAL_TRIGGER_IS_PINNED_OPTIONS.map((option) => ({
+            ...option,
+            label: t(option.label),
+          }))}
           disabled={triggerOptions.readonly}
           onChange={(updatedValue) => {
             if (triggerOptions.readonly === true) {
@@ -211,7 +224,7 @@ export const WorkflowEditTriggerManual = ({
               },
             });
           }}
-          dropdownOffset={{ y: 4 }}
+          dropdownSideOffset={4}
           dropdownWidth={GenericDropdownContentWidth.ExtraLarge}
         />
       </WorkflowStepBody>

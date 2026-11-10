@@ -40,11 +40,11 @@ export class AgentMessagePartDTO {
   @Field(() => String, { nullable: true })
   state: string | null;
 
+  @Field(() => Boolean, { nullable: true })
+  providerExecuted: boolean | null;
+
   @Field(() => String, { nullable: true })
   errorMessage: string | null;
-
-  @Field(() => GraphQLJSON, { nullable: true })
-  errorDetails: Record<string, unknown> | null;
 
   @Field(() => String, { nullable: true })
   sourceUrlSourceId: string | null;

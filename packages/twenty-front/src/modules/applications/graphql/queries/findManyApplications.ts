@@ -6,6 +6,7 @@ export const FIND_MANY_APPLICATIONS = gql`
       id
       name
       description
+      logoUrl
       version
       universalIdentifier
       applicationRegistrationId
@@ -14,6 +15,7 @@ export const FIND_MANY_APPLICATIONS = gql`
         latestAvailableVersion
         sourceType
       }
+      defaultRoleId
     }
   }
 `;

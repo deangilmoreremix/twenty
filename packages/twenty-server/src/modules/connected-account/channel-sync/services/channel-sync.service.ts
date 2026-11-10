@@ -1,22 +1,33 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+
+import { POLLED_MESSAGE_CHANNEL_TYPES } from 'twenty-shared/constants';
+import {
+  CalendarChannelSyncStage,
+  CalendarChannelSyncStatus,
+  MessageChannelSyncStage,
+  WebhookSubscriptionChannelType,
+} from 'twenty-shared/types';
+import { In, Repository } from 'typeorm';
 
 import { InjectMessageQueue } from 'src/engine/core-modules/message-queue/decorators/message-queue.decorator';
 import { MessageQueue } from 'src/engine/core-modules/message-queue/message-queue.constants';
 import { MessageQueueService } from 'src/engine/core-modules/message-queue/services/message-queue.service';
-import { CalendarChannelDataAccessService } from 'src/engine/metadata-modules/calendar-channel/data-access/services/calendar-channel-data-access.service';
-import { MessageChannelDataAccessService } from 'src/engine/metadata-modules/message-channel/data-access/services/message-channel-data-access.service';
-import { GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspace-datasource/global-workspace-orm.manager';
+import { TwentyConfigService } from 'src/engine/core-modules/twenty-config/twenty-config.service';
+import { CalendarChannelEntity } from 'src/engine/metadata-modules/calendar-channel/entities/calendar-channel.entity';
+import { MessageChannelEntity } from 'src/engine/metadata-modules/message-channel/entities/message-channel.entity';
+import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
 import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
 import {
   CalendarEventListFetchJob,
   type CalendarEventListFetchJobData,
 } from 'src/modules/calendar/calendar-event-import-manager/jobs/calendar-event-list-fetch.job';
+import { WEBHOOK_SUBSCRIPTION_JOB_RETRY_LIMIT } from 'src/modules/connected-account/webhook-subscription-manager/constants/webhook-subscription-job-retry-limit.constant';
 import {
-  CalendarChannelSyncStage,
-  CalendarChannelSyncStatus,
-} from 'src/modules/calendar/common/standard-objects/calendar-channel.workspace-entity';
+  CreateWebhookSubscriptionJob,
+  type CreateWebhookSubscriptionJobData,
+} from 'src/modules/connected-account/webhook-subscription-manager/jobs/create-webhook-subscription.job';
 import { MessageChannelSyncStatusService } from 'src/modules/messaging/common/services/message-channel-sync-status.service';
-import { MessageChannelSyncStage } from 'src/modules/messaging/common/standard-objects/message-channel.workspace-entity';
 import {
   MessagingMessageListFetchJob,
   type MessagingMessageListFetchJobData,
@@ -29,15 +40,22 @@ export type StartChannelSyncInput = {
 
 @Injectable()
 export class ChannelSyncService {
+  private readonly logger = new Logger(ChannelSyncService.name);
+
   constructor(
-    private readonly globalWorkspaceOrmManager: GlobalWorkspaceOrmManager,
+    private readonly workspaceOrmManager: WorkspaceOrmManager,
     @InjectMessageQueue(MessageQueue.messagingQueue)
     private readonly messageQueueService: MessageQueueService,
     @InjectMessageQueue(MessageQueue.calendarQueue)
     private readonly calendarQueueService: MessageQueueService,
-    private readonly messageChannelDataAccessService: MessageChannelDataAccessService,
+    @InjectMessageQueue(MessageQueue.webhookQueue)
+    private readonly webhookQueueService: MessageQueueService,
+    @InjectRepository(MessageChannelEntity)
+    private readonly messageChannelRepository: Repository<MessageChannelEntity>,
     private readonly messageChannelSyncStatusService: MessageChannelSyncStatusService,
-    private readonly calendarChannelDataAccessService: CalendarChannelDataAccessService,
+    @InjectRepository(CalendarChannelEntity)
+    private readonly calendarChannelRepository: Repository<CalendarChannelEntity>,
+    private readonly twentyConfigService: TwentyConfigService,
   ) {}
 
   async startChannelSync(input: StartChannelSyncInput): Promise<void> {
@@ -53,14 +71,15 @@ export class ChannelSyncService {
   ): Promise<void> {
     const authContext = buildSystemAuthContext(workspaceId);
 
-    await this.globalWorkspaceOrmManager.executeInWorkspaceContext(async () => {
-      const messageChannels = await this.messageChannelDataAccessService.find(
-        workspaceId,
-        {
+    await this.workspaceOrmManager.executeInWorkspaceContext(async () => {
+      const messageChannels = await this.messageChannelRepository.find({
+        where: {
           connectedAccountId,
           syncStage: MessageChannelSyncStage.PENDING_CONFIGURATION,
+          type: In([...POLLED_MESSAGE_CHANNEL_TYPES]),
+          workspaceId,
         },
-      );
+      });
 
       for (const messageChannel of messageChannels) {
         await this.messageChannelSyncStatusService.markAsMessagesListFetchScheduled(
@@ -74,7 +93,40 @@ export class ChannelSyncService {
             workspaceId,
             messageChannelId: messageChannel.id,
           },
+          {
+            workspaceId,
+            isWorkspaceJob: true,
+          },
         );
+
+        if (
+          !this.twentyConfigService.get(
+            'IS_CONNECTED_ACCOUNT_WEBHOOK_SUBSCRIPTION_ENABLED',
+          )
+        ) {
+          continue;
+        }
+
+        try {
+          await this.webhookQueueService.add<CreateWebhookSubscriptionJobData>(
+            CreateWebhookSubscriptionJob.name,
+            {
+              channelType: WebhookSubscriptionChannelType.MESSAGING,
+              channelId: messageChannel.id,
+              workspaceId,
+            },
+            {
+              retryLimit: WEBHOOK_SUBSCRIPTION_JOB_RETRY_LIMIT,
+              workspaceId,
+              isWorkspaceJob: true,
+            },
+          );
+        } catch (error) {
+          this.logger.warn(
+            `Failed to enqueue webhook subscription job for message channel ${messageChannel.id}`,
+            error,
+          );
+        }
       }
     }, authContext);
   }
@@ -85,21 +137,18 @@ export class ChannelSyncService {
   ): Promise<void> {
     const authContext = buildSystemAuthContext(workspaceId);
 
-    await this.globalWorkspaceOrmManager.executeInWorkspaceContext(async () => {
-      const calendarChannels = await this.calendarChannelDataAccessService.find(
-        workspaceId,
-        {
-          where: {
-            connectedAccountId,
-            syncStage: CalendarChannelSyncStage.PENDING_CONFIGURATION,
-          },
+    await this.workspaceOrmManager.executeInWorkspaceContext(async () => {
+      const calendarChannels = await this.calendarChannelRepository.find({
+        where: {
+          connectedAccountId,
+          syncStage: CalendarChannelSyncStage.PENDING_CONFIGURATION,
+          workspaceId,
         },
-      );
+      });
 
       for (const calendarChannel of calendarChannels) {
-        await this.calendarChannelDataAccessService.update(
-          workspaceId,
-          { id: calendarChannel.id },
+        await this.calendarChannelRepository.update(
+          { id: calendarChannel.id, workspaceId },
           {
             syncStage:
               CalendarChannelSyncStage.CALENDAR_EVENT_LIST_FETCH_SCHEDULED,
@@ -113,7 +162,40 @@ export class ChannelSyncService {
             workspaceId,
             calendarChannelId: calendarChannel.id,
           },
+          {
+            workspaceId,
+            isWorkspaceJob: true,
+          },
         );
+
+        if (
+          !this.twentyConfigService.get(
+            'IS_CONNECTED_ACCOUNT_WEBHOOK_SUBSCRIPTION_ENABLED',
+          )
+        ) {
+          continue;
+        }
+
+        try {
+          await this.webhookQueueService.add<CreateWebhookSubscriptionJobData>(
+            CreateWebhookSubscriptionJob.name,
+            {
+              channelType: WebhookSubscriptionChannelType.CALENDAR,
+              channelId: calendarChannel.id,
+              workspaceId,
+            },
+            {
+              retryLimit: WEBHOOK_SUBSCRIPTION_JOB_RETRY_LIMIT,
+              workspaceId,
+              isWorkspaceJob: true,
+            },
+          );
+        } catch (error) {
+          this.logger.warn(
+            `Failed to enqueue webhook subscription job for calendar channel ${calendarChannel.id}`,
+            error,
+          );
+        }
       }
     }, authContext);
   }

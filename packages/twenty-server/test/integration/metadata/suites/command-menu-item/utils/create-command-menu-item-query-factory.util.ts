@@ -13,11 +13,19 @@ const DEFAULT_COMMAND_MENU_ITEM_GQL_FIELDS = `
     id
     name
   }
+  engineComponentKey
   label
   icon
   isPinned
   availabilityType
   availabilityObjectMetadataId
+  availabilityCoreObjectName
+  navigationTargetObjectMetadataId
+  payload {
+    ... on PathCommandMenuItemPayload {
+      path
+    }
+  }
   applicationId
   createdAt
   updatedAt

@@ -5,24 +5,34 @@ import {
   IconAppWindow,
   IconChartPie,
   IconFrame,
-  IconList,
+  IconLayoutDashboard,
+  IconListDetails,
+  IconListSearch,
+  IconPerspective,
+  IconPlus,
   IconTable,
-} from 'twenty-ui/display';
+} from 'twenty-ui/icon';
 
 export const getPageLayoutIcon = (page: PageLayoutSidePanelPage) => {
   switch (page) {
-    case SidePanelPages.PageLayoutWidgetTypeSelect:
+    case SidePanelPages.PageLayoutDashboardWidgetTypeSelect:
       return IconAppWindow;
-    case SidePanelPages.PageLayoutGraphTypeSelect:
+    case SidePanelPages.DashboardChartSettings:
       return IconChartPie;
-    case SidePanelPages.PageLayoutIframeSettings:
+    case SidePanelPages.DashboardIframeSettings:
       return IconFrame;
     case SidePanelPages.PageLayoutTabSettings:
-      return IconAppWindow;
-    case SidePanelPages.PageLayoutFieldsSettings:
-      return IconList;
-    case SidePanelPages.PageLayoutRecordTableSettings:
+      return IconPerspective;
+    case SidePanelPages.PageLayoutWidgetSettings:
+      return IconLayoutDashboard;
+    case SidePanelPages.RecordPageFieldsSettings:
+      return IconListDetails;
+    case SidePanelPages.RecordPageFieldSettings:
+      return IconListSearch;
+    case SidePanelPages.DashboardRecordTableSettings:
       return IconTable;
+    case SidePanelPages.PageLayoutRecordPageWidgetTypeSelect:
+      return IconPlus;
     default:
       assertUnreachable(page);
   }

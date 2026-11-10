@@ -16,6 +16,7 @@ import {
 } from './PageLayoutTestWrapper';
 
 jest.mock('uuid', () => ({
+  ...jest.requireActual('uuid'),
   v4: jest.fn(),
 }));
 
@@ -141,6 +142,80 @@ describe('useCreatePageLayoutTab', () => {
     expect(result.current.pageLayoutDraft.tabs[1].title).toBe('Tab 2');
   });
 
+  it('should default icon to IconPerspective for new RECORD_PAGE tabs', () => {
+    const uuidModule = require('uuid');
+    uuidModule.v4.mockReturnValue('mock-uuid');
+
+    const { result } = renderHook(
+      () => {
+        const setPageLayoutDraft = useSetAtomComponentState(
+          pageLayoutDraftComponentState,
+          PAGE_LAYOUT_TEST_INSTANCE_ID,
+        );
+        const pageLayoutDraft = useAtomComponentStateValue(
+          pageLayoutDraftComponentState,
+          PAGE_LAYOUT_TEST_INSTANCE_ID,
+        );
+        const createTab = useCreatePageLayoutTab({
+          pageLayoutId: PAGE_LAYOUT_TEST_INSTANCE_ID,
+          tabListInstanceId: getTabListInstanceIdFromPageLayoutId(
+            PAGE_LAYOUT_TEST_INSTANCE_ID,
+          ),
+        });
+        return { setPageLayoutDraft, pageLayoutDraft, createTab };
+      },
+      {
+        wrapper: PageLayoutTestWrapper,
+      },
+    );
+
+    act(() => {
+      result.current.setPageLayoutDraft({
+        id: 'test-layout',
+        name: 'Test Layout',
+        type: PageLayoutType.RECORD_PAGE,
+        isFirstTabPinned: true,
+        objectMetadataId: null,
+        tabs: [],
+      });
+    });
+
+    act(() => {
+      result.current.createTab.createPageLayoutTab();
+    });
+
+    expect(result.current.pageLayoutDraft.tabs[0].icon).toBe('IconPerspective');
+  });
+
+  it('should leave icon as null for new DASHBOARD tabs', () => {
+    const uuidModule = require('uuid');
+    uuidModule.v4.mockReturnValue('mock-uuid');
+
+    const { result } = renderHook(
+      () => ({
+        createTab: useCreatePageLayoutTab({
+          pageLayoutId: PAGE_LAYOUT_TEST_INSTANCE_ID,
+          tabListInstanceId: getTabListInstanceIdFromPageLayoutId(
+            PAGE_LAYOUT_TEST_INSTANCE_ID,
+          ),
+        }),
+        pageLayoutDraft: useAtomComponentStateValue(
+          pageLayoutDraftComponentState,
+          PAGE_LAYOUT_TEST_INSTANCE_ID,
+        ),
+      }),
+      {
+        wrapper: PageLayoutTestWrapper,
+      },
+    );
+
+    act(() => {
+      result.current.createTab.createPageLayoutTab();
+    });
+
+    expect(result.current.pageLayoutDraft.tabs[0].icon).toBeNull();
+  });
+
   it('should default layoutMode to VERTICAL_LIST for record page layouts', () => {
     const uuidModule = require('uuid');
     uuidModule.v4.mockReturnValue('mock-uuid');
@@ -173,6 +248,7 @@ describe('useCreatePageLayoutTab', () => {
         id: 'test-layout',
         name: 'Test Layout',
         type: PageLayoutType.RECORD_PAGE,
+        isFirstTabPinned: true,
         objectMetadataId: null,
         tabs: [],
       });
@@ -302,16 +378,19 @@ describe('useCreatePageLayoutTab', () => {
         id: 'test-layout',
         name: 'Test Layout',
         type: PageLayoutType.DASHBOARD,
+        isFirstTabPinned: true,
         objectMetadataId: null,
         tabs: [
           {
+            isSystemSideEffect: false,
+            universalIdentifier: 'universal-identifier-mock',
             id: 'existing-tab',
             applicationId: '',
             title: 'Existing Tab',
+            isActive: true,
             position: 0,
             pageLayoutId: 'test-layout',
             widgets: [],
-            isOverridden: false,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             deletedAt: null,

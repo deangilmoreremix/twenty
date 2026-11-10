@@ -5,11 +5,14 @@ import { ALL_METADATA_NAME } from 'twenty-shared/metadata';
 import { isDefined } from 'twenty-shared/utils';
 
 import { findFlatEntityByUniversalIdentifier } from 'src/engine/metadata-modules/flat-entity/utils/find-flat-entity-by-universal-identifier.util';
-import { PermissionsExceptionCode } from 'src/engine/metadata-modules/permissions/permissions.exception';
+import { PermissionsExceptionCode } from 'src/engine/permissions/permissions.exception';
 import { FailedFlatEntityValidation } from 'src/engine/workspace-manager/workspace-migration/workspace-migration-builder/builders/types/failed-flat-entity-validation.type';
 import { getEmptyFlatEntityValidationError } from 'src/engine/workspace-manager/workspace-migration/workspace-migration-builder/builders/utils/get-flat-entity-validation-error.util';
 import { FlatEntityUpdateValidationArgs } from 'src/engine/workspace-manager/workspace-migration/workspace-migration-builder/types/universal-flat-entity-update-validation-args.type';
 import { UniversalFlatEntityValidationArgs } from 'src/engine/workspace-manager/workspace-migration/workspace-migration-builder/types/universal-flat-entity-validation-args.type';
+import { validateObjectPermissionGrantsNoDisabledAction } from 'src/engine/workspace-manager/workspace-migration/workspace-migration-builder/validators/utils/validate-object-permission-grants-no-disabled-action.util';
+import { getRoleNotEditableErrors } from 'src/engine/workspace-manager/workspace-migration/workspace-migration-builder/validators/utils/get-role-not-editable-errors.util';
+import { validateRoleBelongsToCallerApplication } from 'src/engine/workspace-manager/workspace-migration/workspace-migration-builder/validators/utils/validate-role-belongs-to-caller-application.util';
 
 @Injectable()
 export class FlatObjectPermissionValidatorService {
@@ -20,6 +23,7 @@ export class FlatObjectPermissionValidatorService {
       flatRoleMaps,
       flatObjectMetadataMaps,
     },
+    buildOptions,
   }: UniversalFlatEntityValidationArgs<
     typeof ALL_METADATA_NAME.objectPermission
   >): FailedFlatEntityValidation<'objectPermission', 'create'> {
@@ -60,12 +64,17 @@ export class FlatObjectPermissionValidatorService {
         message: t`Role not found`,
         userFriendlyMessage: msg`Role not found`,
       });
-    } else if (!referencedRole.isEditable) {
-      validationResult.errors.push({
-        code: PermissionsExceptionCode.ROLE_NOT_EDITABLE,
-        message: t`Role is not editable`,
-        userFriendlyMessage: msg`This role cannot be modified because it is a system role. Only custom roles can be edited.`,
-      });
+    } else {
+      validationResult.errors.push(
+        ...validateRoleBelongsToCallerApplication({
+          referencedRole,
+          buildOptions,
+        }),
+      );
+
+      validationResult.errors.push(
+        ...getRoleNotEditableErrors({ flatRole: referencedRole, buildOptions }),
+      );
     }
 
     const referencedObjectMetadata = findFlatEntityByUniversalIdentifier({
@@ -81,6 +90,18 @@ export class FlatObjectPermissionValidatorService {
         userFriendlyMessage: msg`Object metadata not found`,
       });
     }
+
+    validationResult.errors.push(
+      ...validateObjectPermissionGrantsNoDisabledAction({
+        flatObjectPermission: flatObjectPermissionToValidate,
+        flatObjectMetadata: referencedObjectMetadata,
+        flatRole: referencedRole,
+        applicationDefaultRoleUniversalIdentifier:
+          buildOptions.applicationDefaultRoleUniversalIdentifier,
+        workspaceCustomApplicationUniversalIdentifier:
+          buildOptions.workspaceCustomApplicationUniversalIdentifier,
+      }),
+    );
 
     const duplicateForSameRoleAndObject = Object.values(
       optimisticFlatObjectPermissionMaps.byUniversalIdentifier,
@@ -114,6 +135,7 @@ export class FlatObjectPermissionValidatorService {
       flatRoleMaps,
       flatObjectMetadataMaps,
     },
+    buildOptions,
   }: FlatEntityUpdateValidationArgs<
     typeof ALL_METADATA_NAME.objectPermission
   >): FailedFlatEntityValidation<'objectPermission', 'update'> {
@@ -156,12 +178,17 @@ export class FlatObjectPermissionValidatorService {
         message: t`Role not found`,
         userFriendlyMessage: msg`Role not found`,
       });
-    } else if (!referencedRole.isEditable) {
-      validationResult.errors.push({
-        code: PermissionsExceptionCode.ROLE_NOT_EDITABLE,
-        message: t`Role is not editable`,
-        userFriendlyMessage: msg`This role cannot be modified because it is a system role. Only custom roles can be edited.`,
-      });
+    } else {
+      validationResult.errors.push(
+        ...validateRoleBelongsToCallerApplication({
+          referencedRole,
+          buildOptions,
+        }),
+      );
+
+      validationResult.errors.push(
+        ...getRoleNotEditableErrors({ flatRole: referencedRole, buildOptions }),
+      );
     }
 
     if (isDefined(flatEntityUpdate.objectMetadataUniversalIdentifier)) {
@@ -179,6 +206,22 @@ export class FlatObjectPermissionValidatorService {
         });
       }
     }
+
+    validationResult.errors.push(
+      ...validateObjectPermissionGrantsNoDisabledAction({
+        flatObjectPermission: updatedFlatObjectPermission,
+        flatObjectMetadata: findFlatEntityByUniversalIdentifier({
+          universalIdentifier:
+            updatedFlatObjectPermission.objectMetadataUniversalIdentifier,
+          flatEntityMaps: flatObjectMetadataMaps,
+        }),
+        flatRole: referencedRole,
+        applicationDefaultRoleUniversalIdentifier:
+          buildOptions.applicationDefaultRoleUniversalIdentifier,
+        workspaceCustomApplicationUniversalIdentifier:
+          buildOptions.workspaceCustomApplicationUniversalIdentifier,
+      }),
+    );
 
     const duplicateForSameRoleAndObject = Object.values(
       optimisticFlatObjectPermissionMaps.byUniversalIdentifier,
@@ -209,6 +252,7 @@ export class FlatObjectPermissionValidatorService {
       flatObjectPermissionMaps: optimisticFlatObjectPermissionMaps,
       flatRoleMaps,
     },
+    buildOptions,
   }: UniversalFlatEntityValidationArgs<
     typeof ALL_METADATA_NAME.objectPermission
   >): FailedFlatEntityValidation<'objectPermission', 'delete'> {
@@ -238,12 +282,13 @@ export class FlatObjectPermissionValidatorService {
         flatEntityMaps: flatRoleMaps,
       });
 
-      if (isDefined(referencedRole) && !referencedRole.isEditable) {
-        validationResult.errors.push({
-          code: PermissionsExceptionCode.ROLE_NOT_EDITABLE,
-          message: t`Role is not editable`,
-          userFriendlyMessage: msg`This role cannot be modified because it is a system role. Only custom roles can be edited.`,
-        });
+      if (isDefined(referencedRole)) {
+        validationResult.errors.push(
+          ...getRoleNotEditableErrors({
+            flatRole: referencedRole,
+            buildOptions,
+          }),
+        );
       }
     }
 

@@ -1,24 +1,29 @@
-import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import groupBy from 'lodash.groupby';
+import { Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
 
-import { FeatureFlagKey } from 'twenty-shared/types';
 import { WorkspaceActivationStatus } from 'twenty-shared/workspace';
-import { DataSource, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 
+import {
+  CalendarChannelSyncStage,
+  WebhookSubscriptionStatus,
+} from 'twenty-shared/types';
 import { SentryCronMonitor } from 'src/engine/core-modules/cron/sentry-cron-monitor.decorator';
 import { ExceptionHandlerService } from 'src/engine/core-modules/exception-handler/exception-handler.service';
-import { FeatureFlagService } from 'src/engine/core-modules/feature-flag/services/feature-flag.service';
 import { InjectMessageQueue } from 'src/engine/core-modules/message-queue/decorators/message-queue.decorator';
 import { Process } from 'src/engine/core-modules/message-queue/decorators/process.decorator';
 import { Processor } from 'src/engine/core-modules/message-queue/decorators/processor.decorator';
 import { MessageQueue } from 'src/engine/core-modules/message-queue/message-queue.constants';
 import { MessageQueueService } from 'src/engine/core-modules/message-queue/services/message-queue.service';
-import { WorkspaceEntity } from 'src/engine/core-modules/workspace/workspace.entity';
-import { getWorkspaceSchemaName } from 'src/engine/workspace-datasource/utils/get-workspace-schema-name.util';
 import {
   CalendarEventListFetchJob,
   type CalendarEventListFetchJobData,
 } from 'src/modules/calendar/calendar-event-import-manager/jobs/calendar-event-list-fetch.job';
-import { CalendarChannelSyncStage } from 'src/modules/calendar/common/standard-objects/calendar-channel.workspace-entity';
+import { CalendarChannelEntity } from 'src/engine/metadata-modules/calendar-channel/entities/calendar-channel.entity';
+import { isLastSuccessfulSyncStale } from 'src/modules/connected-account/utils/is-last-successful-sync-stale.util';
+import { isThrottled } from 'src/modules/connected-account/utils/is-throttled';
+import { toIsoStringOrNull } from 'src/utils/date/toIsoStringOrNull';
 
 export const CALENDAR_EVENT_LIST_FETCH_CRON_PATTERN = '*/5 * * * *';
 
@@ -26,15 +31,14 @@ export const CALENDAR_EVENT_LIST_FETCH_CRON_PATTERN = '*/5 * * * *';
   queueName: MessageQueue.cronQueue,
 })
 export class CalendarEventListFetchCronJob {
+  private readonly logger = new Logger(CalendarEventListFetchCronJob.name);
+
   constructor(
-    @InjectRepository(WorkspaceEntity)
-    private readonly workspaceRepository: Repository<WorkspaceEntity>,
     @InjectMessageQueue(MessageQueue.calendarQueue)
     private readonly messageQueueService: MessageQueueService,
     private readonly exceptionHandlerService: ExceptionHandlerService,
-    @InjectDataSource()
-    private readonly coreDataSource: DataSource,
-    private readonly featureFlagService: FeatureFlagService,
+    @InjectRepository(CalendarChannelEntity)
+    private readonly calendarChannelRepository: Repository<CalendarChannelEntity>,
   ) {}
 
   @Process(CalendarEventListFetchCronJob.name)
@@ -43,45 +47,96 @@ export class CalendarEventListFetchCronJob {
     CALENDAR_EVENT_LIST_FETCH_CRON_PATTERN,
   )
   async handle(): Promise<void> {
-    const activeWorkspaces = await this.workspaceRepository.find({
-      where: {
-        activationStatus: WorkspaceActivationStatus.ACTIVE,
-      },
-    });
+    const pendingCalendarChannelsAcrossWorkspaces =
+      await this.calendarChannelRepository.find({
+        where: {
+          isSyncEnabled: true,
+          syncStage: CalendarChannelSyncStage.CALENDAR_EVENT_LIST_FETCH_PENDING,
+          workspace: {
+            activationStatus: WorkspaceActivationStatus.ACTIVE,
+            deletedAt: IsNull(),
+          },
+        },
+      });
 
-    for (const activeWorkspace of activeWorkspaces) {
+    const pendingCalendarChannelsByWorkspaceId = groupBy(
+      pendingCalendarChannelsAcrossWorkspaces,
+      'workspaceId',
+    );
+
+    for (const [workspaceId, pendingCalendarChannels] of Object.entries(
+      pendingCalendarChannelsByWorkspaceId,
+    )) {
       try {
-        const now = new Date().toISOString();
-
-        // TODO: remove workspace schema branch once IS_CONNECTED_ACCOUNT_MIGRATED feature flag is removed
-        const isMigrated = await this.featureFlagService.isFeatureEnabled(
-          FeatureFlagKey.IS_CONNECTED_ACCOUNT_MIGRATED,
-          activeWorkspace.id,
+        const calendarChannelsToSchedule = pendingCalendarChannels.filter(
+          (calendarChannel) =>
+            !isThrottled(
+              toIsoStringOrNull(calendarChannel.syncStageStartedAt),
+              calendarChannel.throttleFailureCount,
+            ) &&
+            (calendarChannel.webhookSubscriptionStatus !==
+              WebhookSubscriptionStatus.ACTIVE ||
+              isLastSuccessfulSyncStale(
+                toIsoStringOrNull(calendarChannel.syncedAt),
+              )),
         );
 
-        const [calendarChannels] = isMigrated
-          ? await this.coreDataSource.query(
-              `UPDATE core."calendarChannel" SET "syncStage" = '${CalendarChannelSyncStage.CALENDAR_EVENT_LIST_FETCH_SCHEDULED}', "syncStageStartedAt" = COALESCE("syncStageStartedAt", '${now}')
-               WHERE "workspaceId" = '${activeWorkspace.id}' AND "isSyncEnabled" = true AND "syncStage" = '${CalendarChannelSyncStage.CALENDAR_EVENT_LIST_FETCH_PENDING}' RETURNING *`,
-            )
-          : await this.coreDataSource.query(
-              `UPDATE ${getWorkspaceSchemaName(activeWorkspace.id)}."calendarChannel" SET "syncStage" = '${CalendarChannelSyncStage.CALENDAR_EVENT_LIST_FETCH_SCHEDULED}', "syncStageStartedAt" = COALESCE("syncStageStartedAt", '${now}')
-               WHERE "isSyncEnabled" = true AND "syncStage" = '${CalendarChannelSyncStage.CALENDAR_EVENT_LIST_FETCH_PENDING}' RETURNING *`,
-            );
+        const throttledCount =
+          pendingCalendarChannels.length - calendarChannelsToSchedule.length;
 
-        for (const calendarChannel of calendarChannels) {
+        if (throttledCount > 0) {
+          this.logger.log(
+            `Skipped ${throttledCount} throttled calendar channels for workspace ${workspaceId}`,
+          );
+        }
+
+        if (calendarChannelsToSchedule.length === 0) {
+          continue;
+        }
+
+        const calendarChannelIds = calendarChannelsToSchedule.map(
+          (calendarChannel) => calendarChannel.id,
+        );
+
+        const updateResult = await this.calendarChannelRepository
+          .createQueryBuilder()
+          .update()
+          .set({
+            syncStage:
+              CalendarChannelSyncStage.CALENDAR_EVENT_LIST_FETCH_SCHEDULED,
+            syncStageStartedAt: new Date(),
+          })
+          .where({
+            id: In(calendarChannelIds),
+            workspaceId,
+            isSyncEnabled: true,
+            syncStage:
+              CalendarChannelSyncStage.CALENDAR_EVENT_LIST_FETCH_PENDING,
+          })
+          .returning('id')
+          .execute();
+
+        const updatedIds = updateResult.raw.map(
+          (row: { id: string }) => row.id,
+        );
+
+        for (const calendarChannelId of updatedIds) {
           await this.messageQueueService.add<CalendarEventListFetchJobData>(
             CalendarEventListFetchJob.name,
             {
-              calendarChannelId: calendarChannel.id,
-              workspaceId: activeWorkspace.id,
+              calendarChannelId,
+              workspaceId,
+            },
+            {
+              workspaceId,
+              isWorkspaceJob: true,
             },
           );
         }
       } catch (error) {
         this.exceptionHandlerService.captureExceptions([error], {
           workspace: {
-            id: activeWorkspace.id,
+            id: workspaceId,
           },
         });
       }

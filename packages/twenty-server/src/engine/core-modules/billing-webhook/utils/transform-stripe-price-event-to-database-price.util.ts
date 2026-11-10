@@ -15,7 +15,6 @@ export const transformStripePriceEventToDatabasePrice = (
     stripePriceId: data.id,
     active: data.active,
     stripeProductId: String(data.product),
-    stripeMeterId: data.recurring?.meter,
     currency: data.currency.toUpperCase(),
     nickname: data.nickname === null ? undefined : data.nickname,
     taxBehavior: data.tax_behavior
@@ -25,7 +24,8 @@ export const transformStripePriceEventToDatabasePrice = (
     billingScheme: getBillingPriceBillingScheme(data.billing_scheme),
     unitAmountDecimal:
       data.unit_amount_decimal === null ? undefined : data.unit_amount_decimal,
-    unitAmount: data.unit_amount ? Number(data.unit_amount) : undefined,
+    unitAmount:
+      data.unit_amount === null ? undefined : Number(data.unit_amount),
     transformQuantity:
       data.transform_quantity === null ? undefined : data.transform_quantity,
     usageType: data.recurring?.usage_type
@@ -38,6 +38,7 @@ export const transformStripePriceEventToDatabasePrice = (
       data.currency_options === null ? undefined : data.currency_options,
     tiers: data.tiers === null ? undefined : data.tiers,
     recurring: data.recurring === null ? undefined : data.recurring,
+    metadata: data.metadata ?? {},
   };
 };
 

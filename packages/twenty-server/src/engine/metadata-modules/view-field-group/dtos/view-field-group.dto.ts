@@ -1,14 +1,13 @@
 import { Field, HideField, ObjectType } from '@nestjs/graphql';
 
-import { IDField } from '@ptc-org/nestjs-query-graphql';
-
+import { type AuthoredOverrides } from 'src/engine/metadata-modules/overrides/types/authored-overrides.type';
 import { UUIDScalarType } from 'src/engine/api/graphql/workspace-schema-builder/graphql-types/scalars';
 import { type ViewFieldGroupOverrides } from 'src/engine/metadata-modules/view-field-group/entities/view-field-group.entity';
 import { ViewFieldDTO } from 'src/engine/metadata-modules/view-field/dtos/view-field.dto';
 
 @ObjectType('ViewFieldGroup')
 export class ViewFieldGroupDTO {
-  @IDField(() => UUIDScalarType)
+  @Field(() => UUIDScalarType)
   id: string;
 
   @Field({ nullable: false })
@@ -26,11 +25,17 @@ export class ViewFieldGroupDTO {
   @Field(() => UUIDScalarType, { nullable: false })
   workspaceId: string;
 
+  @HideField()
+  applicationId: string;
+
   @Field()
   createdAt: Date;
 
   @Field()
   updatedAt: Date;
+
+  @Field(() => Boolean, { nullable: false })
+  isActive: boolean;
 
   @Field(() => Date, { nullable: true })
   deletedAt?: Date | null;
@@ -38,9 +43,12 @@ export class ViewFieldGroupDTO {
   @Field(() => [ViewFieldDTO])
   viewFields?: ViewFieldDTO[];
 
-  @Field(() => Boolean, { nullable: false })
+  @Field(() => Boolean, {
+    nullable: false,
+    deprecationReason: 'isOverridden is deprecated',
+  })
   isOverridden: boolean;
 
   @HideField()
-  overrides?: ViewFieldGroupOverrides | null;
+  overrides?: AuthoredOverrides<ViewFieldGroupOverrides> | null;
 }

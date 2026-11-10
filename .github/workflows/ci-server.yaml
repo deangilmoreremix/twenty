@@ -13,6 +13,7 @@ concurrency:
 
 env:
   SERVER_BUILD_CACHE_KEY: server-build
+  NODE_COMPILE_CACHE: ${{ github.workspace }}/.cache/node-compile
 
 jobs:
   changed-files-check:
@@ -25,9 +26,21 @@ jobs:
         packages/twenty-server/**
         packages/twenty-front/src/generated/**
         packages/twenty-front/src/generated-metadata/**
+        packages/twenty-front/src/generated-admin/**
         packages/twenty-client-sdk/**
         packages/twenty-emails/**
         packages/twenty-shared/**
+        .github/actions/spawn-twenty-server/**
+        .github/actions/test-twenty-app/**
+        .github/workflows/ci-server.yaml
+
+  upgrade-changed-files-check:
+    if: github.event_name != 'merge_group'
+    uses: ./.github/workflows/changed-files.yaml
+    with:
+      files: |
+        packages/twenty-server/src/database/commands/upgrade-version-command/**
+        packages/twenty-server/src/engine/core-modules/upgrade/**
 
   server-build:
     needs: changed-files-check
@@ -36,7 +49,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Fetch custom Github Actions and base branch history
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 10
       - name: Install dependencies
@@ -64,18 +77,53 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Fetch custom Github Actions and base branch history
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 10
       - name: Install dependencies
         uses: ./.github/actions/yarn-install
       - name: Build twenty-shared
         run: npx nx build twenty-shared
-      - name: Server / Run lint & typecheck
+      - name: Server / Run lint, typecheck & lingui extract
         uses: ./.github/actions/nx-affected
         with:
           tag: scope:backend
-          tasks: lint,typecheck
+          tasks: lint,typecheck,lingui:extract
+      # Separate step so compile never races extract on the .po files.
+      - name: Server / Run lingui compile
+        uses: ./.github/actions/nx-affected
+        with:
+          tag: scope:backend
+          tasks: lingui:compile
+
+  server-upgrade-mutation-guard:
+    if: github.event_name != 'merge_group'
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch custom Github Actions and base branch history
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 2
+      # HEAD is the pull_request merge ref; its first parent is the exact main
+      # commit it was merged with. pull_request.base.sha can lag behind that,
+      # making commands merged into main since then look added by this PR.
+      - name: Resolve merged base commit
+        id: merged-base
+        shell: bash
+        run: |
+          if git rev-parse -q --verify HEAD^2 >/dev/null; then
+            BASE_SHA=$(git rev-parse HEAD^1)
+          else
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          fi
+          echo "sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
+      - name: Validate upgrade command mutations
+        uses: ./.github/actions/upgrade-mutation-guard
+        with:
+          base_sha: ${{ steps.merged-base.outputs.sha }}
+          allow_previous_version_mutation: ${{ contains(github.event.pull_request.labels.*.name, 'ci:allow-previous-version-upgrade-mutation') }}
+          allow_next_version_mutation: ${{ contains(github.event.pull_request.labels.*.name, 'ci:allow-next-version-upgrade-mutation') }}
 
   server-validation:
     needs: server-build
@@ -83,12 +131,10 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: twentycrm/twenty-postgres-spilo
+        image: postgres:18
         env:
-          PGUSER_SUPERUSER: postgres
-          PGPASSWORD_SUPERUSER: postgres
-          ALLOW_NOSSL: 'true'
-          SPILO_PROVIDER: 'local'
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
         ports:
           - 5432:5432
         options: >-
@@ -102,7 +148,7 @@ jobs:
           - 6379:6379
     steps:
       - name: Fetch custom Github Actions and base branch history
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 10
       - name: Install dependencies
@@ -122,7 +168,6 @@ jobs:
           PGPASSWORD=postgres psql -h localhost -p 5432 -U postgres -d postgres -c 'CREATE DATABASE "default";'
           PGPASSWORD=postgres psql -h localhost -p 5432 -U postgres -d postgres -c 'CREATE DATABASE "test";'
           npx nx run twenty-server:database:init:prod
-          npx nx run twenty-server:database:migrate:prod
       - name: Worker / Run
         run: |
           timeout 30s npx nx run twenty-server:worker || exit_code=$?
@@ -135,7 +180,7 @@ jobs:
         run: npx nx start:ci twenty-server &
       - name: Waiting for server starting...
         run: |
-          for i in {1..10}; do
+          for i in {1..60}; do
             if curl -f http://localhost:3000/healthz; then
               echo "Server ready!"
               exit 0
@@ -147,15 +192,18 @@ jobs:
           exit 1
       - name: Server / Check for Pending Migrations
         run: |
-          CORE_MIGRATION_OUTPUT=$(npx nx run twenty-server:typeorm migration:generate core-migration-check -d src/database/typeorm/core/core.datasource.ts || true)
+          npx nx database:migrate:generate twenty-server -- --name pending-migration-check || true
 
-          CORE_MIGRATION_FILE=$(ls packages/twenty-server/*core-migration-check.ts 2>/dev/null || echo "")
+          if ! git diff --quiet; then
+            echo "::error::Unexpected migration files were generated. Please run 'npx nx database:migrate:generate twenty-server -- --name <migration-name>' and commit the result."
+            echo ""
+            echo "The following migration changes were detected:"
+            echo "==================================================="
+            git diff
+            echo "==================================================="
+            echo ""
 
-          if [ -n "$CORE_MIGRATION_FILE" ]; then
-            echo "::error::Unexpected migration files were generated. Please create a proper migration manually."
-            echo "$CORE_MIGRATION_OUTPUT"
-
-            rm -f packages/twenty-server/*core-migration-check.ts
+            git checkout -- .
 
             exit 1
           fi
@@ -165,13 +213,14 @@ jobs:
 
           npx nx run twenty-front:graphql:generate
           npx nx run twenty-front:graphql:generate --configuration=metadata
+          npx nx run twenty-front:graphql:generate --configuration=admin
 
-          if ! git diff --quiet -- packages/twenty-front/src/generated packages/twenty-front/src/generated-metadata; then
-            echo "::error::GraphQL schema changes detected. Please run 'npx nx run twenty-front:graphql:generate' and 'npx nx run twenty-front:graphql:generate --configuration=metadata' and commit the changes."
+          if ! git diff --quiet -- packages/twenty-front/src/generated packages/twenty-front/src/generated-metadata packages/twenty-front/src/generated-admin; then
+            echo "::error::GraphQL schema changes detected. Please run the three graphql:generate configurations ('data', 'metadata', 'admin') and commit the changes."
             echo ""
             echo "The following GraphQL schema changes were detected:"
             echo "==================================================="
-            git diff -- packages/twenty-front/src/generated packages/twenty-front/src/generated-metadata
+            git diff -- packages/twenty-front/src/generated packages/twenty-front/src/generated-metadata packages/twenty-front/src/generated-admin
             echo "==================================================="
             echo ""
             HAS_ERRORS=true
@@ -197,9 +246,13 @@ jobs:
     needs: server-build
     timeout-minutes: 30
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - name: Fetch custom Github Actions and base branch history
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 10
       - name: Install dependencies
@@ -210,97 +263,78 @@ jobs:
           key: ${{ env.SERVER_BUILD_CACHE_KEY }}
       - name: Build twenty-shared
         run: npx nx build twenty-shared
-      - name: Server / Run Tests
-        uses: ./.github/actions/nx-affected
+      - name: Restore jest transform cache
+        id: restore-jest-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0 (restore)
         with:
-          tag: scope:backend
-          tasks: test
+          key: v4-jest-server-unit-${{ matrix.shard }}-${{ github.ref_name }}-${{ github.sha }}
+          restore-keys: v4-jest-server-unit-${{ matrix.shard }}-${{ github.ref_name }}-
+          path: .cache/jest/packages/twenty-server
+      - name: Server / Run Tests (shard ${{ matrix.shard }}/4)
+        run: npx nx run twenty-server:test:ci --shard=${{ matrix.shard }}/4
+      - name: Save jest transform cache
+        if: always() && steps.restore-jest-cache.outputs.cache-hit != 'true' && format('{0}', github.event.pull_request.head.repo.fork) != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0 (save)
+        with:
+          key: ${{ steps.restore-jest-cache.outputs.cache-primary-key }}
+          path: .cache/jest/packages/twenty-server
 
   server-integration-test:
+    needs: changed-files-check
+    if: needs.changed-files-check.outputs.any_changed == 'true'
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/ci-server-integration-test.yaml
+    secrets:
+      OKTA_SSO_TEST_CLIENT_SECRET: ${{ secrets.OKTA_SSO_TEST_CLIENT_SECRET }}
+      OKTA_SSO_TEST_PASSWORD: ${{ secrets.OKTA_SSO_TEST_PASSWORD }}
+      OKTA_SSO_TEST_NON_MEMBER_PASSWORD: ${{ secrets.OKTA_SSO_TEST_NON_MEMBER_PASSWORD }}
+      OKTA_SSO_TEST_NEWCOMER_PASSWORD: ${{ secrets.OKTA_SSO_TEST_NEWCOMER_PASSWORD }}
+
+  cross-version-upgrade:
+    needs: [upgrade-changed-files-check, server-build]
+    uses: ./.github/workflows/ci-cross-version-upgrade.yaml
+    with:
+      skip: ${{ needs.upgrade-changed-files-check.outputs.any_changed != 'true' }}
+
+  discover-public-apps:
+    needs: changed-files-check
+    if: needs.changed-files-check.outputs.any_changed == 'true'
+    uses: ./.github/workflows/discover-apps.yaml
+    with:
+      scope: public
+      changed-only: false
+
+  server-apps-install-smoke:
+    needs: [discover-public-apps, server-build]
     timeout-minutes: 30
     runs-on: ubuntu-latest
-    needs: server-build
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-    services:
-      postgres:
-        image: twentycrm/twenty-postgres-spilo
-        env:
-          PGUSER_SUPERUSER: postgres
-          PGPASSWORD_SUPERUSER: postgres
-          ALLOW_NOSSL: 'true'
-          SPILO_PROVIDER: 'local'
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      redis:
-        image: redis
-        ports:
-          - 6379:6379
-      clickhouse:
-        image: clickhouse/clickhouse-server:25.8.8
-        env:
-          CLICKHOUSE_PASSWORD: clickhousePassword
-          CLICKHOUSE_URL: "http://default:clickhousePassword@localhost:8123/twenty"
-        ports:
-          - 8123:8123
-          - 9000:9000
-        options: >-
-          --health-cmd "clickhouse-client --host=localhost --port=9000 --user=default --password=clickhousePassword --query='SELECT 1'"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    env:
-      NODE_ENV: test
-      ANALYTICS_ENABLED: true
-      CLICKHOUSE_URL: "http://default:clickhousePassword@localhost:8123/twenty"
-      CLICKHOUSE_PASSWORD: clickhousePassword
-      SHARD_COUNTER: 10
+        app: ${{ fromJSON(needs.discover-public-apps.outputs.matrix) }}
     steps:
-      - name: Fetch custom Github Actions and base branch history
-        uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 10
-      - name: Install dependencies
-        uses: ./.github/actions/yarn-install
-      - name: Update .env.test for integrations tests
-        run: |
-          echo "" >> .env.test
-          echo "IS_BILLING_ENABLED=true" >> .env.test
-          echo "BILLING_STRIPE_API_KEY=test-api-key" >> .env.test
-          echo "BILLING_STRIPE_BASE_PLAN_PRODUCT_ID=test-base-plan-product-id" >> .env.test
-          echo "BILLING_STRIPE_WEBHOOK_SECRET=test-webhook-secret" >> .env.test
-          echo "BILLING_PLAN_REQUIRED_LINK=http://localhost:3001/stripe-redirection" >> .env.test
-      - name: Restore server build cache
-        uses: ./.github/actions/restore-cache
+      - name: Spawn Twenty server from monorepo
+        id: twenty
+        uses: ./.github/actions/spawn-twenty-server
         with:
-          key: ${{ env.SERVER_BUILD_CACHE_KEY }}
-      - name: Server / Build
-        run: npx nx build twenty-server
-      - name: Build dependencies
-        run: |
-          npx nx build twenty-shared
-          npx nx build twenty-emails
-      - name: Server / Create Test DB
-        run: |
-          PGPASSWORD=postgres psql -h localhost -p 5432 -U postgres -d postgres -c 'CREATE DATABASE "test";'
-      - name: Run ClickHouse migrations
-        run: npx nx clickhouse:migrate twenty-server
-      - name: Run ClickHouse seeds
-        run: npx nx clickhouse:seed twenty-server
-      - name: Server / Run Integration Tests
-        uses: ./.github/actions/nx-affected
+          source: local
+          server-build-cache-key: ${{ env.SERVER_BUILD_CACHE_KEY }}
+      - name: Install app against server
+        uses: ./.github/actions/test-twenty-app
         with:
-          tag: scope:backend
-          tasks: 'test:integration'
-          configuration: 'with-db-reset'
-          args: --shard=${{ matrix.shard }}/${{ env.SHARD_COUNTER }}
+          api-url: ${{ steps.twenty.outputs.server-url }}
+          api-key: ${{ steps.twenty.outputs.api-key }}
+          app-path: ${{ matrix.app.path }}
+          mode: installation-only
+      - name: Dump server and worker logs on failure
+        if: failure()
+        run: tail -n 150 /tmp/twenty-server.log /tmp/twenty-worker.log || true
 
   ci-server-status-check:
     if: always() && !cancelled()
@@ -311,11 +345,15 @@ jobs:
         changed-files-check,
         server-build,
         server-lint-typecheck,
+        server-upgrade-mutation-guard,
         server-validation,
         server-test,
         server-integration-test,
+        cross-version-upgrade,
+        discover-public-apps,
+        server-apps-install-smoke,
       ]
     steps:
       - name: Fail job if any needs failed
-        if: contains(needs.*.result, 'failure')
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
         run: exit 1

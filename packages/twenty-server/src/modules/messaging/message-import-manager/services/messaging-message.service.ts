@@ -1,16 +1,23 @@
 import { Injectable, Logger } from '@nestjs/common';
 
+import chunk from 'lodash.chunk';
+import { QUERY_MAX_RECORDS } from 'twenty-shared/constants';
 import { isDefined } from 'twenty-shared/utils';
 import { In } from 'typeorm';
 import { v4 } from 'uuid';
 
-import { type WorkspaceEntityManager } from 'src/engine/twenty-orm/entity-manager/workspace-entity-manager';
-import { GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspace-datasource/global-workspace-orm.manager';
+import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
+import { type WorkspaceTransactionScope } from 'src/engine/twenty-orm/types/workspace-transaction-scope.type';
 import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
 import { type MessageChannelMessageAssociationWorkspaceEntity } from 'src/modules/messaging/common/standard-objects/message-channel-message-association.workspace-entity';
 import { type MessageThreadWorkspaceEntity } from 'src/modules/messaging/common/standard-objects/message-thread.workspace-entity';
 import { type MessageWorkspaceEntity } from 'src/modules/messaging/common/standard-objects/message.workspace-entity';
-import { type MessageWithParticipants } from 'src/modules/messaging/message-import-manager/types/message';
+import { type MessageWithParticipants } from 'src/modules/messaging/message-import-manager/types/message.type';
+
+type MessageToRefresh = Pick<
+  MessageWorkspaceEntity,
+  'id' | 'subject' | 'receivedAt' | 'text' | 'isDraft'
+>;
 
 type MessageAccumulator = {
   existingMessageInDB?: MessageWorkspaceEntity;
@@ -24,8 +31,10 @@ type MessageAccumulator = {
     | 'receivedAt'
     | 'text'
     | 'messageThreadId'
+    | 'isDraft'
   >;
-  threadToCreate?: Pick<MessageThreadWorkspaceEntity, 'id'>;
+  sentDraftToRefresh?: MessageToRefresh;
+  threadToCreate?: Pick<MessageThreadWorkspaceEntity, 'id' | 'subject'>;
   messageChannelMessageAssociationToCreate?: Pick<
     MessageChannelMessageAssociationWorkspaceEntity,
     | 'id'
@@ -40,42 +49,41 @@ type MessageAccumulator = {
 export class MessagingMessageService {
   private readonly logger = new Logger(MessagingMessageService.name);
 
-  constructor(
-    private readonly globalWorkspaceOrmManager: GlobalWorkspaceOrmManager,
-  ) {}
+  constructor(private readonly workspaceOrmManager: WorkspaceOrmManager) {}
 
   public async saveMessagesWithinTransaction(
     messages: MessageWithParticipants[],
     messageChannelId: string,
-    transactionManager: WorkspaceEntityManager,
+    transactionScope: WorkspaceTransactionScope,
     workspaceId: string,
   ): Promise<{
     createdMessages: Partial<MessageWorkspaceEntity>[];
+    refetchedMessageChannelMessageAssociationIds: string[];
+    sentDraftMessageIds: string[];
     messageExternalIdsAndIdsMap: Map<string, string>;
     messageExternalIdToMessageChannelMessageAssociationIdMap: Map<
       string,
       string
     >;
+    messageExternalIdToMessageThreadIdMap: Map<string, string>;
   }> {
     const authContext = buildSystemAuthContext(workspaceId);
+    const refetchedMessageChannelMessageAssociationIds: string[] = [];
 
-    return this.globalWorkspaceOrmManager.executeInWorkspaceContext(
+    return this.workspaceOrmManager.executeInWorkspaceContext(
       async () => {
         const messageChannelMessageAssociationRepository =
-          await this.globalWorkspaceOrmManager.getRepository<MessageChannelMessageAssociationWorkspaceEntity>(
-            workspaceId,
+          transactionScope.getRepositoryWithoutPermissionChecks<MessageChannelMessageAssociationWorkspaceEntity>(
             'messageChannelMessageAssociation',
           );
 
         const messageRepository =
-          await this.globalWorkspaceOrmManager.getRepository<MessageWorkspaceEntity>(
-            workspaceId,
+          transactionScope.getRepositoryWithoutPermissionChecks<MessageWorkspaceEntity>(
             'message',
           );
 
         const messageThreadRepository =
-          await this.globalWorkspaceOrmManager.getRepository<MessageThreadWorkspaceEntity>(
-            workspaceId,
+          transactionScope.getRepositoryWithoutPermissionChecks<MessageThreadWorkspaceEntity>(
             'messageThread',
           );
 
@@ -90,18 +98,15 @@ export class MessagingMessageService {
         });
 
         const messageChannelMessageAssociationsReferencingMessageThread =
-          await messageChannelMessageAssociationRepository.find(
-            {
-              where: {
-                messageThreadExternalId: In(
-                  messages.map((message) => message.messageThreadExternalId),
-                ),
-                messageChannelId,
-              },
-              relations: ['message'],
+          await messageChannelMessageAssociationRepository.find({
+            where: {
+              messageThreadExternalId: In(
+                messages.map((message) => message.messageThreadExternalId),
+              ),
+              messageChannelId,
             },
-            transactionManager,
-          );
+            relations: { message: true },
+          });
 
         const existingMessageChannelMessageAssociations =
           await messageChannelMessageAssociationRepository.find({
@@ -115,6 +120,7 @@ export class MessagingMessageService {
           messages,
           messageAccumulatorMap,
           existingMessagesInDB,
+          messageChannelMessageAssociationsReferencingMessageThread,
         );
 
         await this.enrichMessageAccumulatorWithExistingMessageThreadIds(
@@ -127,13 +133,23 @@ export class MessagingMessageService {
         await this.enrichMessageAccumulatorWithExistingMessageChannelMessageAssociations(
           messages,
           messageAccumulatorMap,
-          existingMessageChannelMessageAssociations,
+          [
+            ...existingMessageChannelMessageAssociations,
+            ...messageChannelMessageAssociationsReferencingMessageThread,
+          ],
         );
 
         await this.enrichMessageAccumulatorWithMessageThreadToCreate(
           messages,
           messageAccumulatorMap,
         );
+
+        const associationToCreateByMessageId = new Map<
+          string,
+          NonNullable<
+            MessageAccumulator['messageChannelMessageAssociationToCreate']
+          >
+        >();
 
         for (const message of messages) {
           const messageAccumulator = messageAccumulatorMap.get(
@@ -168,6 +184,7 @@ export class MessagingMessageService {
               receivedAt: message.receivedAt,
               text: message.text,
               messageThreadId,
+              isDraft: message.isDraft,
             };
 
             messageAccumulator.messageToCreate = messageToCreate;
@@ -175,12 +192,37 @@ export class MessagingMessageService {
             newOrExistingMessageId = messageAccumulator.existingMessageInDB.id;
           }
 
+          const existingAssociation =
+            messageAccumulator.existingMessageChannelMessageAssociationInDB;
+
+          const isRefetched =
+            isDefined(existingAssociation) &&
+            existingAssociation.messageExternalId === message.externalId;
+
+          if (isRefetched) {
+            refetchedMessageChannelMessageAssociationIds.push(
+              existingAssociation.id,
+            );
+          }
+
           if (
-            !isDefined(
-              messageAccumulator.existingMessageChannelMessageAssociationInDB,
-            )
+            isRefetched &&
+            messageAccumulator.existingMessageInDB?.isDraft === true &&
+            !message.isDraft
           ) {
-            messageAccumulator.messageChannelMessageAssociationToCreate = {
+            messageAccumulator.sentDraftToRefresh = {
+              id: newOrExistingMessageId,
+              subject: message.subject,
+              receivedAt: message.receivedAt,
+              text: message.text,
+              isDraft: message.isDraft,
+            };
+          }
+
+          if (!isDefined(existingAssociation)) {
+            const associationToCreate = associationToCreateByMessageId.get(
+              newOrExistingMessageId,
+            ) ?? {
               id: v4(),
               messageChannelId,
               messageId: newOrExistingMessageId,
@@ -188,6 +230,14 @@ export class MessagingMessageService {
               messageThreadExternalId: message.messageThreadExternalId,
               direction: message.direction,
             };
+
+            associationToCreateByMessageId.set(
+              newOrExistingMessageId,
+              associationToCreate,
+            );
+
+            messageAccumulator.messageChannelMessageAssociationToCreate =
+              associationToCreate;
           }
 
           messageAccumulatorMap.set(message.externalId, messageAccumulator);
@@ -199,34 +249,80 @@ export class MessagingMessageService {
           .map((accumulator) => accumulator.threadToCreate)
           .filter(isDefined);
 
-        await messageThreadRepository.insert(
-          messageThreadsToCreate,
-          transactionManager,
-        );
+        const threadSubjectUpdates = new Map<
+          string,
+          { subject: string; receivedAt: number }
+        >();
+
+        for (const message of messages) {
+          const messageAccumulator = messageAccumulatorMap.get(
+            message.externalId,
+          );
+
+          if (!isDefined(messageAccumulator)) {
+            continue;
+          }
+
+          const hasRefreshedSubject =
+            isDefined(messageAccumulator.sentDraftToRefresh) &&
+            messageAccumulator.existingMessageInDB?.subject !== message.subject;
+
+          if (
+            isDefined(messageAccumulator.existingThreadInDB) &&
+            (isDefined(messageAccumulator.messageToCreate) ||
+              hasRefreshedSubject) &&
+            isDefined(message.subject)
+          ) {
+            const threadId = messageAccumulator.existingThreadInDB.id;
+            const existing = threadSubjectUpdates.get(threadId);
+            const receivedAt = message.receivedAt?.getTime() ?? 0;
+
+            if (!isDefined(existing) || receivedAt > existing.receivedAt) {
+              threadSubjectUpdates.set(threadId, {
+                subject: message.subject,
+                receivedAt,
+              });
+            }
+          }
+        }
+
+        if (messageThreadsToCreate.length > 0) {
+          await messageThreadRepository.insert(messageThreadsToCreate);
+        }
+
+        if (threadSubjectUpdates.size > 0) {
+          await messageThreadRepository.upsert(
+            Array.from(threadSubjectUpdates.entries()).map(
+              ([id, { subject }]) => ({ id, subject }),
+            ),
+            ['id'],
+          );
+        }
 
         const messagesToCreate = Array.from(messageAccumulatorMap.values())
           .map((accumulator) => accumulator.messageToCreate)
           .filter(isDefined);
 
-        await messageRepository.insert(messagesToCreate, transactionManager);
+        await messageRepository.insert(messagesToCreate);
+
+        const sentDraftsToRefresh = Array.from(messageAccumulatorMap.values())
+          .map((accumulator) => accumulator.sentDraftToRefresh)
+          .filter(isDefined);
+
+        await this.refreshSentDrafts(sentDraftsToRefresh, transactionScope);
 
         const messageChannelMessageAssociationsToCreate = Array.from(
-          messageAccumulatorMap.values(),
-        )
-          .map(
-            (accumulator) =>
-              accumulator.messageChannelMessageAssociationToCreate,
-          )
-          .filter(isDefined);
+          associationToCreateByMessageId.values(),
+        );
 
         await messageChannelMessageAssociationRepository.insert(
           messageChannelMessageAssociationsToCreate,
-          transactionManager,
         );
 
         const messageExternalIdsAndIdsMap = new Map<string, string>();
         const messageExternalIdToMessageChannelMessageAssociationIdMap =
           new Map<string, string>();
+        const messageExternalIdToMessageThreadIdMap = new Map<string, string>();
 
         for (const [
           externalId,
@@ -246,6 +342,17 @@ export class MessagingMessageService {
             );
           }
 
+          const messageThreadId =
+            accumulator.messageToCreate?.messageThreadId ??
+            accumulator.existingMessageInDB?.messageThreadId;
+
+          if (isDefined(messageThreadId)) {
+            messageExternalIdToMessageThreadIdMap.set(
+              externalId,
+              messageThreadId,
+            );
+          }
+
           const createdAssociationId =
             accumulator.messageChannelMessageAssociationToCreate?.id;
           const existingAssociationId =
@@ -262,24 +369,59 @@ export class MessagingMessageService {
 
         return {
           createdMessages: messagesToCreate,
+          refetchedMessageChannelMessageAssociationIds,
+          sentDraftMessageIds: sentDraftsToRefresh.map(({ id }) => id),
           messageExternalIdsAndIdsMap,
           messageExternalIdToMessageChannelMessageAssociationIdMap,
+          messageExternalIdToMessageThreadIdMap,
         };
       },
       authContext,
+      { lite: true },
     );
+  }
+
+  private async refreshSentDrafts(
+    sentDrafts: MessageToRefresh[],
+    transactionScope: WorkspaceTransactionScope,
+  ) {
+    const messageRepository =
+      transactionScope.getRepositoryWithoutPermissionChecks<MessageWorkspaceEntity>(
+        'message',
+      );
+
+    for (const sentDraftsChunk of chunk(sentDrafts, QUERY_MAX_RECORDS)) {
+      await messageRepository.updateMany(
+        sentDraftsChunk.map(({ id, subject, receivedAt, text, isDraft }) => ({
+          criteria: id,
+          partialEntity: { subject, receivedAt, text, isDraft },
+        })),
+      );
+    }
   }
 
   private async enrichMessageAccumulatorWithExistingMessages(
     messages: MessageWithParticipants[],
     messageAccumulatorMap: Map<string, MessageAccumulator>,
     existingMessagesInDB: MessageWorkspaceEntity[],
+    messageChannelMessageAssociationsReferencingMessageThread: Pick<
+      MessageChannelMessageAssociationWorkspaceEntity,
+      'messageExternalId' | 'message'
+    >[],
   ) {
     for (const message of messages) {
-      const existingMessage = existingMessagesInDB.find(
+      const messageWithSameExternalIdInChannel =
+        messageChannelMessageAssociationsReferencingMessageThread.find(
+          (association) => association.messageExternalId === message.externalId,
+        )?.message;
+
+      const messageWithSameHeaderMessageId = existingMessagesInDB.find(
         (existingMessage) =>
           existingMessage.headerMessageId === message.headerMessageId,
       );
+
+      const existingMessage =
+        messageWithSameExternalIdInChannel ?? messageWithSameHeaderMessageId;
 
       if (!isDefined(existingMessage)) {
         messageAccumulatorMap.set(message.externalId, {});
@@ -391,11 +533,8 @@ export class MessagingMessageService {
         );
 
       if (existingMessageChannelMessageAssociation) {
-        messageAccumulatorMap.set(message.externalId, {
-          existingMessageInDB: existingMessage,
-          existingMessageChannelMessageAssociationInDB:
-            existingMessageChannelMessageAssociation,
-        });
+        messageAccumulator.existingMessageChannelMessageAssociationInDB =
+          existingMessageChannelMessageAssociation;
       }
     }
   }
@@ -451,6 +590,7 @@ export class MessagingMessageService {
 
         messageAccumulator.threadToCreate = {
           id: newOrExistingMessageThreadId,
+          subject: message.subject,
         };
       }
 

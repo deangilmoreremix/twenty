@@ -2,14 +2,17 @@ import { type AllMetadataName } from 'twenty-shared/metadata';
 
 export const TWENTY_STANDARD_ALL_METADATA_NAME = [
   'index',
+  'searchFieldMetadata',
   'objectMetadata',
   'fieldMetadata',
+  'fieldMetadataOption',
   'viewField',
   'viewFieldGroup',
   'viewFilter',
   'viewGroup',
   'view',
   'navigationMenuItem',
+  'permissionFlag',
   'role',
   'agent',
   'skill',
@@ -17,4 +20,7 @@ export const TWENTY_STANDARD_ALL_METADATA_NAME = [
   'pageLayoutTab',
   'pageLayoutWidget',
   'commandMenuItem',
+  'timelineActivityType',
+  'agentChatChannel',
+  'relatedRecordPath',
 ] as const satisfies AllMetadataName[];

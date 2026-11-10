@@ -1,12 +1,17 @@
-import { SettingsAdminTableCard } from '@/settings/admin-panel/components/SettingsAdminTableCard';
+import { SettingsTableCard } from '@/settings/components/SettingsTableCard';
+import { useApolloAdminClient } from '@/settings/admin-panel/apollo/hooks/useApolloAdminClient';
 import { SettingsAdminVersionDisplay } from '@/settings/admin-panel/components/SettingsAdminVersionDisplay';
-import { t } from '@lingui/core/macro';
-import { IconCircleDot, IconStatusChange } from 'twenty-ui/display';
+import { IconCircleDot, IconVersions } from 'twenty-ui/icon';
 import { useQuery } from '@apollo/client/react';
-import { GetVersionInfoDocument } from '~/generated-metadata/graphql';
+import { GetVersionInfoDocument } from '~/generated-admin/graphql';
+import { useLingui } from '@lingui/react/macro';
 
 export const SettingsAdminVersionContainer = () => {
-  const { data, loading } = useQuery(GetVersionInfoDocument);
+  const { t } = useLingui();
+  const apolloAdminClient = useApolloAdminClient();
+  const { data, loading } = useQuery(GetVersionInfoDocument, {
+    client: apolloAdminClient,
+  });
   const { currentVersion, latestVersion } = data?.versionInfo ?? {};
 
   const versionItems = [
@@ -22,7 +27,7 @@ export const SettingsAdminVersionContainer = () => {
       ),
     },
     {
-      Icon: IconStatusChange,
+      Icon: IconVersions,
       label: t`Latest version`,
       value: (
         <SettingsAdminVersionDisplay
@@ -34,11 +39,5 @@ export const SettingsAdminVersionContainer = () => {
     },
   ];
 
-  return (
-    <SettingsAdminTableCard
-      rounded
-      items={versionItems}
-      gridAutoColumns="3fr 8fr"
-    />
-  );
+  return <SettingsTableCard items={versionItems} gridAutoColumns="3fr 8fr" />;
 };

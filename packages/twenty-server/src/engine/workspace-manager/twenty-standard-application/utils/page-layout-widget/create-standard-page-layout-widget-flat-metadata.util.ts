@@ -1,13 +1,13 @@
 import {
+  PageLayoutType,
   type PageLayoutWidgetConditionalDisplay,
   type PageLayoutWidgetPosition,
-  type GridPosition,
+  type WidgetType,
 } from 'twenty-shared/types';
 import { isDefined } from 'twenty-shared/utils';
 
 import { type MetadataUniversalFlatEntity } from 'src/engine/metadata-modules/flat-entity/types/metadata-universal-flat-entity.type';
 import { type FlatPageLayoutWidget } from 'src/engine/metadata-modules/flat-page-layout-widget/types/flat-page-layout-widget.type';
-import { type WidgetType } from 'src/engine/metadata-modules/page-layout-widget/enums/widget-type.enum';
 import { type AllPageLayoutWidgetConfiguration } from 'src/engine/metadata-modules/page-layout-widget/types/all-page-layout-widget-configuration.type';
 import { STANDARD_PAGE_LAYOUTS } from 'src/engine/workspace-manager/twenty-standard-application/constants/standard-page-layout.constant';
 import { TWENTY_STANDARD_APPLICATION } from 'src/engine/workspace-manager/twenty-standard-application/constants/twenty-standard-applications';
@@ -24,12 +24,12 @@ export type CreateStandardPageLayoutWidgetContext = {
   widgetName: string;
   title: string;
   type: WidgetType;
-  gridPosition: GridPosition;
   position: PageLayoutWidgetPosition | null;
   configuration: AllPageLayoutWidgetConfiguration;
   universalConfiguration: MetadataUniversalFlatEntity<'pageLayoutWidget'>['universalConfiguration'];
   objectMetadataId: string | null;
   conditionalDisplay: PageLayoutWidgetConditionalDisplay | null;
+  conditionalAvailabilityExpression: string | null;
 };
 
 export type CreateStandardPageLayoutWidgetArgs = {
@@ -48,12 +48,12 @@ export const createStandardPageLayoutWidgetFlatMetadata = ({
     widgetName,
     title,
     type,
-    gridPosition,
     position,
     configuration,
     universalConfiguration,
     objectMetadataId,
     conditionalDisplay,
+    conditionalAvailabilityExpression,
   },
   workspaceId,
   twentyStandardApplicationId,
@@ -67,6 +67,7 @@ export const createStandardPageLayoutWidgetFlatMetadata = ({
   const layout = STANDARD_PAGE_LAYOUTS[
     layoutName as keyof typeof STANDARD_PAGE_LAYOUTS
   ] as {
+    type: PageLayoutType;
     tabs: Record<
       string,
       StandardPageLayoutTabConfig & {
@@ -98,16 +99,20 @@ export const createStandardPageLayoutWidgetFlatMetadata = ({
     pageLayoutTabUniversalIdentifier: tabDefinition.universalIdentifier,
     title,
     type,
-    gridPosition,
     position,
     configuration,
     universalConfiguration,
     objectMetadataId,
     objectMetadataUniversalIdentifier,
+    isActive: true,
+    isSystemSideEffect: layout.type === PageLayoutType.RECORD_PAGE,
     createdAt: now,
     updatedAt: now,
     deletedAt: null,
     conditionalDisplay: conditionalDisplay ?? null,
+    conditionalAvailabilityExpression:
+      conditionalAvailabilityExpression ?? null,
     overrides: null,
+    universalOverrides: null,
   };
 };

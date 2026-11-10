@@ -2,13 +2,11 @@ import { msg } from '@lingui/core/macro';
 import { isArray, isNonEmptyString } from '@sniptt/guards';
 import {
   type CountryCallingCode,
+  type PhoneNumber,
   parsePhoneNumberWithError,
 } from 'libphonenumber-js';
 import isEmpty from 'lodash.isempty';
-import {
-  type AdditionalPhoneMetadata,
-  type PhonesMetadata,
-} from 'twenty-shared/types';
+import { type AdditionalPhoneMetadata } from 'twenty-shared/types';
 import {
   getCountryCodesForCallingCode,
   isDefined,
@@ -23,23 +21,32 @@ import {
 } from 'src/engine/core-modules/record-transformer/record-transformer.exception';
 
 export type PhonesFieldGraphQLInput =
-  | Partial<
-      Omit<PhonesMetadata, 'additionalPhones'> & {
-        additionalPhones: string | null;
-      }
-    >
+  | {
+      primaryPhoneNumber?: string | null;
+      primaryPhoneCountryCode?: string | null;
+      primaryPhoneCallingCode?: string | null;
+      additionalPhones?: string | Partial<AdditionalPhoneMetadata>[] | null;
+    }
   | null
   | undefined;
 
 type AdditionalPhoneMetadataWithNumber = Partial<AdditionalPhoneMetadata> &
   Required<Pick<AdditionalPhoneMetadata, 'number'>>;
 
+const LETTER_REGEX = /\p{L}/u;
+
 const removePlusFromString = (str: string) => str.replace(/\+/g, '');
+
+const nullIfEmptyString = (value: string | null | undefined) =>
+  !isDefined(value) ? value : isNonEmptyString(value) ? value : null;
 
 const validatePrimaryPhoneCountryCodeAndCallingCode = ({
   callingCode,
   countryCode,
-}: Partial<Omit<AdditionalPhoneMetadata, 'number'>>) => {
+}: {
+  callingCode?: string | null;
+  countryCode?: string | null;
+}) => {
   if (isNonEmptyString(countryCode) && !isValidCountryCode(countryCode)) {
     throw new RecordTransformerException(
       `Invalid country code ${countryCode}`,
@@ -78,25 +85,41 @@ const validatePrimaryPhoneCountryCodeAndCallingCode = ({
   }
 };
 
+const throwInvalidPhoneNumberException = (number: string): never => {
+  throw new RecordTransformerException(
+    `Provided phone number is invalid ${number}`,
+    RecordTransformerExceptionCode.INVALID_PHONE_NUMBER,
+    { userFriendlyMessage: msg`Provided phone number is invalid ${number}` },
+  );
+};
+
 const parsePhoneNumberExceptionWrapper = ({
   callingCode,
   countryCode,
   number,
 }: AdditionalPhoneMetadataWithNumber) => {
+  if (LETTER_REGEX.test(number)) {
+    return throwInvalidPhoneNumberException(number);
+  }
+
+  let phone: PhoneNumber;
+
   try {
-    return parsePhoneNumberWithError(number, {
+    phone = parsePhoneNumberWithError(number, {
       defaultCallingCode: callingCode
         ? removePlusFromString(callingCode)
         : callingCode,
       defaultCountry: countryCode,
     });
   } catch {
-    throw new RecordTransformerException(
-      `Provided phone number is invalid ${number}`,
-      RecordTransformerExceptionCode.INVALID_PHONE_NUMBER,
-      { userFriendlyMessage: msg`Provided phone number is invalid ${number}` },
-    );
+    return throwInvalidPhoneNumberException(number);
   }
+
+  if (!phone.isPossible()) {
+    return throwInvalidPhoneNumberException(number);
+  }
+
+  return phone;
 };
 
 const validateAndInferMetadataFromPrimaryPhoneNumber = ({
@@ -154,24 +177,28 @@ const validateAndInferPhoneInput = ({
   callingCode,
   countryCode,
   number,
-}: Partial<AdditionalPhoneMetadata>) => {
-  validatePrimaryPhoneCountryCodeAndCallingCode({
-    callingCode,
-    countryCode,
-  });
+}: {
+  callingCode?: string | null;
+  countryCode?: string | null;
+  number?: string | null;
+}) => {
+  validatePrimaryPhoneCountryCodeAndCallingCode({ callingCode, countryCode });
 
-  if (isDefined(number) && isNonEmptyString(number)) {
+  if (isNonEmptyString(number)) {
     return validateAndInferMetadataFromPrimaryPhoneNumber({
       number,
-      callingCode,
-      countryCode,
+      callingCode: isNonEmptyString(callingCode) ? callingCode : undefined,
+      countryCode:
+        isNonEmptyString(countryCode) && isValidCountryCode(countryCode)
+          ? countryCode
+          : undefined,
     });
   }
 
   return {
-    callingCode,
-    countryCode,
-    number,
+    callingCode: nullIfEmptyString(callingCode),
+    countryCode: nullIfEmptyString(countryCode),
+    number: nullIfEmptyString(number),
   };
 };
 
@@ -202,9 +229,9 @@ export const transformPhonesValue = ({
       ? additionalPhones
       : [];
 
-  const validatedAdditionalPhones = parsedAdditionalPhones.map(
-    validateAndInferPhoneInput,
-  );
+  const validatedAdditionalPhones = parsedAdditionalPhones
+    .filter((additionalPhone) => isNonEmptyString(additionalPhone.number))
+    .map(validateAndInferPhoneInput);
 
   return removeUndefinedFields({
     additionalPhones: isEmpty(validatedAdditionalPhones)

@@ -1,13 +1,13 @@
 import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
 
-import { TypeORMModule } from 'src/database/typeorm/typeorm.module';
-import { DataSourceModule } from 'src/engine/metadata-modules/data-source/data-source.module';
+import { WorkspaceEntity } from 'src/engine/core-modules/workspace/workspace.entity';
 
-import { WorkspaceDataSourceService } from './workspace-datasource.service';
+import { WorkspaceSchemaService } from './workspace-schema.service';
 
 @Module({
-  imports: [DataSourceModule, TypeORMModule],
-  exports: [WorkspaceDataSourceService],
-  providers: [WorkspaceDataSourceService],
+  imports: [TypeOrmModule.forFeature([WorkspaceEntity])],
+  exports: [WorkspaceSchemaService],
+  providers: [WorkspaceSchemaService],
 })
 export class WorkspaceDataSourceModule {}

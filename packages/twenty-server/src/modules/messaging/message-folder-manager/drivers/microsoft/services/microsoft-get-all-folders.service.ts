@@ -1,5 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 
+import {
+  type PageCollection,
+  PageIterator,
+  type PageIteratorCallback,
+} from '@microsoft/microsoft-graph-client';
 import { isDefined } from 'twenty-shared/utils';
 
 import {
@@ -7,13 +12,13 @@ import {
   MessageFolderDriver,
 } from 'src/modules/messaging/message-folder-manager/interfaces/message-folder-driver.interface';
 
-import { OAuth2ClientManagerService } from 'src/modules/connected-account/oauth2-client-manager/services/oauth2-client-manager.service';
-import { type ConnectedAccountWorkspaceEntity } from 'src/modules/connected-account/standard-objects/connected-account.workspace-entity';
-import { MessageChannelWorkspaceEntity } from 'src/modules/messaging/common/standard-objects/message-channel.workspace-entity';
+import { MessageChannelEntity } from 'src/engine/metadata-modules/message-channel/entities/message-channel.entity';
+import { MicrosoftOAuth2ClientProvider } from 'src/modules/connected-account/oauth2-client-manager/drivers/microsoft/microsoft-oauth2-client.provider';
+import { type ConnectedAccountEntity } from 'src/engine/metadata-modules/connected-account/entities/connected-account.entity';
 import { shouldCreateFolderByDefault } from 'src/modules/messaging/message-folder-manager/utils/should-create-folder-by-default.util';
 import { shouldSyncFolderByDefault } from 'src/modules/messaging/message-folder-manager/utils/should-sync-folder-by-default.util';
 import { MicrosoftMessageListFetchErrorHandler } from 'src/modules/messaging/message-import-manager/drivers/microsoft/services/microsoft-message-list-fetch-error-handler.service';
-import { StandardFolder } from 'src/modules/messaging/message-import-manager/drivers/types/standard-folder';
+import { StandardFolder } from 'src/modules/messaging/message-import-manager/drivers/types/standard-folder.type';
 import { getStandardFolderByRegex } from 'src/modules/messaging/message-import-manager/drivers/utils/get-standard-folder-by-regex';
 
 type MicrosoftGraphFolder = {
@@ -31,27 +36,22 @@ export class MicrosoftGetAllFoldersService implements MessageFolderDriver {
   private readonly logger = new Logger(MicrosoftGetAllFoldersService.name);
 
   constructor(
-    private readonly oAuth2ClientManagerService: OAuth2ClientManagerService,
+    private readonly microsoftOAuth2ClientProvider: MicrosoftOAuth2ClientProvider,
     private readonly microsoftMessageListFetchErrorHandler: MicrosoftMessageListFetchErrorHandler,
   ) {}
 
   async getAllMessageFolders(
     connectedAccount: Pick<
-      ConnectedAccountWorkspaceEntity,
-      'accessToken' | 'refreshToken' | 'id' | 'handle' | 'provider'
+      ConnectedAccountEntity,
+      'id' | 'handle' | 'provider'
     >,
-    messageChannel: Pick<
-      MessageChannelWorkspaceEntity,
-      'messageFolderImportPolicy'
-    >,
+    messageChannel: Pick<MessageChannelEntity, 'messageFolderImportPolicy'>,
   ): Promise<DiscoveredMessageFolder[]> {
     try {
       const microsoftClient =
-        await this.oAuth2ClientManagerService.getMicrosoftOAuth2Client(
-          connectedAccount,
-        );
+        await this.microsoftOAuth2ClientProvider.getClient(connectedAccount.id);
 
-      const response = await microsoftClient
+      const firstPage: PageCollection = await microsoftClient
         .api('/me/mailFolders')
         .version('beta')
         .top(MESSAGING_MICROSOFT_MAIL_FOLDERS_LIST_MAX_RESULT)
@@ -60,12 +60,28 @@ export class MicrosoftGetAllFoldersService implements MessageFolderDriver {
           this.logger.error(
             `Connected account ${connectedAccount.id}: Error fetching folders: ${error.message}`,
           );
-          this.microsoftMessageListFetchErrorHandler.handleError(error);
 
-          return { value: [] };
+          return this.microsoftMessageListFetchErrorHandler.handleError(error);
         });
 
-      const folders = (response.value as MicrosoftGraphFolder[]) || [];
+      const folders: MicrosoftGraphFolder[] = [];
+
+      const callback: PageIteratorCallback = (folder: MicrosoftGraphFolder) => {
+        folders.push(folder);
+
+        return true;
+      };
+
+      const pageIterator = new PageIterator(
+        microsoftClient,
+        firstPage,
+        callback,
+      );
+
+      await pageIterator.iterate().catch((error: unknown) => {
+        this.microsoftMessageListFetchErrorHandler.handleError(error);
+      });
+
       const rootFolderId = this.getRootFolderId(folders);
       const folderInfos: DiscoveredMessageFolder[] = [];
 
@@ -118,11 +134,8 @@ export class MicrosoftGetAllFoldersService implements MessageFolderDriver {
     return standardFolder === StandardFolder.SENT;
   }
 
-  /*
-   * All Microsoft folders have a parentFolderId including the standard folders
-   * which point to root node which doesn't exits in the API response.
-   * We remove this to simplify the folder hierarchy on frontend.
-   */
+  // Standard folders point at a root parentFolderId that the API response never
+  // includes, so it is detected here and stripped to flatten the hierarchy.
   private getRootFolderId(folders: MicrosoftGraphFolder[]): string | null {
     for (const folder of folders) {
       if (isDefined(folder.wellKnownName) && isDefined(folder.parentFolderId)) {

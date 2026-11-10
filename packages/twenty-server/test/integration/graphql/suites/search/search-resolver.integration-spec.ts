@@ -26,6 +26,7 @@ import {
 import { createManyOperation } from 'test/integration/graphql/utils/create-many-operation.util';
 import { search } from 'test/integration/graphql/utils/search.util';
 import { deleteAllRecords } from 'test/integration/utils/delete-all-records';
+import { waitForAllJobsToFinish } from 'test/integration/utils/wait-for-all-jobs-to-finish.util';
 import {
   eachTestingContextFilter,
   type EachTestingContext,
@@ -173,11 +174,9 @@ describe('SearchResolver', () => {
     await deleteAllRecords('noteTarget');
     await deleteAllRecords('taskTarget');
     await deleteAllRecords('dashboard');
-    await deleteAllRecords('workflow');
     await deleteAllRecords('_pet');
     await deleteAllRecords('_surveyResult');
     await deleteAllRecords('_rocket');
-    ///
 
     await createManyOperation({
       objectMetadataSingularName: 'pet',
@@ -192,6 +191,9 @@ describe('SearchResolver', () => {
       gqlFields: PERSON_GQL_FIELDS,
       data: persons,
     });
+
+    await waitForAllJobsToFinish();
+    await deleteAllRecords('company');
 
     await createManyOperation({
       objectMetadataSingularName: 'company',
@@ -221,6 +223,9 @@ describe('SearchResolver', () => {
             'workspaceMember',
             'employmentHistory',
             'petCareAgreement',
+            'workflow',
+            'messageCampaign',
+            'messageList',
           ],
           limit: 50,
         },
@@ -327,6 +332,9 @@ describe('SearchResolver', () => {
             'person',
             'employmentHistory',
             'petCareAgreement',
+            'workflow',
+            'messageCampaign',
+            'messageList',
           ],
           limit: 50,
         },

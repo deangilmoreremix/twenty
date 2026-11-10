@@ -2,14 +2,19 @@ import { Test, type TestingModule } from '@nestjs/testing';
 
 import { EmailDriverFactory } from 'src/engine/core-modules/email/email-driver.factory';
 import { EmailDriver } from 'src/engine/core-modules/email/enums/email-driver.enum';
+import { ConfigGroupHashService } from 'src/engine/core-modules/twenty-config/services/config-group-hash.service';
 import { TwentyConfigService } from 'src/engine/core-modules/twenty-config/twenty-config.service';
 
 describe('EmailDriverFactory', () => {
   let factory: EmailDriverFactory;
   let twentyConfigService: TwentyConfigService;
+  let configGroupHashService: ConfigGroupHashService;
 
   const mockTwentyConfigService = {
     get: jest.fn(),
+  };
+  const mockConfigGroupHashService = {
+    computeHash: jest.fn().mockReturnValue(''),
   };
 
   beforeEach(async () => {
@@ -20,11 +25,18 @@ describe('EmailDriverFactory', () => {
           provide: TwentyConfigService,
           useValue: mockTwentyConfigService,
         },
+        {
+          provide: ConfigGroupHashService,
+          useValue: mockConfigGroupHashService,
+        },
       ],
     }).compile();
 
     factory = module.get<EmailDriverFactory>(EmailDriverFactory);
     twentyConfigService = module.get<TwentyConfigService>(TwentyConfigService);
+    configGroupHashService = module.get<ConfigGroupHashService>(
+      ConfigGroupHashService,
+    );
 
     jest.clearAllMocks();
   });
@@ -44,7 +56,7 @@ describe('EmailDriverFactory', () => {
     it('should return smtp config key for smtp driver', () => {
       jest.spyOn(twentyConfigService, 'get').mockReturnValue(EmailDriver.SMTP);
       jest
-        .spyOn(factory as any, 'getConfigGroupHash')
+        .spyOn(configGroupHashService, 'computeHash')
         .mockReturnValue('smtp-hash-123');
 
       const result = factory['buildConfigKey']();
@@ -156,14 +168,12 @@ describe('EmailDriverFactory', () => {
     });
 
     it('should create new driver when config key changes', () => {
-      // First call with logger
       jest
         .spyOn(twentyConfigService, 'get')
         .mockReturnValue(EmailDriver.LOGGER);
 
       const driver1 = factory.getCurrentDriver();
 
-      // Second call with smtp
       jest
         .spyOn(twentyConfigService, 'get')
         .mockImplementation((key: string) => {
@@ -179,7 +189,7 @@ describe('EmailDriverFactory', () => {
           }
         });
       jest
-        .spyOn(factory as any, 'getConfigGroupHash')
+        .spyOn(configGroupHashService, 'computeHash')
         .mockReturnValue('smtp-hash-123');
 
       const driver2 = factory.getCurrentDriver();
@@ -214,7 +224,7 @@ describe('EmailDriverFactory', () => {
         });
 
       jest
-        .spyOn(factory as any, 'getConfigGroupHash')
+        .spyOn(configGroupHashService, 'computeHash')
         .mockReturnValue('smtp-hash-123');
 
       jest.spyOn(factory as any, 'createDriver').mockImplementation(() => {

@@ -4,16 +4,18 @@ import { sidePanelNavigationStackState } from '@/side-panel/states/sidePanelNavi
 import { useAtomComponentState } from '@/ui/utilities/state/jotai/hooks/useAtomComponentState';
 import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateValue';
 import { useSetAtomComponentState } from '@/ui/utilities/state/jotai/hooks/useSetAtomComponentState';
+import { useSetAtomState } from '@/ui/utilities/state/jotai/hooks/useSetAtomState';
 import { workflowVisualizerWorkflowIdComponentState } from '@/workflow/states/workflowVisualizerWorkflowIdComponentState';
 import { workflowSelectedNodeComponentState } from '@/workflow/workflow-diagram/states/workflowSelectedNodeComponentState';
 import { type StartNodeCreationParams } from '@/workflow/workflow-diagram/types/WorkflowDiagram';
 import { workflowInsertStepIdsComponentState } from '@/workflow/workflow-steps/states/workflowInsertStepIdsComponentState';
-import { useSetAtomState } from '@/ui/utilities/state/jotai/hooks/useSetAtomState';
 import { useCallback, useContext } from 'react';
 import { isDefined } from 'twenty-shared/utils';
+import { isDeeplyEqual } from '~/utils/isDeeplyEqual';
 
 export const useStartNodeCreation = () => {
-  const { isInSidePanel } = useContext(CommandMenuContext);
+  const { commandMenuContextApi } = useContext(CommandMenuContext);
+  const isInSidePanel = commandMenuContextApi.isInSidePanel;
 
   const [workflowInsertStepIds, setWorkflowInsertStepIds] =
     useAtomComponentState(workflowInsertStepIdsComponentState);
@@ -33,10 +35,7 @@ export const useStartNodeCreation = () => {
     sidePanelNavigationStackState,
   );
 
-  /**
-   * This function is used in a context where dependencies shouldn't change much.
-   * That's why its wrapped in a `useCallback` hook. Removing memoization might break the app unexpectedly.
-   */
+  // Callers depend on a stable reference, so removing the useCallback can break them.
   const startNodeCreation = useCallback(
     ({
       parentStepId,
@@ -76,13 +75,15 @@ export const useStartNodeCreation = () => {
   const isNodeCreationStarted = ({
     parentStepId,
     nextStepId,
-  }: {
-    parentStepId?: string;
-    nextStepId?: string;
-  }) => {
+    connectionOptions,
+  }: Pick<
+    StartNodeCreationParams,
+    'parentStepId' | 'nextStepId' | 'connectionOptions'
+  >) => {
     return (
       workflowInsertStepIds.parentStepId === parentStepId &&
-      workflowInsertStepIds.nextStepId === nextStepId
+      workflowInsertStepIds.nextStepId === nextStepId &&
+      isDeeplyEqual(workflowInsertStepIds.connectionOptions, connectionOptions)
     );
   };
 

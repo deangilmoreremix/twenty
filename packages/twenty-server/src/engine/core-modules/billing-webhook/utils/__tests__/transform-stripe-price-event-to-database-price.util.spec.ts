@@ -39,7 +39,6 @@ describe('transformStripePriceEventToDatabasePrice', () => {
       stripePriceId: 'price_123',
       active: true,
       stripeProductId: 'prod_123',
-      stripeMeterId: undefined,
       currency: 'USD',
       nickname: undefined,
       taxBehavior: undefined,
@@ -50,6 +49,7 @@ describe('transformStripePriceEventToDatabasePrice', () => {
       transformQuantity: undefined,
       usageType: BillingUsageType.LICENSED,
       interval: SubscriptionInterval.Month,
+      metadata: {},
       currencyOptions: undefined,
       tiers: undefined,
       recurring: {
@@ -171,7 +171,6 @@ describe('transformStripePriceEventToDatabasePrice', () => {
 
     const result = transformStripePriceEventToDatabasePrice(mockData as any);
 
-    expect(result.stripeMeterId).toBe('meter_123');
     expect(result.usageType).toBe(BillingUsageType.METERED);
     expect(result.transformQuantity).toEqual(mockTransformQuantity);
   });

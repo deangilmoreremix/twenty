@@ -2,8 +2,9 @@ import { type ApolloClient } from '@apollo/client';
 import { useApolloClient } from '@apollo/client/react';
 import { type Meta, type StoryObj } from '@storybook/react-vite';
 import { MemoryRouter } from 'react-router-dom';
-import { expect, waitFor, within } from 'storybook/test';
+import { expect, userEvent, waitFor, within } from 'storybook/test';
 
+import { MAIN_CONTEXT_STORE_INSTANCE_ID } from '@/context-store/constants/MainContextStoreInstanceId';
 import { isMinimalMetadataReadyState } from '@/metadata-store/states/isMinimalMetadataReadyState';
 import { ApolloCoreClientContext } from '@/object-metadata/contexts/ApolloCoreClientContext';
 import { recordStoreFamilyState } from '@/object-record/record-store/states/recordStoreFamilyState';
@@ -20,16 +21,16 @@ import { type PageLayoutWidget } from '@/page-layout/types/PageLayoutWidget';
 import { FieldsWidget } from '@/page-layout/widgets/fields/components/FieldsWidget';
 import { WidgetComponentInstanceContext } from '@/page-layout/widgets/states/contexts/WidgetComponentInstanceContext';
 import { LayoutRenderingProvider } from '@/ui/layout/contexts/LayoutRenderingContext';
+import { WorkspaceSurfaceContext } from '@/ui/layout/contexts/WorkspaceSurfaceContext';
 import { jotaiStore } from '@/ui/utilities/state/jotai/jotaiStore';
 import { type ViewWithRelations } from '@/views/types/ViewWithRelations';
-import { CoreObjectNameSingular } from 'twenty-shared/types';
+import { StandardObjectNameSingular } from 'twenty-shared/types';
 import { ComponentDecorator } from 'twenty-ui/testing';
 import {
-  ViewOpenRecordIn,
-  ViewType,
-  ViewVisibility,
   PageLayoutTabLayoutMode,
   PageLayoutType,
+  ViewType,
+  ViewVisibility,
   WidgetConfigurationType,
   WidgetType,
 } from '~/generated-metadata/graphql';
@@ -43,7 +44,7 @@ import { setTestViewsInMetadataStore } from '~/testing/utils/setTestViewsInMetad
 import { setTestObjectMetadataItemsInMetadataStore } from '~/testing/utils/setTestObjectMetadataItemsInMetadataStore';
 
 const companyObjectMetadataItem = getMockObjectMetadataItemOrThrow(
-  CoreObjectNameSingular.Company,
+  StandardObjectNameSingular.Company,
 );
 
 const nameField = getMockFieldMetadataItemOrThrow({
@@ -134,20 +135,26 @@ const createPageLayoutWithWidget = (
   widget: PageLayoutWidget,
   objectMetadataId: string,
 ): PageLayout => ({
+  applicationId: 'application-id-mock',
   id: PAGE_LAYOUT_TEST_INSTANCE_ID,
   name: 'Mock Page Layout',
   type: PageLayoutType.RECORD_PAGE,
+  isFirstTabPinned: true,
+  isSystemSideEffect: true,
   objectMetadataId,
+  universalIdentifier: '20202020-0000-0000-0000-000000000001',
   tabs: [
     {
+      isSystemSideEffect: false,
+      universalIdentifier: 'universal-identifier-mock',
       __typename: 'PageLayoutTab' as const,
+      isActive: true,
       applicationId: '',
       id: TAB_ID_OVERVIEW,
       title: 'Overview',
       position: 0,
       pageLayoutId: PAGE_LAYOUT_TEST_INSTANCE_ID,
       widgets: [widget],
-      isOverridden: false,
       createdAt: '2024-01-01T00:00:00Z',
       updatedAt: '2024-01-01T00:00:00Z',
       deletedAt: null,
@@ -159,14 +166,19 @@ const createPageLayoutWithWidget = (
 });
 
 const createFieldsWidget = (viewId: string | null): PageLayoutWidget => ({
+  isSystemSideEffect: false,
+  universalIdentifier: 'universal-identifier-mock',
   __typename: 'PageLayoutWidget',
+  applicationId: '',
+  isActive: true,
   id: 'widget-fields',
   pageLayoutTabId: TAB_ID_OVERVIEW,
   type: WidgetType.FIELDS,
   title: 'Fields',
   objectMetadataId: companyObjectMetadataItem.id,
-  gridPosition: {
-    __typename: 'GridPosition',
+  position: {
+    layoutMode: PageLayoutTabLayoutMode.GRID,
+    __typename: 'PageLayoutWidgetGridPosition',
     row: 0,
     column: 0,
     rowSpan: 4,
@@ -177,7 +189,6 @@ const createFieldsWidget = (viewId: string | null): PageLayoutWidget => ({
     configurationType: WidgetConfigurationType.FIELDS,
     viewId,
   },
-  isOverridden: false,
   createdAt: '2024-01-01T00:00:00Z',
   updatedAt: '2024-01-01T00:00:00Z',
   deletedAt: null,
@@ -190,18 +201,18 @@ const createView = (
   name: 'Company Fields',
   objectMetadataId: companyObjectMetadataItem.id,
   type: ViewType.FIELDS_WIDGET,
-  icon: 'IconList',
+  icon: 'IconListDetails',
   key: null,
   shouldHideEmptyGroups: false,
   position: 0,
   isCompact: false,
-  openRecordIn: ViewOpenRecordIn.SIDE_PANEL,
   viewFields: [],
   viewGroups: [],
   viewFilters: [],
   viewSorts: [],
   visibility: ViewVisibility.WORKSPACE,
   createdByUserWorkspaceId: null,
+  isActive: true,
   ...overrides,
 });
 
@@ -215,9 +226,9 @@ const createViewField = (
   fieldMetadataId,
   position,
   isVisible: true,
+  isActive: true,
   size: 200,
   aggregateOperation: null,
-  isOverridden: false,
   viewId: FIELDS_VIEW_ID,
   ...(viewFieldGroupId !== undefined && { viewFieldGroupId }),
 });
@@ -233,10 +244,93 @@ const createViewFieldGroup = (
   name,
   position,
   isVisible,
-  isOverridden: false,
+  isActive: true,
   viewId: FIELDS_VIEW_ID,
   viewFields,
 });
+
+const SIDE_PANEL_SURFACE_INSTANCE_ID = 'fields-widget-story-side-panel';
+
+const FieldsWidgetStoryRenderer = ({
+  view,
+  surfaceType = 'main',
+}: {
+  view: ViewWithRelations;
+  surfaceType?: 'main' | 'side-panel';
+}) => {
+  const widget = createFieldsWidget(FIELDS_VIEW_ID);
+
+  const pageLayoutData = createPageLayoutWithWidget(
+    widget,
+    companyObjectMetadataItem.id,
+  );
+
+  setTestObjectMetadataItemsInMetadataStore(
+    jotaiStore,
+    getTestEnrichedObjectMetadataItemsMock(),
+  );
+  jotaiStore.set(isMinimalMetadataReadyState.atom, true);
+  setTestViewsInMetadataStore(jotaiStore, [view]);
+  jotaiStore.set(
+    pageLayoutPersistedComponentState.atomFamily({
+      instanceId: PAGE_LAYOUT_TEST_INSTANCE_ID,
+    }),
+    pageLayoutData,
+  );
+  jotaiStore.set(
+    pageLayoutDraftComponentState.atomFamily({
+      instanceId: PAGE_LAYOUT_TEST_INSTANCE_ID,
+    }),
+    pageLayoutData,
+  );
+  setRecordInStore(TEST_RECORD_ID, mockCompanyRecord);
+
+  return (
+    <div style={{ width: '400px', padding: '20px' }}>
+      <JestMetadataAndApolloMocksWrapper>
+        <CoreClientProviderWrapper>
+          <PageLayoutTestWrapper store={jotaiStore}>
+            <LayoutRenderingProvider
+              value={{
+                layoutType: PageLayoutType.RECORD_PAGE,
+                targetRecordIdentifier: {
+                  id: TEST_RECORD_ID,
+                  targetObjectNameSingular:
+                    companyObjectMetadataItem.nameSingular,
+                },
+              }}
+            >
+              <PageLayoutContentProvider
+                value={{
+                  layoutMode: PageLayoutTabLayoutMode.VERTICAL_LIST,
+                  presentation: 'stack',
+                  tabId: TAB_ID_OVERVIEW,
+                }}
+              >
+                <WidgetComponentInstanceContext.Provider
+                  value={{ instanceId: widget.id }}
+                >
+                  <WorkspaceSurfaceContext.Provider
+                    value={{
+                      type: surfaceType,
+                      instanceId:
+                        surfaceType === 'side-panel'
+                          ? SIDE_PANEL_SURFACE_INSTANCE_ID
+                          : MAIN_CONTEXT_STORE_INSTANCE_ID,
+                      ownsRouteLocation: surfaceType === 'main',
+                    }}
+                  >
+                    <FieldsWidget widget={widget} />
+                  </WorkspaceSurfaceContext.Provider>
+                </WidgetComponentInstanceContext.Provider>
+              </PageLayoutContentProvider>
+            </LayoutRenderingProvider>
+          </PageLayoutTestWrapper>
+        </CoreClientProviderWrapper>
+      </JestMetadataAndApolloMocksWrapper>
+    </div>
+  );
+};
 
 const meta: Meta<typeof FieldsWidget> = {
   title: 'Modules/PageLayout/Widgets/FieldsWidget',
@@ -296,67 +390,7 @@ export const WithViewFieldGroups: Story = {
       ],
     });
 
-    const widget = createFieldsWidget(FIELDS_VIEW_ID);
-
-    const pageLayoutData = createPageLayoutWithWidget(
-      widget,
-      companyObjectMetadataItem.id,
-    );
-
-    setTestObjectMetadataItemsInMetadataStore(
-      jotaiStore,
-      getTestEnrichedObjectMetadataItemsMock(),
-    );
-    jotaiStore.set(isMinimalMetadataReadyState.atom, true);
-    setTestViewsInMetadataStore(jotaiStore, [view]);
-    jotaiStore.set(
-      pageLayoutPersistedComponentState.atomFamily({
-        instanceId: PAGE_LAYOUT_TEST_INSTANCE_ID,
-      }),
-      pageLayoutData,
-    );
-    jotaiStore.set(
-      pageLayoutDraftComponentState.atomFamily({
-        instanceId: PAGE_LAYOUT_TEST_INSTANCE_ID,
-      }),
-      pageLayoutData,
-    );
-    setRecordInStore(TEST_RECORD_ID, mockCompanyRecord);
-
-    return (
-      <div style={{ width: '400px', padding: '20px' }}>
-        <JestMetadataAndApolloMocksWrapper>
-          <CoreClientProviderWrapper>
-            <PageLayoutTestWrapper store={jotaiStore}>
-              <LayoutRenderingProvider
-                value={{
-                  isInSidePanel: false,
-                  layoutType: PageLayoutType.RECORD_PAGE,
-                  targetRecordIdentifier: {
-                    id: TEST_RECORD_ID,
-                    targetObjectNameSingular:
-                      companyObjectMetadataItem.nameSingular,
-                  },
-                }}
-              >
-                <PageLayoutContentProvider
-                  value={{
-                    layoutMode: PageLayoutTabLayoutMode.VERTICAL_LIST,
-                    tabId: TAB_ID_OVERVIEW,
-                  }}
-                >
-                  <WidgetComponentInstanceContext.Provider
-                    value={{ instanceId: widget.id }}
-                  >
-                    <FieldsWidget widget={widget} />
-                  </WidgetComponentInstanceContext.Provider>
-                </PageLayoutContentProvider>
-              </LayoutRenderingProvider>
-            </PageLayoutTestWrapper>
-          </CoreClientProviderWrapper>
-        </JestMetadataAndApolloMocksWrapper>
-      </div>
-    );
+    return <FieldsWidgetStoryRenderer view={view} />;
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -372,77 +406,27 @@ export const WithViewFieldGroups: Story = {
   },
 };
 
-export const WithInlineViewFields: Story = {
+export const WithSingleViewFieldGroup: Story = {
   render: () => {
+    const contactInfoFields = [
+      createViewField('vf-name', nameField.id, 0, 'group-contact-info'),
+      createViewField('vf-address', addressField.id, 1, 'group-contact-info'),
+      createViewField('vf-linkedin', linkedinField.id, 2, 'group-contact-info'),
+    ];
+
     const view = createView({
-      viewFields: [
-        createViewField('vf-name', nameField.id, 0),
-        createViewField('vf-employees', employeesField.id, 1),
-        createViewField('vf-address', addressField.id, 2),
+      viewFields: contactInfoFields,
+      viewFieldGroups: [
+        createViewFieldGroup(
+          'group-contact-info',
+          'Contact Info',
+          0,
+          contactInfoFields,
+        ),
       ],
     });
 
-    const widget = createFieldsWidget(FIELDS_VIEW_ID);
-
-    const pageLayoutData = createPageLayoutWithWidget(
-      widget,
-      companyObjectMetadataItem.id,
-    );
-
-    setTestObjectMetadataItemsInMetadataStore(
-      jotaiStore,
-      getTestEnrichedObjectMetadataItemsMock(),
-    );
-    jotaiStore.set(isMinimalMetadataReadyState.atom, true);
-    setTestViewsInMetadataStore(jotaiStore, [view]);
-    jotaiStore.set(
-      pageLayoutPersistedComponentState.atomFamily({
-        instanceId: PAGE_LAYOUT_TEST_INSTANCE_ID,
-      }),
-      pageLayoutData,
-    );
-    jotaiStore.set(
-      pageLayoutDraftComponentState.atomFamily({
-        instanceId: PAGE_LAYOUT_TEST_INSTANCE_ID,
-      }),
-      pageLayoutData,
-    );
-    setRecordInStore(TEST_RECORD_ID, mockCompanyRecord);
-
-    return (
-      <div style={{ width: '400px', padding: '20px' }}>
-        <JestMetadataAndApolloMocksWrapper>
-          <CoreClientProviderWrapper>
-            <PageLayoutTestWrapper store={jotaiStore}>
-              <LayoutRenderingProvider
-                value={{
-                  isInSidePanel: false,
-                  layoutType: PageLayoutType.RECORD_PAGE,
-                  targetRecordIdentifier: {
-                    id: TEST_RECORD_ID,
-                    targetObjectNameSingular:
-                      companyObjectMetadataItem.nameSingular,
-                  },
-                }}
-              >
-                <PageLayoutContentProvider
-                  value={{
-                    layoutMode: PageLayoutTabLayoutMode.VERTICAL_LIST,
-                    tabId: TAB_ID_OVERVIEW,
-                  }}
-                >
-                  <WidgetComponentInstanceContext.Provider
-                    value={{ instanceId: widget.id }}
-                  >
-                    <FieldsWidget widget={widget} />
-                  </WidgetComponentInstanceContext.Provider>
-                </PageLayoutContentProvider>
-              </LayoutRenderingProvider>
-            </PageLayoutTestWrapper>
-          </CoreClientProviderWrapper>
-        </JestMetadataAndApolloMocksWrapper>
-      </div>
-    );
+    return <FieldsWidgetStoryRenderer view={view} />;
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -450,11 +434,24 @@ export const WithInlineViewFields: Story = {
     const companyName = await canvas.findByText('Acme Corporation');
     expect(companyName).toBeVisible();
 
-    const contactInfoHeader = canvas.queryByText('Contact Info');
-    expect(contactInfoHeader).toBeNull();
+    expect(canvas.queryByText('Contact Info')).not.toBeInTheDocument();
+  },
+};
 
-    const generalHeader = canvas.queryByText('General');
-    expect(generalHeader).toBeNull();
+export const WithDefaultGroups: Story = {
+  render: () => {
+    const view = createView();
+
+    return <FieldsWidgetStoryRenderer view={view} />;
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    const creationDateElements = await canvas.findAllByText('Creation date');
+    expect(creationDateElements.length).toBeGreaterThan(0);
+    expect(creationDateElements[0]).toBeVisible();
+
+    expect(canvas.queryByText('General')).not.toBeInTheDocument();
   },
 };
 
@@ -466,67 +463,7 @@ export const Empty: Story = {
       ],
     });
 
-    const widget = createFieldsWidget(FIELDS_VIEW_ID);
-
-    const pageLayoutData = createPageLayoutWithWidget(
-      widget,
-      companyObjectMetadataItem.id,
-    );
-
-    setTestObjectMetadataItemsInMetadataStore(
-      jotaiStore,
-      getTestEnrichedObjectMetadataItemsMock(),
-    );
-    jotaiStore.set(isMinimalMetadataReadyState.atom, true);
-    setTestViewsInMetadataStore(jotaiStore, [view]);
-    jotaiStore.set(
-      pageLayoutPersistedComponentState.atomFamily({
-        instanceId: PAGE_LAYOUT_TEST_INSTANCE_ID,
-      }),
-      pageLayoutData,
-    );
-    jotaiStore.set(
-      pageLayoutDraftComponentState.atomFamily({
-        instanceId: PAGE_LAYOUT_TEST_INSTANCE_ID,
-      }),
-      pageLayoutData,
-    );
-    setRecordInStore(TEST_RECORD_ID, mockCompanyRecord);
-
-    return (
-      <div style={{ width: '400px', padding: '20px' }}>
-        <JestMetadataAndApolloMocksWrapper>
-          <CoreClientProviderWrapper>
-            <PageLayoutTestWrapper store={jotaiStore}>
-              <LayoutRenderingProvider
-                value={{
-                  isInSidePanel: false,
-                  layoutType: PageLayoutType.RECORD_PAGE,
-                  targetRecordIdentifier: {
-                    id: TEST_RECORD_ID,
-                    targetObjectNameSingular:
-                      companyObjectMetadataItem.nameSingular,
-                  },
-                }}
-              >
-                <PageLayoutContentProvider
-                  value={{
-                    layoutMode: PageLayoutTabLayoutMode.VERTICAL_LIST,
-                    tabId: TAB_ID_OVERVIEW,
-                  }}
-                >
-                  <WidgetComponentInstanceContext.Provider
-                    value={{ instanceId: widget.id }}
-                  >
-                    <FieldsWidget widget={widget} />
-                  </WidgetComponentInstanceContext.Provider>
-                </PageLayoutContentProvider>
-              </LayoutRenderingProvider>
-            </PageLayoutTestWrapper>
-          </CoreClientProviderWrapper>
-        </JestMetadataAndApolloMocksWrapper>
-      </div>
-    );
+    return <FieldsWidgetStoryRenderer view={view} />;
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -541,4 +478,57 @@ export const Empty: Story = {
       ).toBeVisible();
     });
   },
+};
+
+// The anchored portal looks up a surface-scoped id; an unscoped anchor id would leave the cell inert.
+const openEditModeOnEmployees = async ({
+  canvasElement,
+}: {
+  canvasElement: HTMLElement;
+}) => {
+  const canvas = within(canvasElement);
+
+  const [employeesValue] = await canvas.findAllByText('250');
+  await userEvent.hover(employeesValue);
+
+  const hoveredValues = await canvas.findAllByText('250');
+  await userEvent.click(hoveredValues[hoveredValues.length - 1]);
+
+  await waitFor(() => {
+    expect(canvasElement.querySelector('input')).not.toBeNull();
+  });
+};
+
+const singleGroupView = () => {
+  const contactInfoFields = [
+    createViewField('vf-name', nameField.id, 0, 'group-contact-info'),
+    createViewField('vf-employees', employeesField.id, 1, 'group-contact-info'),
+  ];
+
+  return createView({
+    viewFields: contactInfoFields,
+    viewFieldGroups: [
+      createViewFieldGroup(
+        'group-contact-info',
+        'Contact Info',
+        0,
+        contactInfoFields,
+      ),
+    ],
+  });
+};
+
+export const OpensEditModeOnMainSurface: Story = {
+  render: () => <FieldsWidgetStoryRenderer view={singleGroupView()} />,
+  play: openEditModeOnEmployees,
+};
+
+export const OpensEditModeInSidePanel: Story = {
+  render: () => (
+    <FieldsWidgetStoryRenderer
+      view={singleGroupView()}
+      surfaceType="side-panel"
+    />
+  ),
+  play: openEditModeOnEmployees,
 };

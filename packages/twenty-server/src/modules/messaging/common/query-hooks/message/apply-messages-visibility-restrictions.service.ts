@@ -1,126 +1,198 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, type OnModuleInit } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
 
-import groupBy from 'lodash.groupby';
 import { FIELD_RESTRICTED_ADDITIONAL_PERMISSIONS_REQUIRED } from 'twenty-shared/constants';
+import {
+  MessageChannelVisibility,
+  type ObjectRecord,
+} from 'twenty-shared/types';
 import { isDefined } from 'twenty-shared/utils';
-import { In } from 'typeorm';
+import { In, Repository } from 'typeorm';
 
-import { NotFoundError } from 'src/engine/core-modules/graphql/utils/graphql-errors.util';
-import { ConnectedAccountDataAccessService } from 'src/engine/metadata-modules/connected-account/data-access/services/connected-account-data-access.service';
-import { GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspace-datasource/global-workspace-orm.manager';
+import { CommonRecordVisibilityService } from 'src/engine/api/common/common-record-visibility/common-record-visibility.service';
+import { type RecordVisibilityRestrictionHandler } from 'src/engine/api/common/common-record-visibility/types/record-visibility-restriction-handler.type';
+import { isApplicationAuthContext } from 'src/engine/core-modules/auth/guards/is-application-auth-context.guard';
+import { isUserAuthContext } from 'src/engine/core-modules/auth/guards/is-user-auth-context.guard';
+import { type WorkspaceAuthContext } from 'src/engine/core-modules/auth/types/workspace-auth-context.type';
+import { MessageChannelEntity } from 'src/engine/metadata-modules/message-channel/entities/message-channel.entity';
+import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
 import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
 import { type MessageChannelMessageAssociationWorkspaceEntity } from 'src/modules/messaging/common/standard-objects/message-channel-message-association.workspace-entity';
-import { MessageChannelVisibility } from 'src/modules/messaging/common/standard-objects/message-channel.workspace-entity';
-import { type MessageWorkspaceEntity } from 'src/modules/messaging/common/standard-objects/message.workspace-entity';
-import { WorkspaceMemberWorkspaceEntity } from 'src/modules/workspace-member/standard-objects/workspace-member.workspace-entity';
+
+const RESTRICTED_MESSAGE_FIELD_NAMES = ['subject', 'text', 'attachments'];
 
 @Injectable()
-export class ApplyMessagesVisibilityRestrictionsService {
+export class ApplyMessagesVisibilityRestrictionsService
+  implements RecordVisibilityRestrictionHandler, OnModuleInit
+{
   constructor(
-    private readonly globalWorkspaceOrmManager: GlobalWorkspaceOrmManager,
-    private readonly connectedAccountDataAccessService: ConnectedAccountDataAccessService,
+    private readonly workspaceOrmManager: WorkspaceOrmManager,
+    private readonly commonRecordVisibilityService: CommonRecordVisibilityService,
+    @InjectRepository(MessageChannelEntity)
+    private readonly messageChannelRepository: Repository<MessageChannelEntity>,
   ) {}
 
-  public async applyMessagesVisibilityRestrictions(
-    messages: MessageWorkspaceEntity[],
-    workspaceId: string,
-    userId?: string,
-  ) {
-    const authContext = buildSystemAuthContext(workspaceId);
+  onModuleInit() {
+    this.commonRecordVisibilityService.registerHandler({
+      objectNameSingular: 'message',
+      handler: this,
+    });
+  }
 
-    return this.globalWorkspaceOrmManager.executeInWorkspaceContext(
-      async () => {
-        const messageChannelMessageAssociationRepository =
-          await this.globalWorkspaceOrmManager.getRepository<MessageChannelMessageAssociationWorkspaceEntity>(
-            workspaceId,
-            'messageChannelMessageAssociation',
-          );
-
-        const messageChannelMessagesAssociations =
-          await messageChannelMessageAssociationRepository.find({
-            where: {
-              messageId: In(messages.map((message) => message.id)),
-            },
-            relations: ['messageChannel'],
-          });
-
-        const workspaceMemberRepository =
-          await this.globalWorkspaceOrmManager.getRepository<WorkspaceMemberWorkspaceEntity>(
-            workspaceId,
-            'workspaceMember',
-          );
-
-        for (let i = messages.length - 1; i >= 0; i--) {
-          const messageChannelMessageAssociations =
-            messageChannelMessagesAssociations.filter(
-              (association) => association.messageId === messages[i].id,
-            );
-
-          const messageChannels = messageChannelMessageAssociations
-            .map((association) => association.messageChannel)
-            .filter(
-              (channel): channel is NonNullable<typeof channel> =>
-                channel !== null,
-            );
-
-          if (messageChannels.length === 0) {
-            throw new NotFoundError('Associated message channels not found');
-          }
-
-          const messageChannelsGroupByVisibility = groupBy(
-            messageChannels,
-            (channel) => channel.visibility,
-          );
-
-          if (
-            messageChannelsGroupByVisibility[
-              MessageChannelVisibility.SHARE_EVERYTHING
-            ]
-          ) {
-            continue;
-          }
-
-          if (isDefined(userId)) {
-            const workspaceMember =
-              await workspaceMemberRepository.findOneByOrFail({
-                userId,
-              });
-
-            const connectedAccounts =
-              await this.connectedAccountDataAccessService.find(workspaceId, {
-                messageChannels: {
-                  id: In(messageChannels.map((channel) => channel.id)),
-                },
-                accountOwnerId: workspaceMember.id,
-              });
-
-            if (connectedAccounts.length > 0) {
-              continue;
-            }
-          }
-
-          if (
-            messageChannelsGroupByVisibility[MessageChannelVisibility.SUBJECT]
-          ) {
-            messages[i].text = FIELD_RESTRICTED_ADDITIONAL_PERMISSIONS_REQUIRED;
-            continue;
-          }
-
-          if (
-            messageChannelsGroupByVisibility[MessageChannelVisibility.METADATA]
-          ) {
-            messages[i].subject =
-              FIELD_RESTRICTED_ADDITIONAL_PERMISSIONS_REQUIRED;
-            messages[i].text = FIELD_RESTRICTED_ADDITIONAL_PERMISSIONS_REQUIRED;
-            continue;
-          }
-
-          messages.splice(i, 1);
-        }
-
-        return messages;
-      },
-      authContext,
+  public async applyVisibilityRestrictions({
+    records,
+    authContext,
+  }: {
+    records: ObjectRecord[];
+    authContext: WorkspaceAuthContext;
+  }): Promise<void> {
+    const restrictableMessages = records.filter((message) =>
+      RESTRICTED_MESSAGE_FIELD_NAMES.some((fieldName) => fieldName in message),
     );
+
+    if (restrictableMessages.length === 0) {
+      return;
+    }
+
+    const { fullyVisibleMessageIds, subjectVisibleMessageIds } =
+      await this.findVisibleMessageIds({
+        messageIds: restrictableMessages.map((message) => message.id),
+        authContext,
+      });
+
+    for (const message of restrictableMessages) {
+      if (fullyVisibleMessageIds.has(message.id)) {
+        continue;
+      }
+
+      if ('text' in message) {
+        message.text = FIELD_RESTRICTED_ADDITIONAL_PERMISSIONS_REQUIRED;
+      }
+
+      if ('attachments' in message) {
+        message.attachments = [];
+      }
+
+      if (!subjectVisibleMessageIds.has(message.id) && 'subject' in message) {
+        message.subject = FIELD_RESTRICTED_ADDITIONAL_PERMISSIONS_REQUIRED;
+      }
+    }
+  }
+
+  public async findVisibleMessageIds({
+    messageIds: requestedMessageIds,
+    authContext,
+  }: {
+    messageIds: string[];
+    authContext: WorkspaceAuthContext;
+  }): Promise<{
+    fullyVisibleMessageIds: Set<string>;
+    subjectVisibleMessageIds: Set<string>;
+  }> {
+    const workspaceId = authContext.workspace.id;
+    const fullyVisibleMessageIds = new Set<string>();
+    const subjectVisibleMessageIds = new Set<string>();
+
+    const messageIds = [...new Set(requestedMessageIds)].filter(isDefined);
+
+    if (messageIds.length === 0) {
+      return { fullyVisibleMessageIds, subjectVisibleMessageIds };
+    }
+
+    const messageChannelMessageAssociations =
+      await this.workspaceOrmManager.executeInWorkspaceContext(
+        async () =>
+          this.workspaceOrmManager
+            .getRepositoryWithoutPermissionChecks<MessageChannelMessageAssociationWorkspaceEntity>(
+              'messageChannelMessageAssociation',
+            )
+            .find({
+              where: { messageId: In(messageIds) },
+            }),
+        buildSystemAuthContext(workspaceId),
+        { lite: true },
+      );
+
+    const messageChannelIds = [
+      ...new Set(
+        messageChannelMessageAssociations.map(
+          (association) => association.messageChannelId,
+        ),
+      ),
+    ];
+
+    if (messageChannelIds.length === 0) {
+      return { fullyVisibleMessageIds, subjectVisibleMessageIds };
+    }
+
+    const messageChannels = await this.messageChannelRepository.find({
+      where: { id: In(messageChannelIds), workspaceId },
+      select: {
+        id: true,
+        visibility: true,
+        connectedAccount: {
+          id: true,
+          userWorkspaceId: true,
+          applicationId: true,
+        },
+      },
+      relations: { connectedAccount: true },
+    });
+
+    const messageChannelById = new Map(
+      messageChannels.map((messageChannel) => [
+        messageChannel.id,
+        messageChannel,
+      ]),
+    );
+
+    for (const association of messageChannelMessageAssociations) {
+      const messageChannel = messageChannelById.get(
+        association.messageChannelId,
+      );
+
+      if (!isDefined(messageChannel)) {
+        continue;
+      }
+
+      if (
+        messageChannel.visibility ===
+          MessageChannelVisibility.SHARE_EVERYTHING ||
+        this.isMessageChannelOwnedByViewer({ messageChannel, authContext })
+      ) {
+        fullyVisibleMessageIds.add(association.messageId);
+      } else if (
+        messageChannel.visibility === MessageChannelVisibility.SUBJECT
+      ) {
+        subjectVisibleMessageIds.add(association.messageId);
+      }
+    }
+
+    return { fullyVisibleMessageIds, subjectVisibleMessageIds };
+  }
+
+  private isMessageChannelOwnedByViewer({
+    messageChannel,
+    authContext,
+  }: {
+    messageChannel: MessageChannelEntity;
+    authContext: WorkspaceAuthContext;
+  }): boolean {
+    if (isUserAuthContext(authContext)) {
+      return (
+        messageChannel.connectedAccount.userWorkspaceId ===
+        authContext.userWorkspaceId
+      );
+    }
+
+    // Email connections carry no applicationId, so an application only sees through channels it created itself
+    if (isApplicationAuthContext(authContext)) {
+      return (
+        messageChannel.connectedAccount.applicationId ===
+        authContext.application.id
+      );
+    }
+
+    return false;
   }
 }

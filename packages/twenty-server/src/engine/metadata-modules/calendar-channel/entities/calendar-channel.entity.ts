@@ -1,7 +1,10 @@
+import { registerEnumType } from '@nestjs/graphql';
+
 import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
@@ -14,12 +17,37 @@ import {
   CalendarChannelSyncStage,
   CalendarChannelSyncStatus,
   CalendarChannelVisibility,
+  WebhookSubscriptionStatus,
 } from 'twenty-shared/types';
 
+import { WasIntroducedInUpgrade } from 'src/engine/core-modules/upgrade/decorators/was-introduced-in-upgrade.decorator';
 import { ConnectedAccountEntity } from 'src/engine/metadata-modules/connected-account/entities/connected-account.entity';
-import { WorkspaceRelatedEntity } from 'src/engine/workspace-manager/types/workspace-related-entity';
+import { WorkspaceRelatedEntity } from 'src/engine/workspace-manager/types/workspace-related-entity.type';
+
+registerEnumType(CalendarChannelVisibility, {
+  name: 'CalendarChannelVisibility',
+});
+registerEnumType(CalendarChannelSyncStatus, {
+  name: 'CalendarChannelSyncStatus',
+});
+registerEnumType(CalendarChannelSyncStage, {
+  name: 'CalendarChannelSyncStage',
+});
+registerEnumType(CalendarChannelContactAutoCreationPolicy, {
+  name: 'CalendarChannelContactAutoCreationPolicy',
+});
 
 @Entity({ name: 'calendarChannel', schema: 'core' })
+@Index('IDX_CALENDAR_CHANNEL_WORKSPACE_ID_SYNC_ENABLED_SYNC_STAGE', [
+  'workspaceId',
+  'isSyncEnabled',
+  'syncStage',
+])
+@Index(
+  'IDX_CALENDAR_CHANNEL_WEBHOOK_SUBSCRIPTION_EXTERNAL_ID',
+  ['webhookSubscriptionExternalId'],
+  { where: '"webhookSubscriptionExternalId" IS NOT NULL' },
+)
 export class CalendarChannelEntity extends WorkspaceRelatedEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -61,6 +89,13 @@ export class CalendarChannelEntity extends WorkspaceRelatedEntity {
   })
   contactAutoCreationPolicy: CalendarChannelContactAutoCreationPolicy;
 
+  @Column({ type: 'boolean', nullable: false, default: false })
+  @WasIntroducedInUpgrade({
+    upgradeCommandName:
+      '2.49.0_AddExcludePrivateEventsToCalendarChannelFastInstanceCommand_1792319637000',
+  })
+  excludePrivateEvents: boolean;
+
   @Column({ type: 'boolean', nullable: false, default: true })
   isSyncEnabled: boolean;
 
@@ -75,6 +110,25 @@ export class CalendarChannelEntity extends WorkspaceRelatedEntity {
 
   @Column({ type: 'integer', nullable: false, default: 0 })
   throttleFailureCount: number;
+
+  @Column({ type: 'varchar', nullable: true })
+  webhookSubscriptionExternalId: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  webhookSubscriptionExternalResourceId: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  webhookSubscriptionClientState: string | null;
+
+  @Column({
+    type: 'enum',
+    enum: WebhookSubscriptionStatus,
+    nullable: true,
+  })
+  webhookSubscriptionStatus: WebhookSubscriptionStatus | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  webhookSubscriptionExpiresAt: Date | null;
 
   @Column({ type: 'uuid', nullable: false })
   connectedAccountId: string;

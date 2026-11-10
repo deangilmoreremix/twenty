@@ -1,12 +1,10 @@
 import { faker } from '@faker-js/faker';
 import { expectOneNotInternalServerErrorSnapshot } from 'test/integration/graphql/utils/expect-one-not-internal-server-error-snapshot.util';
-import { updateFeatureFlag } from 'test/integration/metadata/suites/utils/update-feature-flag.util';
 import { createCommandMenuItem } from 'test/integration/metadata/suites/command-menu-item/utils/create-command-menu-item.util';
 import {
   eachTestingContextFilter,
   type EachTestingContext,
 } from 'twenty-shared/testing';
-import { FeatureFlagKey } from 'twenty-shared/types';
 
 import { type CreateCommandMenuItemInput } from 'src/engine/metadata-modules/command-menu-item/dtos/create-command-menu-item.input';
 import { EngineComponentKey } from 'src/engine/metadata-modules/command-menu-item/enums/engine-component-key.enum';
@@ -65,8 +63,7 @@ const failingCommandMenuItemCreationTestCases: EachTestingContext<TestContext>[]
       },
     },
     {
-      title:
-        'when creating TRIGGER_WORKFLOW_VERSION without workflowVersionId',
+      title: 'when creating TRIGGER_WORKFLOW_VERSION without workflowVersionId',
       context: {
         input: {
           engineComponentKey: EngineComponentKey.TRIGGER_WORKFLOW_VERSION,
@@ -75,8 +72,7 @@ const failingCommandMenuItemCreationTestCases: EachTestingContext<TestContext>[]
       },
     },
     {
-      title:
-        'when creating TRIGGER_WORKFLOW_VERSION with frontComponentId',
+      title: 'when creating TRIGGER_WORKFLOW_VERSION with frontComponentId',
       context: {
         input: {
           workflowVersionId: faker.string.uuid(),
@@ -87,8 +83,7 @@ const failingCommandMenuItemCreationTestCases: EachTestingContext<TestContext>[]
       },
     },
     {
-      title:
-        'when creating FRONT_COMPONENT_RENDERER without frontComponentId',
+      title: 'when creating FRONT_COMPONENT_RENDERER without frontComponentId',
       context: {
         input: {
           engineComponentKey: EngineComponentKey.FRONT_COMPONENT_RENDERER,
@@ -97,8 +92,7 @@ const failingCommandMenuItemCreationTestCases: EachTestingContext<TestContext>[]
       },
     },
     {
-      title:
-        'when creating FRONT_COMPONENT_RENDERER with workflowVersionId',
+      title: 'when creating FRONT_COMPONENT_RENDERER with workflowVersionId',
       context: {
         input: {
           frontComponentId: faker.string.uuid(),
@@ -131,22 +125,6 @@ const failingCommandMenuItemCreationTestCases: EachTestingContext<TestContext>[]
   ];
 
 describe('CommandMenuItem creation should fail', () => {
-  beforeAll(async () => {
-    await updateFeatureFlag({
-      featureFlag: FeatureFlagKey.IS_COMMAND_MENU_ITEM_ENABLED,
-      value: true,
-      expectToFail: false,
-    });
-  });
-
-  afterAll(async () => {
-    await updateFeatureFlag({
-      featureFlag: FeatureFlagKey.IS_COMMAND_MENU_ITEM_ENABLED,
-      value: false,
-      expectToFail: false,
-    });
-  });
-
   it.each(eachTestingContextFilter(failingCommandMenuItemCreationTestCases))(
     '$title',
     async ({ context }) => {
@@ -160,4 +138,18 @@ describe('CommandMenuItem creation should fail', () => {
       });
     },
   );
+
+  it('when the caller lacks the LAYOUTS permission', async () => {
+    const { errors } = await createCommandMenuItem({
+      expectToFail: true,
+      input: {
+        engineComponentKey: EngineComponentKey.GO_TO_PEOPLE,
+        label: 'Member Pinned Item',
+        isPinned: true,
+      },
+      token: APPLE_JONY_MEMBER_ACCESS_TOKEN,
+    });
+
+    expect(errors?.[0]?.extensions?.code).toBe('FORBIDDEN');
+  });
 });

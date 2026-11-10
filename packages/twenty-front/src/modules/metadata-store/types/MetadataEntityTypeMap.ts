@@ -1,4 +1,5 @@
 import { type FlatAgent } from '@/metadata-store/types/FlatAgent';
+import { type FlatApplication } from '@/metadata-store/types/FlatApplication';
 import { type FlatCommandMenuItem } from '@/metadata-store/types/FlatCommandMenuItem';
 import { type FlatFieldMetadataItem } from '@/metadata-store/types/FlatFieldMetadataItem';
 import { type FlatFrontComponent } from '@/metadata-store/types/FlatFrontComponent';
@@ -48,4 +49,5 @@ export type MetadataEntityTypeMap = {
   skills: FlatSkill;
   rowLevelPermissionPredicates: FlatRowLevelPermissionPredicate;
   rowLevelPermissionPredicateGroups: FlatRowLevelPermissionPredicateGroup;
+  applications: FlatApplication;
 };

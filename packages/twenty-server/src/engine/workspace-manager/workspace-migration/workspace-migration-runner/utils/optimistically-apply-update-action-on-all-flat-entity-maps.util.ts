@@ -7,7 +7,7 @@ import { deleteFlatEntityFromFlatEntityAndRelatedEntityMapsThroughMutationOrThro
 import { findFlatEntityByIdInFlatEntityMapsOrThrow } from 'src/engine/metadata-modules/flat-entity/utils/find-flat-entity-by-id-in-flat-entity-maps-or-throw.util';
 import { getMetadataFlatEntityMapsKey } from 'src/engine/metadata-modules/flat-entity/utils/get-metadata-flat-entity-maps-key.util';
 import { replaceFlatEntityInFlatEntityMapsThroughMutationOrThrow } from 'src/engine/workspace-manager/workspace-migration/utils/replace-flat-entity-in-flat-entity-maps-through-mutation-or-throw.util';
-import { type AllFlatWorkspaceMigrationAction } from 'src/engine/workspace-manager/workspace-migration/workspace-migration-builder/types/workspace-migration-action-common';
+import { type AllFlatWorkspaceMigrationAction } from 'src/engine/workspace-manager/workspace-migration/workspace-migration-builder/types/workspace-migration-action-common.type';
 
 export type OptimisticallyApplyUpdateActionOnAllFlatEntityMapsArgs = {
   flatAction: AllFlatWorkspaceMigrationAction<'update'>;
@@ -48,6 +48,7 @@ export const optimisticallyApplyUpdateActionOnAllFlatEntityMaps = ({
     case 'viewSort':
     case 'rowLevelPermissionPredicate':
     case 'rowLevelPermissionPredicateGroup':
+    case 'rowLevelPermissionRule':
     case 'viewFilterGroup':
     case 'logicFunction':
     case 'viewFilter':
@@ -61,9 +62,25 @@ export const optimisticallyApplyUpdateActionOnAllFlatEntityMaps = ({
     case 'commandMenuItem':
     case 'frontComponent':
     case 'navigationMenuItem':
+    case 'rolePermissionFlag':
     case 'permissionFlag':
     case 'objectPermission':
-    case 'webhook': {
+    case 'fieldPermission':
+    case 'webhook':
+    case 'mcpServer':
+    case 'applicationVariable':
+    case 'workflow':
+    case 'workflowVersion':
+    case 'connectionProvider':
+    case 'messagingProvider':
+    case 'timelineActivityType':
+    case 'agentChatChannel':
+    case 'agentChatChannelRole':
+    case 'settingsMenuItem':
+    case 'fieldMetadataOption':
+    case 'relatedRecordPath':
+    case 'validationRule':
+    case 'searchFieldMetadata': {
       const flatEntityMapsKey = getMetadataFlatEntityMapsKey(
         flatAction.metadataName,
       );

@@ -2,9 +2,15 @@ import { isUndefined } from '@sniptt/guards';
 
 import { type FieldMetadataItem } from '@/object-metadata/types/FieldMetadataItem';
 import { type EnrichedObjectMetadataItem } from '@/object-metadata/types/EnrichedObjectMetadataItem';
+import { isManyToOneRelationField } from '@/object-metadata/utils/isManyToOneRelationField';
 import { type ObjectRecord } from '@/object-record/types/ObjectRecord';
 import { generateEmptyFieldValue } from '@/object-record/utils/generateEmptyFieldValue';
-import { computeMorphRelationFieldName, isDefined } from 'twenty-shared/utils';
+import {
+  computeMorphRelationGqlFieldName,
+  computeRelationGqlFieldJoinColumnName,
+  isDefined,
+} from 'twenty-shared/utils';
+import { doNotTranslate } from 'twenty-shared/i18n';
 import { FieldMetadataType, RelationType } from '~/generated-metadata/graphql';
 
 type PrefillRecordArgs = {
@@ -22,17 +28,16 @@ export const prefillRecord = <T extends ObjectRecord>({
         const fieldValue = isUndefined(inputValue)
           ? generateEmptyFieldValue({ fieldMetadataItem })
           : inputValue;
-        if (
-          fieldMetadataItem.type === FieldMetadataType.RELATION &&
-          fieldMetadataItem.relation?.type === RelationType.MANY_TO_ONE
-        ) {
-          const joinColumnValue =
-            input[fieldMetadataItem.settings?.joinColumnName] ?? null;
+        if (isManyToOneRelationField(fieldMetadataItem)) {
+          const joinColumnName = computeRelationGqlFieldJoinColumnName({
+            name: fieldMetadataItem.name,
+          });
+          const joinColumnValue = input[joinColumnName] ?? null;
           throwIfInputRelationDataIsInconsistent(input, fieldMetadataItem);
 
           return [
             [fieldMetadataItem.name, fieldValue],
-            [fieldMetadataItem.settings?.joinColumnName, joinColumnValue],
+            [joinColumnName, joinColumnValue],
           ];
         }
         if (
@@ -41,7 +46,7 @@ export const prefillRecord = <T extends ObjectRecord>({
         ) {
           const gqlFields = fieldMetadataItem.morphRelations?.map(
             (morphRelation) => {
-              return computeMorphRelationFieldName({
+              return computeMorphRelationGqlFieldName({
                 fieldName: fieldMetadataItem.name,
                 relationType: morphRelation.type,
                 targetObjectMetadataNameSingular:
@@ -52,10 +57,15 @@ export const prefillRecord = <T extends ObjectRecord>({
             },
           );
 
-          return gqlFields?.flatMap((gqlField) => [
-            [gqlField, fieldValue],
-            [`${gqlField}Id`, input[`${gqlField}Id`] ?? null],
-          ]);
+          return gqlFields?.flatMap((gqlField) => {
+            const joinColumnName = computeRelationGqlFieldJoinColumnName({
+              name: gqlField,
+            });
+            return [
+              [gqlField, fieldValue],
+              [joinColumnName, input[joinColumnName] ?? null],
+            ];
+          });
         }
 
         return [[fieldMetadataItem.name, fieldValue]];
@@ -70,10 +80,14 @@ const throwIfInputRelationDataIsInconsistent = (
   fieldMetadataItem: FieldMetadataItem,
 ) => {
   const inputValue = input[fieldMetadataItem.name];
-  const relationIdFieldName = `${fieldMetadataItem.name}Id`;
+  const relationIdFieldName = computeRelationGqlFieldJoinColumnName({
+    name: fieldMetadataItem.name,
+  });
   if (isDefined(inputValue) && !isDefined(input[relationIdFieldName])) {
     throw new Error(
-      `Inconsistent input: ${fieldMetadataItem.name} is specified but ${relationIdFieldName} is missing`,
+      doNotTranslate(
+        `Inconsistent input: ${fieldMetadataItem.name} is specified but ${relationIdFieldName} is missing`,
+      ),
     );
   }
 };

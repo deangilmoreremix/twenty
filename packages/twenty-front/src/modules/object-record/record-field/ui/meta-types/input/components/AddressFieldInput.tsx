@@ -1,12 +1,13 @@
 import { useAddressField } from '@/object-record/record-field/ui/meta-types/hooks/useAddressField';
 import { type FieldAddressDraftValue } from '@/object-record/record-field/ui/types/FieldInputDraftValue';
 import { AddressInput } from '@/ui/field/input/components/AddressInput';
-
 import { RecordFieldComponentInstanceContext } from '@/object-record/record-field/ui/states/contexts/RecordFieldComponentInstanceContext';
 
 import { FieldInputEventContext } from '@/object-record/record-field/ui/contexts/FieldInputEventContext';
 import { useAvailableComponentInstanceIdOrThrow } from '@/ui/utilities/state/component-state/hooks/useAvailableComponentInstanceIdOrThrow';
 import { useContext } from 'react';
+import { castAsNumberOrNull } from '~/utils/cast-as-number-or-null';
+import { normalizeAddressFieldValueForPersist } from '@/object-record/record-field/ui/utils/normalizeAddressFieldValueForPersist';
 
 export const AddressFieldInput = () => {
   const { draftValue, setDraftValue, fieldDefinition } = useAddressField();
@@ -18,16 +19,16 @@ export const AddressFieldInput = () => {
   const convertToAddress = (
     newAddress: FieldAddressDraftValue | undefined,
   ): FieldAddressDraftValue => {
-    return {
+    return normalizeAddressFieldValueForPersist({
       addressStreet1: newAddress?.addressStreet1 ?? '',
       addressStreet2: newAddress?.addressStreet2 ?? null,
       addressCity: newAddress?.addressCity ?? null,
       addressState: newAddress?.addressState ?? null,
       addressCountry: newAddress?.addressCountry ?? null,
       addressPostcode: newAddress?.addressPostcode ?? null,
-      addressLat: newAddress?.addressLat ?? null,
-      addressLng: newAddress?.addressLng ?? null,
-    };
+      addressLat: castAsNumberOrNull(newAddress?.addressLat),
+      addressLng: castAsNumberOrNull(newAddress?.addressLng),
+    });
   };
   const settings = fieldDefinition.metadata.settings;
 
@@ -50,10 +51,13 @@ export const AddressFieldInput = () => {
     onEscape?.({ newValue: convertToAddress(newAddress) });
   };
 
-  const handleClickOutside = (
-    event: MouseEvent | TouchEvent,
-    newAddress: FieldAddressDraftValue,
-  ) => {
+  const handleClickOutside = ({
+    event,
+    newAddress,
+  }: {
+    event: MouseEvent | TouchEvent;
+    newAddress: FieldAddressDraftValue;
+  }) => {
     onClickOutside?.({ newValue: convertToAddress(newAddress), event });
   };
 

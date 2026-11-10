@@ -1,21 +1,23 @@
 import { Injectable } from '@nestjs/common';
 
 import { isDefined } from 'twenty-shared/utils';
-import { DEFAULT_TOOL_INPUT_SCHEMA } from 'twenty-shared/logic-function';
-
 import {
-  type GenerateDescriptorOptions,
-  type ToolProvider,
-  type ToolProviderContext,
-} from 'src/engine/core-modules/tool-provider/interfaces/tool-provider.interface';
+  buildToolInputJsonSchema,
+  DEFAULT_TOOL_INPUT_SCHEMA,
+} from 'twenty-shared/logic-function';
 
-import { ToolCategory } from 'src/engine/core-modules/tool-provider/enums/tool-category.enum';
-import {
-  type ToolDescriptor,
-  type ToolIndexEntry,
-} from 'src/engine/core-modules/tool-provider/types/tool-descriptor.type';
+import { canCallerReachApplication } from 'src/engine/core-modules/application/utils/can-caller-reach-application.util';
+import { type GenerateDescriptorOptions } from 'src/engine/core-modules/tool-provider/interfaces/generate-descriptor-options.type';
+import { type ToolProvider } from 'src/engine/core-modules/tool-provider/interfaces/tool-provider.interface';
+import { type ToolProviderContext } from 'src/engine/core-modules/tool-provider/interfaces/tool-provider-context.type';
+
+import { ToolCategory } from 'twenty-shared/ai';
+import { type ToolDescriptor } from 'src/engine/core-modules/tool-provider/types/tool-descriptor.type';
+import { type ToolIndexEntry } from 'src/engine/core-modules/tool-provider/types/tool-index-entry.type';
+import { type ToolOutput } from 'src/engine/core-modules/tool/types/tool-output.type';
 import { WorkspaceManyOrAllFlatEntityMapsCacheService } from 'src/engine/metadata-modules/flat-entity/services/workspace-many-or-all-flat-entity-maps-cache.service';
 import { type FlatLogicFunction } from 'src/engine/metadata-modules/logic-function/types/flat-logic-function.type';
+import { buildLogicFunctionToolName } from 'src/engine/core-modules/tool-provider/utils/build-logic-function-tool-name.util';
 
 @Injectable()
 export class LogicFunctionToolProvider implements ToolProvider {
@@ -29,34 +31,76 @@ export class LogicFunctionToolProvider implements ToolProvider {
     return true;
   }
 
+  // Unreachable: logic function descriptors are dispatched inline by ToolExecutorService.
+  async executeStaticTool(
+    toolName: string,
+    _args: Record<string, unknown>,
+    _context: ToolProviderContext,
+  ): Promise<ToolOutput> {
+    throw new Error(
+      `LogicFunctionToolProvider does not emit static-kind descriptors (tool: ${toolName})`,
+    );
+  }
+
   async generateDescriptors(
     context: ToolProviderContext,
     options?: GenerateDescriptorOptions,
   ): Promise<(ToolIndexEntry | ToolDescriptor)[]> {
     const includeSchemas = options?.includeSchemas ?? true;
 
-    const { flatLogicFunctionMaps } =
+    const {
+      flatLogicFunctionMaps,
+      flatObjectMetadataMaps,
+      flatFrontComponentMaps,
+    } =
       await this.flatEntityMapsCacheService.getOrRecomputeManyOrAllFlatEntityMaps(
         {
           workspaceId: context.workspaceId,
-          flatMapsKeys: ['flatLogicFunctionMaps'],
+          flatMapsKeys: [
+            'flatLogicFunctionMaps',
+            'flatObjectMetadataMaps',
+            'flatFrontComponentMaps',
+          ],
         },
       );
+
+    const resolveWidgetFrontComponentId = (
+      frontComponentUniversalIdentifier: string | undefined,
+    ) =>
+      isDefined(frontComponentUniversalIdentifier)
+        ? flatFrontComponentMaps.byUniversalIdentifier[
+            frontComponentUniversalIdentifier
+          ]?.id
+        : undefined;
+
+    const resolveObjectLabel = (objectUniversalIdentifier: string) =>
+      flatObjectMetadataMaps.byUniversalIdentifier[objectUniversalIdentifier]
+        ?.labelSingular;
 
     const logicFunctionsWithSchema = Object.values(
       flatLogicFunctionMaps.byUniversalIdentifier,
     ).filter(
       (fn): fn is FlatLogicFunction =>
-        isDefined(fn) && fn.isTool === true && fn.deletedAt === null,
+        isDefined(fn) &&
+        isDefined(fn.toolTriggerSettings) &&
+        fn.deletedAt === null &&
+        canCallerReachApplication({
+          callingApplication: context.application,
+          applicationId: fn.applicationId,
+          operation: 'trigger',
+          workspaceCustomApplicationId:
+            context.authContext?.workspace.workspaceCustomApplicationId,
+        }),
     );
 
     const descriptors: (ToolIndexEntry | ToolDescriptor)[] = [];
 
     for (const logicFunction of logicFunctionsWithSchema) {
-      const toolName = this.buildLogicFunctionToolName(logicFunction.name);
+      const toolName = buildLogicFunctionToolName(logicFunction.name);
 
       const base: ToolIndexEntry = {
         name: toolName,
+        label: logicFunction.name,
         description:
           logicFunction.description ||
           `Execute the ${logicFunction.name} logic function`,
@@ -65,27 +109,26 @@ export class LogicFunctionToolProvider implements ToolProvider {
           kind: 'logic_function',
           logicFunctionId: logicFunction.id,
         },
+        frontComponentId: resolveWidgetFrontComponentId(
+          logicFunction.toolTriggerSettings?.frontComponentUniversalIdentifier,
+        ),
       };
 
       if (includeSchemas) {
-        // Logic functions already store JSON Schema -- use it directly
-        const inputSchema =
-          (logicFunction.toolInputSchema as object) ??
-          DEFAULT_TOOL_INPUT_SCHEMA;
-
-        descriptors.push({ ...base, inputSchema });
+        descriptors.push({
+          ...base,
+          inputSchema: isDefined(logicFunction.toolTriggerSettings?.inputSchema)
+            ? (buildToolInputJsonSchema(
+                logicFunction.toolTriggerSettings.inputSchema,
+                resolveObjectLabel,
+              ) as object)
+            : DEFAULT_TOOL_INPUT_SCHEMA,
+        });
       } else {
         descriptors.push(base);
       }
     }
 
     return descriptors;
-  }
-
-  private buildLogicFunctionToolName(functionName: string): string {
-    return `logic_function_${functionName
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '_')
-      .replace(/^_+|_+$/g, '')}`;
   }
 }

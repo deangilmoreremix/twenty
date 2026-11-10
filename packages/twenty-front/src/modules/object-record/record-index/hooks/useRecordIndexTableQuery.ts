@@ -2,20 +2,23 @@ import { useObjectMetadataItem } from '@/object-metadata/hooks/useObjectMetadata
 import { useFindManyRecords } from '@/object-record/hooks/useFindManyRecords';
 import { useRelevantRecordsGqlFields } from '@/object-record/record-field/hooks/useRelevantRecordsGqlFields';
 import { useFindManyRecordIndexTableParams } from '@/object-record/record-index/hooks/useFindManyRecordIndexTableParams';
-import { SIGN_IN_BACKGROUND_MOCK_COMPANIES } from '@/sign-in-background-mock/constants/SignInBackgroundMockCompanies';
-import { useShowAuthModal } from '@/ui/layout/hooks/useShowAuthModal';
+import { recordIndexGroupFieldMetadataItemComponentState } from '@/object-record/record-index/states/recordIndexGroupFieldMetadataComponentState';
+import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateValue';
 
 export const useRecordIndexTableQuery = (objectNameSingular: string) => {
-  const showAuthModal = useShowAuthModal();
-
   const params = useFindManyRecordIndexTableParams(objectNameSingular);
 
   const { objectMetadataItem } = useObjectMetadataItem({
     objectNameSingular,
   });
 
+  const recordIndexGroupFieldMetadataItem = useAtomComponentStateValue(
+    recordIndexGroupFieldMetadataItemComponentState,
+  );
+
   const recordGqlFields = useRelevantRecordsGqlFields({
     objectMetadataItem,
+    additionalFieldMetadataIds: [recordIndexGroupFieldMetadataItem?.id],
   });
 
   const {
@@ -23,20 +26,23 @@ export const useRecordIndexTableQuery = (objectNameSingular: string) => {
     hasNextPage,
     queryIdentifier,
     loading,
+    error,
     totalCount,
     fetchMoreRecords,
+    refetch,
   } = useFindManyRecords({
     ...params,
     recordGqlFields,
-    skip: showAuthModal,
   });
 
   return {
-    records: showAuthModal ? SIGN_IN_BACKGROUND_MOCK_COMPANIES : records,
-    loading: showAuthModal ? false : loading,
+    records,
+    loading,
+    error,
     hasNextPage,
     queryIdentifier,
     totalCount,
     fetchMoreRecords,
+    refetch,
   };
 };

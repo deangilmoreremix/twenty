@@ -1,8 +1,8 @@
 import { METADATA_OPERATION_BROWSER_EVENT_NAME } from '@/browser-event/constants/MetadataOperationBrowserEventName';
+import { type BroadcastEntityName } from '@/browser-event/types/BroadcastEntityName';
 import { type MetadataOperation } from '@/browser-event/types/MetadataOperation';
 import { type MetadataOperationBrowserEventDetail } from '@/browser-event/types/MetadataOperationBrowserEventDetail';
 import { useEffect } from 'react';
-import { type AllMetadataName } from 'twenty-shared/metadata';
 import { isDefined, isNonEmptyArray } from 'twenty-shared/utils';
 
 export const useListenToMetadataOperationBrowserEvent = <
@@ -11,14 +11,20 @@ export const useListenToMetadataOperationBrowserEvent = <
   onMetadataOperationBrowserEvent,
   metadataName,
   operationTypes,
+  skip = false,
 }: {
   onMetadataOperationBrowserEvent: (
     detail: MetadataOperationBrowserEventDetail<T>,
   ) => void;
-  metadataName?: AllMetadataName;
+  metadataName?: BroadcastEntityName;
   operationTypes?: MetadataOperation<T>['type'][];
+  skip?: boolean;
 }) => {
   useEffect(() => {
+    if (skip) {
+      return;
+    }
+
     const handleMetadataOperationEvent = (
       event: CustomEvent<MetadataOperationBrowserEventDetail<T>>,
     ) => {
@@ -49,5 +55,5 @@ export const useListenToMetadataOperationBrowserEvent = <
         handleMetadataOperationEvent as EventListener,
       );
     };
-  }, [metadataName, onMetadataOperationBrowserEvent, operationTypes]);
+  }, [metadataName, onMetadataOperationBrowserEvent, operationTypes, skip]);
 };

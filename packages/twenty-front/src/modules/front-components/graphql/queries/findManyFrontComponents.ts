@@ -6,6 +6,21 @@ export const FIND_MANY_FRONT_COMPONENTS = gql`
       id
       name
       applicationId
+      builtComponentChecksum
+      builtComponentPath
+      componentName
+      createdAt
+      description
+      isHeadless
+      widgetAvailability {
+        pageLayoutType
+        objectMetadataId
+      }
+      sourceComponentPath
+      universalIdentifier
+      updatedAt
+      usesSdkClient
+      frontComponentSharedDependenciesChecksum
     }
   }
 `;

@@ -1,31 +1,14 @@
 import { gql } from 'graphql-tag';
-import { makeMetadataAPIRequest } from 'test/integration/metadata/suites/utils/make-metadata-api-request.util';
-import { updateFeatureFlag } from 'test/integration/metadata/suites/utils/update-feature-flag.util';
-import { FeatureFlagKey } from 'twenty-shared/types';
+import { makeMetadataApiRequestWithMemberRole } from 'test/integration/metadata/suites/utils/make-metadata-api-request-with-member-role.util';
+import { makeMetadataApiRequest } from 'test/integration/metadata/suites/utils/make-metadata-api-request.util';
 
 import { CONNECTED_ACCOUNT_DATA_SEED_IDS } from 'src/engine/workspace-manager/dev-seeder/data/constants/connected-account-data-seeds.constant';
-import { MESSAGE_CHANNEL_DATA_SEED_IDS } from 'src/engine/workspace-manager/dev-seeder/data/constants/message-channel-data-seeds.constant';
+import { MESSAGE_CHANNEL_DATA_SEED_IDS } from 'src/engine/workspace-manager/dev-seeder/core/constants/message-channel-seed-ids.constant';
 
 describe('messageChannelResolver (e2e)', () => {
-  beforeAll(async () => {
-    await updateFeatureFlag({
-      featureFlag: FeatureFlagKey.IS_CONNECTED_ACCOUNT_MIGRATED,
-      value: true,
-      expectToFail: false,
-    });
-  });
-
-  afterAll(async () => {
-    await updateFeatureFlag({
-      featureFlag: FeatureFlagKey.IS_CONNECTED_ACCOUNT_MIGRATED,
-      value: false,
-      expectToFail: false,
-    });
-  });
-
   describe('myMessageChannels', () => {
     it('should return only the current user message channels', async () => {
-      const response = await makeMetadataAPIRequest({
+      const response = await makeMetadataApiRequest({
         query: gql`
           query MyMessageChannels {
             myMessageChannels {
@@ -43,16 +26,14 @@ describe('messageChannelResolver (e2e)', () => {
       expect(response.body.errors).toBeUndefined();
 
       const channels = response.body.data.myMessageChannels;
-      const channelIds = channels.map(
-        (channel: { id: string }) => channel.id,
-      );
+      const channelIds = channels.map((channel: { id: string }) => channel.id);
 
       expect(channelIds).toContain(MESSAGE_CHANNEL_DATA_SEED_IDS.JANE);
       expect(channelIds).not.toContain(MESSAGE_CHANNEL_DATA_SEED_IDS.JONY);
     });
 
     it('should filter by connectedAccountId', async () => {
-      const response = await makeMetadataAPIRequest({
+      const response = await makeMetadataApiRequest({
         query: gql`
           query MyMessageChannels($connectedAccountId: UUID) {
             myMessageChannels(connectedAccountId: $connectedAccountId) {
@@ -70,16 +51,14 @@ describe('messageChannelResolver (e2e)', () => {
       expect(response.body.errors).toBeUndefined();
 
       const channels = response.body.data.myMessageChannels;
-      const channelIds = channels.map(
-        (channel: { id: string }) => channel.id,
-      );
+      const channelIds = channels.map((channel: { id: string }) => channel.id);
 
       expect(channelIds).toContain(MESSAGE_CHANNEL_DATA_SEED_IDS.JANE);
       expect(channelIds).not.toContain(MESSAGE_CHANNEL_DATA_SEED_IDS.JONY);
     });
 
     it('should deny filtering by another user connectedAccountId', async () => {
-      const response = await makeMetadataAPIRequest({
+      const response = await makeMetadataApiRequest({
         query: gql`
           query MyMessageChannels($connectedAccountId: UUID) {
             myMessageChannels(connectedAccountId: $connectedAccountId) {
@@ -96,8 +75,43 @@ describe('messageChannelResolver (e2e)', () => {
       expect(response.body.errors?.[0]?.extensions?.code).toBe('FORBIDDEN');
     });
 
+    it('should hide the channels of an archived workspace-shared account from other members', async () => {
+      await global.testDataSource.query(
+        `UPDATE core."connectedAccount" SET "archivedAt" = now() WHERE id = $1`,
+        [CONNECTED_ACCOUNT_DATA_SEED_IDS.SUPPORT_GROUP],
+      );
+
+      try {
+        const response = await makeMetadataApiRequestWithMemberRole({
+          query: gql`
+            query MyMessageChannels {
+              myMessageChannels {
+                id
+              }
+            }
+          `,
+        });
+
+        expect(response.status).toBe(200);
+        expect(response.body.errors).toBeUndefined();
+
+        const channelIds = response.body.data.myMessageChannels.map(
+          (channel: { id: string }) => channel.id,
+        );
+
+        expect(channelIds).not.toContain(
+          MESSAGE_CHANNEL_DATA_SEED_IDS.SUPPORT_GROUP,
+        );
+      } finally {
+        await global.testDataSource.query(
+          `UPDATE core."connectedAccount" SET "archivedAt" = NULL WHERE id = $1`,
+          [CONNECTED_ACCOUNT_DATA_SEED_IDS.SUPPORT_GROUP],
+        );
+      }
+    });
+
     it('should not return syncCursor', async () => {
-      const response = await makeMetadataAPIRequest({
+      const response = await makeMetadataApiRequest({
         query: gql`
           query MyMessageChannels {
             myMessageChannels {
@@ -115,7 +129,7 @@ describe('messageChannelResolver (e2e)', () => {
 
   describe('updateMessageChannel', () => {
     it('should allow updating own channel settings', async () => {
-      const response = await makeMetadataAPIRequest({
+      const response = await makeMetadataApiRequest({
         query: gql`
           mutation UpdateMessageChannel($input: UpdateMessageChannelInput!) {
             updateMessageChannel(input: $input) {
@@ -140,7 +154,7 @@ describe('messageChannelResolver (e2e)', () => {
     });
 
     it('should deny updating another user channel', async () => {
-      const response = await makeMetadataAPIRequest({
+      const response = await makeMetadataApiRequest({
         query: gql`
           mutation UpdateMessageChannel($input: UpdateMessageChannelInput!) {
             updateMessageChannel(input: $input) {
@@ -152,6 +166,65 @@ describe('messageChannelResolver (e2e)', () => {
           input: {
             id: MESSAGE_CHANNEL_DATA_SEED_IDS.JONY,
             update: { visibility: 'METADATA' },
+          },
+        },
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.body.errors?.[0]?.extensions?.code).toBe('FORBIDDEN');
+    });
+
+    it('should not queue a group emails cleanup on a group channel', async () => {
+      try {
+        const response = await makeMetadataApiRequest({
+          query: gql`
+            mutation UpdateMessageChannel($input: UpdateMessageChannelInput!) {
+              updateMessageChannel(input: $input) {
+                id
+                excludeGroupEmails
+              }
+            }
+          `,
+          variables: {
+            input: {
+              id: MESSAGE_CHANNEL_DATA_SEED_IDS.SUPPORT_GROUP,
+              update: { excludeGroupEmails: true },
+            },
+          },
+        });
+
+        expect(response.body.errors).toBeUndefined();
+        expect(response.body.data.updateMessageChannel.excludeGroupEmails).toBe(
+          true,
+        );
+
+        const [messageChannel] = await global.testDataSource.query(
+          `SELECT "pendingGroupEmailsAction" FROM core."messageChannel" WHERE id = $1`,
+          [MESSAGE_CHANNEL_DATA_SEED_IDS.SUPPORT_GROUP],
+        );
+
+        expect(messageChannel.pendingGroupEmailsAction).toBe('NONE');
+      } finally {
+        await global.testDataSource.query(
+          `UPDATE core."messageChannel" SET "excludeGroupEmails" = false, "pendingGroupEmailsAction" = 'NONE' WHERE id = $1`,
+          [MESSAGE_CHANNEL_DATA_SEED_IDS.SUPPORT_GROUP],
+        );
+      }
+    });
+
+    it('should deny a member updating a workspace-shared group channel', async () => {
+      const response = await makeMetadataApiRequestWithMemberRole({
+        query: gql`
+          mutation UpdateMessageChannel($input: UpdateMessageChannelInput!) {
+            updateMessageChannel(input: $input) {
+              id
+            }
+          }
+        `,
+        variables: {
+          input: {
+            id: MESSAGE_CHANNEL_DATA_SEED_IDS.SUPPORT_GROUP,
+            update: { excludeGroupEmails: true },
           },
         },
       });

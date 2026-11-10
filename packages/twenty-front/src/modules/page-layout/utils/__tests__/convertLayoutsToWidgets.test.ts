@@ -2,21 +2,27 @@ import {
   AggregateOperations,
   GraphOrderBy,
   PageLayoutTabLayoutMode,
+  type PageLayoutWidget,
   WidgetConfigurationType,
   WidgetType,
-  type PageLayoutWidget,
 } from '~/generated-metadata/graphql';
 import { convertLayoutsToWidgets } from '@/page-layout/utils/convertLayoutsToWidgets';
 
 describe('convertLayoutsToWidgets', () => {
   const mockWidgets: PageLayoutWidget[] = [
     {
+      isSystemSideEffect: false,
+      universalIdentifier: 'universal-identifier-mock',
       id: 'widget-1',
+      applicationId: '',
+      isActive: true,
       pageLayoutTabId: 'tab-1',
       title: 'Widget 1',
       type: WidgetType.GRAPH,
       objectMetadataId: null,
-      gridPosition: {
+      position: {
+        __typename: 'PageLayoutWidgetGridPosition' as const,
+        layoutMode: PageLayoutTabLayoutMode.GRID,
         row: 0,
         column: 0,
         rowSpan: 2,
@@ -28,18 +34,23 @@ describe('convertLayoutsToWidgets', () => {
         aggregateFieldMetadataId: 'id',
         displayDataLabel: false,
       },
-      isOverridden: false,
       createdAt: '2024-01-01T00:00:00Z',
       updatedAt: '2024-01-01T00:00:00Z',
       deletedAt: null,
     },
     {
+      isSystemSideEffect: false,
+      universalIdentifier: 'universal-identifier-mock',
       id: 'widget-2',
+      applicationId: '',
+      isActive: true,
       pageLayoutTabId: 'tab-1',
       title: 'Widget 2',
       type: WidgetType.GRAPH,
       objectMetadataId: null,
-      gridPosition: {
+      position: {
+        __typename: 'PageLayoutWidgetGridPosition' as const,
+        layoutMode: PageLayoutTabLayoutMode.GRID,
         row: 0,
         column: 2,
         rowSpan: 2,
@@ -53,7 +64,6 @@ describe('convertLayoutsToWidgets', () => {
         orderBy: GraphOrderBy.VALUE_DESC,
         displayDataLabel: false,
       },
-      isOverridden: false,
       createdAt: '2024-01-01T00:00:00Z',
       updatedAt: '2024-01-01T00:00:00Z',
       deletedAt: null,
@@ -70,7 +80,9 @@ describe('convertLayoutsToWidgets', () => {
 
     const result = convertLayoutsToWidgets(mockWidgets, layouts);
 
-    expect(result[0].gridPosition).toEqual({
+    expect(result[0].position).toEqual({
+      __typename: 'PageLayoutWidgetGridPosition' as const,
+      layoutMode: PageLayoutTabLayoutMode.GRID,
       column: 2,
       row: 3,
       columnSpan: 4,
@@ -84,7 +96,9 @@ describe('convertLayoutsToWidgets', () => {
       columnSpan: 4,
       rowSpan: 5,
     });
-    expect(result[1].gridPosition).toEqual({
+    expect(result[1].position).toEqual({
+      __typename: 'PageLayoutWidgetGridPosition' as const,
+      layoutMode: PageLayoutTabLayoutMode.GRID,
       column: 6,
       row: 7,
       columnSpan: 8,
@@ -107,7 +121,9 @@ describe('convertLayoutsToWidgets', () => {
 
     const result = convertLayoutsToWidgets(mockWidgets, layouts);
 
-    expect(result[1].gridPosition).toEqual({
+    expect(result[1].position).toEqual({
+      __typename: 'PageLayoutWidgetGridPosition' as const,
+      layoutMode: PageLayoutTabLayoutMode.GRID,
       column: 0,
       row: 0,
       columnSpan: 2,
@@ -122,7 +138,9 @@ describe('convertLayoutsToWidgets', () => {
 
     const result = convertLayoutsToWidgets(mockWidgets, layouts);
 
-    expect(result[0].gridPosition).toEqual({
+    expect(result[0].position).toEqual({
+      __typename: 'PageLayoutWidgetGridPosition' as const,
+      layoutMode: PageLayoutTabLayoutMode.GRID,
       column: 0,
       row: 4,
       columnSpan: 1,

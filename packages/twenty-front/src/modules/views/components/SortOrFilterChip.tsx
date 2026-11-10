@@ -1,7 +1,8 @@
 import { styled } from '@linaria/react';
-import { useContext } from 'react';
-import { type IconComponent, IconX } from 'twenty-ui/display';
-import { ThemeContext, themeCssVariables } from 'twenty-ui/theme-constants';
+import { type ReactNode } from 'react';
+import { type IconComponent, IconX } from 'twenty-ui/icon';
+import { useTheme, themeCssVariables } from 'twenty-ui/theme';
+import { isDefined } from 'twenty-shared/utils';
 
 const StyledChip = styled.div<{ variant: SortOrFilterChipVariant }>`
   align-items: center;
@@ -24,7 +25,7 @@ const StyledChip = styled.div<{ variant: SortOrFilterChipVariant }>`
           return themeCssVariables.accent.tertiary;
       }
     }};
-  border-radius: 4px;
+  border-radius: ${themeCssVariables.border.radius.smRound};
   box-sizing: border-box;
   color: ${({ variant }) => {
     switch (variant) {
@@ -36,6 +37,7 @@ const StyledChip = styled.div<{ variant: SortOrFilterChipVariant }>`
     }
   }};
   column-gap: ${themeCssVariables.spacing[1]};
+  corner-shape: round;
   cursor: pointer;
   display: flex;
   flex-direction: row;
@@ -54,12 +56,13 @@ const StyledIcon = styled.div`
   display: flex;
 `;
 
-const StyledDelete = styled.button<{ variant: SortOrFilterChipVariant }>`
+const StyledDelete = styled.button`
   align-items: center;
   background: none;
   border: none;
   box-sizing: border-box;
   color: inherit;
+  corner-shape: round;
   cursor: pointer;
   display: flex;
   font-size: ${themeCssVariables.font.size.sm};
@@ -69,19 +72,6 @@ const StyledDelete = styled.button<{ variant: SortOrFilterChipVariant }>`
   padding: 0;
   user-select: none;
   width: 20px;
-
-  &:hover {
-    background-color: ${({ variant }) => {
-      switch (variant) {
-        case 'danger':
-          return themeCssVariables.color.red5;
-        case 'default':
-        default:
-          return themeCssVariables.accent.secondary;
-      }
-    }};
-    border-radius: ${themeCssVariables.border.radius.sm};
-  }
 `;
 
 const StyledLabelKey = styled.div`
@@ -96,6 +86,16 @@ const StyledSortValue = styled.span`
   font-weight: ${themeCssVariables.font.weight.medium};
 `;
 
+const StyledSubFieldSeparator = styled.span`
+  font-weight: ${themeCssVariables.font.weight.regular};
+  opacity: 0.6;
+  padding: 0 ${themeCssVariables.spacing[1]};
+`;
+
+const StyledSubFieldValue = styled.span`
+  font-weight: ${themeCssVariables.font.weight.regular};
+`;
+
 const StyledKeyLabelContainer = styled.div`
   display: flex;
 `;
@@ -107,6 +107,7 @@ export type SortOrFilterChipType = 'sort' | 'filter';
 type SortOrFilterChipProps = {
   labelKey?: string;
   labelValue: string;
+  labelSubField?: ReactNode;
   variant?: SortOrFilterChipVariant;
   Icon?: IconComponent;
   onRemove: () => void;
@@ -118,6 +119,7 @@ type SortOrFilterChipProps = {
 export const SortOrFilterChip = ({
   labelKey,
   labelValue,
+  labelSubField,
   variant = 'default',
   Icon,
   onRemove,
@@ -125,7 +127,7 @@ export const SortOrFilterChip = ({
   onClick,
   type,
 }: SortOrFilterChipProps) => {
-  const { theme } = useContext(ThemeContext);
+  const theme = useTheme();
 
   const handleDeleteClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -146,9 +148,14 @@ export const SortOrFilterChip = ({
         ) : (
           <StyledFilterValue>{labelValue}</StyledFilterValue>
         )}
+        {isDefined(labelSubField) && (
+          <>
+            <StyledSubFieldSeparator>·</StyledSubFieldSeparator>
+            <StyledSubFieldValue>{labelSubField}</StyledSubFieldValue>
+          </>
+        )}
       </StyledKeyLabelContainer>
       <StyledDelete
-        variant={variant}
         onClick={handleDeleteClick}
         data-testid={'remove-icon-' + testId}
       >

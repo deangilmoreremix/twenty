@@ -1,3 +1,4 @@
+import { useNumberFormat } from '@/localization/hooks/useNumberFormat';
 import { GraphWidgetChartContainer } from '@/page-layout/widgets/graph/components/GraphWidgetChartContainer';
 import { GraphWidgetLegend } from '@/page-layout/widgets/graph/components/GraphWidgetLegend';
 import { CHART_MOTION_CONFIG } from '@/page-layout/widgets/graph/constants/ChartMotionConfig';
@@ -23,16 +24,13 @@ import {
 import {
   type MouseEvent as ReactMouseEvent,
   useCallback,
-  useContext,
   useMemo,
   useRef,
 } from 'react';
 import { isDefined } from 'twenty-shared/utils';
-import { ThemeContext, themeCssVariables } from 'twenty-ui/theme-constants';
-import {
-  type PieChartConfiguration,
-  type PieChartDataItem,
-} from '~/generated-metadata/graphql';
+import { doNotTranslate } from 'twenty-shared/i18n';
+import { useTheme, themeCssVariables } from 'twenty-ui/theme';
+import { type PieChartConfiguration } from '~/generated-metadata/graphql';
 
 type GraphWidgetPieChartProps = {
   data: PieChartDataItemWithColor[];
@@ -44,9 +42,12 @@ type GraphWidgetPieChartProps = {
   onSliceClick?: (datum: PieChartDataItemWithColor) => void;
   showDataLabels?: boolean;
   showCenterMetric?: boolean;
+  tooltipDisplayType?: GraphValueFormatOptions['displayType'];
 } & GraphValueFormatOptions;
 
-const emptyStateData: PieChartDataItemWithColor[] = [{ id: 'empty', value: 1 }];
+const emptyStateData: PieChartDataItemWithColor[] = [
+  { key: 'empty', value: 1 },
+];
 
 const StyledContainer = styled.div`
   align-items: center;
@@ -81,6 +82,7 @@ export const GraphWidgetPieChart = ({
   configuration,
   colorMode,
   displayType,
+  tooltipDisplayType,
   decimals,
   prefix,
   suffix,
@@ -89,12 +91,14 @@ export const GraphWidgetPieChart = ({
   showDataLabels = false,
   showCenterMetric = true,
 }: GraphWidgetPieChartProps) => {
-  const { theme } = useContext(ThemeContext);
+  const theme = useTheme();
   const colorRegistry = createGraphColorRegistry(theme.color);
   const containerRef = useRef<HTMLDivElement>(null);
   const setGraphWidgetPieTooltip = useSetAtomComponentState(
     graphWidgetPieTooltipComponentState,
   );
+
+  const { formatNumber } = useNumberFormat();
 
   const formatOptions: GraphValueFormatOptions = {
     displayType,
@@ -102,6 +106,12 @@ export const GraphWidgetPieChart = ({
     prefix,
     suffix,
     customFormatter,
+    formatNumberFn: formatNumber,
+  };
+
+  const tooltipFormatOptions: GraphValueFormatOptions = {
+    ...formatOptions,
+    displayType: tooltipDisplayType ?? displayType,
   };
 
   const { enrichedData, legendItems } = usePieChartData({
@@ -115,7 +125,9 @@ export const GraphWidgetPieChart = ({
       datum: ComputedDatum<PieChartDataItemWithColor>,
       event: ReactMouseEvent<SVGElement>,
     ) => {
-      if (!isDefined(containerRef.current)) return;
+      if (!isDefined(containerRef.current)) {
+        return;
+      }
 
       const containerRect = containerRef.current.getBoundingClientRect();
       setGraphWidgetPieTooltip({
@@ -179,7 +191,7 @@ export const GraphWidgetPieChart = ({
       <GraphWidgetChartContainer
         ref={containerRef}
         $isClickable={!hasNoData && isDefined(onSliceClick)}
-        $cursorSelector="svg g path"
+        $cursorSelector={doNotTranslate('svg g path')}
         onMouseLeave={handleSliceLeave}
       >
         <StyledPieChartWrapper preventHover={hasNoData}>
@@ -194,7 +206,10 @@ export const GraphWidgetPieChart = ({
             enableArcLabels={false}
             tooltip={() => null}
             layers={[ArcsLayer, 'arcLinkLabels']}
-            arcLinkLabel={(datum: ComputedDatum<PieChartDataItem>) => {
+            id={(datum: PieChartDataItemWithColor) =>
+              `${id}:${String(datum.key)}`
+            }
+            arcLinkLabel={(datum: ComputedDatum<PieChartDataItemWithColor>) => {
               const formattedValue = getPieChartFormattedValue({
                 datum,
                 enrichedData,
@@ -227,14 +242,13 @@ export const GraphWidgetPieChart = ({
       <GraphPieChartTooltip
         containerRef={containerRef}
         enrichedData={enrichedData}
-        formatOptions={formatOptions}
-        displayType={displayType}
+        formatOptions={tooltipFormatOptions}
+        displayType={tooltipDisplayType ?? displayType}
         onSliceClick={onSliceClick}
       />
-      <GraphWidgetLegend
-        show={showLegend && data.length > 0}
-        items={legendItems}
-      />
+      {showLegend && data.length > 0 && (
+        <GraphWidgetLegend show items={legendItems} />
+      )}
     </StyledContainer>
   );
 };

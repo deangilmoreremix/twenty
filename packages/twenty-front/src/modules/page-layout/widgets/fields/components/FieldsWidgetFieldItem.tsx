@@ -1,9 +1,7 @@
-import { ActivityTargetsInlineCell } from '@/activities/inline-cell/components/ActivityTargetsInlineCell';
 import { type FieldMetadataItem } from '@/object-metadata/types/FieldMetadataItem';
 import { type EnrichedObjectMetadataItem } from '@/object-metadata/types/EnrichedObjectMetadataItem';
 import { formatFieldMetadataItemAsColumnDefinition } from '@/object-metadata/utils/formatFieldMetadataItemAsColumnDefinition';
 import { isRecordFieldReadOnly } from '@/object-record/read-only/utils/isRecordFieldReadOnly';
-import { isActivityTargetField } from '@/object-record/record-field-list/utils/categorizeRelationFields';
 import {
   FieldContext,
   type RecordUpdateHook,
@@ -12,23 +10,16 @@ import { RecordFieldComponentInstanceContext } from '@/object-record/record-fiel
 import { isJunctionRelationForbidden } from '@/object-record/record-field/ui/utils/junction/isJunctionRelationForbidden';
 import { RecordInlineCell } from '@/object-record/record-inline-cell/components/RecordInlineCell';
 import { getRecordFieldInputInstanceId } from '@/object-record/utils/getRecordFieldInputId';
-import { getObjectPermissionsFromMapByObjectMetadataId } from '@/settings/roles/role-permissions/objects-permissions/utils/getObjectPermissionsFromMapByObjectMetadataId';
-import {
-  type CoreObjectNameSingular,
-  type ObjectPermissions,
-} from 'twenty-shared/types';
+import { type ObjectRecordsPermissions } from 'twenty-shared/types';
 
 type FieldsWidgetFieldItemProps = {
   fieldMetadataItem: FieldMetadataItem;
   globalIndex: number;
   recordId: string;
-  targetObjectNameSingular: string;
+  restrictedFieldNames: string[];
   objectMetadataItem: EnrichedObjectMetadataItem;
   objectMetadataItems: EnrichedObjectMetadataItem[];
-  objectPermissionsByObjectMetadataId: Record<
-    string,
-    ObjectPermissions & { objectMetadataId: string }
-  >;
+  objectPermissionsByObjectMetadataId: Record<string, ObjectRecordsPermissions>;
   isRecordReadOnly: boolean;
   useUpdateRecord: RecordUpdateHook;
   recordLoading: boolean;
@@ -40,7 +31,7 @@ export const FieldsWidgetFieldItem = ({
   fieldMetadataItem,
   globalIndex,
   recordId,
-  targetObjectNameSingular,
+  restrictedFieldNames,
   objectMetadataItem,
   objectMetadataItems,
   objectPermissionsByObjectMetadataId,
@@ -50,9 +41,16 @@ export const FieldsWidgetFieldItem = ({
   instanceId,
   onMouseEnter,
 }: FieldsWidgetFieldItemProps) => {
-  const isActivityTarget = isActivityTargetField(
+  const fieldDefinition = formatFieldMetadataItemAsColumnDefinition({
+    field: fieldMetadataItem,
+    position: globalIndex,
+    objectMetadataItem,
+    showLabel: true,
+    labelWidth: 90,
+  });
+
+  const isFieldRestricted = restrictedFieldNames.includes(
     fieldMetadataItem.name,
-    targetObjectNameSingular,
   );
 
   return (
@@ -62,71 +60,45 @@ export const FieldsWidgetFieldItem = ({
         recordId,
         maxWidth: 200,
         isLabelIdentifier: false,
-        fieldDefinition: formatFieldMetadataItemAsColumnDefinition({
-          field: fieldMetadataItem,
-          position: globalIndex,
-          objectMetadataItem,
-          showLabel: true,
-          labelWidth: 90,
-        }),
+        fieldDefinition,
         useUpdateRecord,
         isDisplayModeFixHeight: true,
-        isRecordFieldReadOnly: isRecordFieldReadOnly({
-          isRecordReadOnly,
-          isSystemObject: objectMetadataItem.isSystem,
-          objectPermissions: getObjectPermissionsFromMapByObjectMetadataId({
-            objectPermissionsByObjectMetadataId,
+        isRecordFieldReadOnly:
+          isFieldRestricted ||
+          isRecordFieldReadOnly({
+            isRecordReadOnly,
             objectMetadataId: objectMetadataItem.id,
+            fieldMetadataItem,
+            fieldDefinition,
+            objectPermissionsByObjectMetadataId,
           }),
-          fieldMetadataItem: {
-            id: fieldMetadataItem.id,
-            isUIReadOnly: fieldMetadataItem.isUIReadOnly ?? false,
-            isCustom: fieldMetadataItem.isCustom ?? false,
-          },
-        }),
         onMouseEnter,
         anchorId: `${getRecordFieldInputInstanceId({
           recordId,
           fieldName: fieldMetadataItem.name,
           prefix: instanceId,
         })}`,
-        isForbidden: isJunctionRelationForbidden({
-          fieldMetadataItem,
-          sourceObjectMetadataId: objectMetadataItem.id,
-          objectMetadataItems,
-          objectPermissionsByObjectMetadataId,
-        }),
+        isForbidden:
+          isFieldRestricted ||
+          isJunctionRelationForbidden({
+            fieldMetadataItem,
+            sourceObjectMetadataId: objectMetadataItem.id,
+            objectMetadataItems,
+            objectPermissionsByObjectMetadataId,
+          }),
       }}
     >
-      {isActivityTarget ? (
-        <ActivityTargetsInlineCell
-          componentInstanceId={getRecordFieldInputInstanceId({
+      <RecordFieldComponentInstanceContext.Provider
+        value={{
+          instanceId: getRecordFieldInputInstanceId({
             recordId,
             fieldName: fieldMetadataItem.name,
             prefix: instanceId,
-          })}
-          activityObjectNameSingular={
-            targetObjectNameSingular as
-              | CoreObjectNameSingular.Note
-              | CoreObjectNameSingular.Task
-          }
-          activityRecordId={recordId}
-          showLabel={true}
-          maxWidth={200}
-        />
-      ) : (
-        <RecordFieldComponentInstanceContext.Provider
-          value={{
-            instanceId: getRecordFieldInputInstanceId({
-              recordId,
-              fieldName: fieldMetadataItem.name,
-              prefix: instanceId,
-            }),
-          }}
-        >
-          <RecordInlineCell loading={recordLoading} />
-        </RecordFieldComponentInstanceContext.Provider>
-      )}
+          }),
+        }}
+      >
+        <RecordInlineCell loading={recordLoading} />
+      </RecordFieldComponentInstanceContext.Provider>
     </FieldContext.Provider>
   );
 };

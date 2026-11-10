@@ -1,26 +1,30 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
-import { FeatureFlagEntity } from 'src/engine/core-modules/feature-flag/feature-flag.entity';
 import { MetricsModule } from 'src/engine/core-modules/metrics/metrics.module';
-import { ConnectedAccountDataAccessModule } from 'src/engine/metadata-modules/connected-account/data-access/connected-account-data-access.module';
-import { MessageChannelDataAccessModule } from 'src/engine/metadata-modules/message-channel/data-access/message-channel-data-access.module';
-import { MessageFolderDataAccessModule } from 'src/engine/metadata-modules/message-folder/data-access/message-folder-data-access.module';
-import { WorkspaceDataSourceModule } from 'src/engine/workspace-datasource/workspace-datasource.module';
+import { UserWorkspaceEntity } from 'src/engine/core-modules/user-workspace/user-workspace.entity';
+import { ConnectedAccountEntity } from 'src/engine/metadata-modules/connected-account/entities/connected-account.entity';
+import { MessageChannelEntity } from 'src/engine/metadata-modules/message-channel/entities/message-channel.entity';
+import { MessageFolderEntity } from 'src/engine/metadata-modules/message-folder/entities/message-folder.entity';
 import { ConnectedAccountModule } from 'src/modules/connected-account/connected-account.module';
 import { MessageChannelSyncStatusService } from 'src/modules/messaging/common/services/message-channel-sync-status.service';
+import { provideWorkspaceScopedRepository } from 'src/engine/twenty-orm/workspace-scoped-repository/provide-workspace-scoped-repository';
 
 @Module({
   imports: [
-    WorkspaceDataSourceModule,
-    TypeOrmModule.forFeature([FeatureFlagEntity]),
+    TypeOrmModule.forFeature([
+      MessageChannelEntity,
+      MessageFolderEntity,
+      ConnectedAccountEntity,
+      UserWorkspaceEntity,
+    ]),
     ConnectedAccountModule,
-    ConnectedAccountDataAccessModule,
-    MessageChannelDataAccessModule,
-    MessageFolderDataAccessModule,
     MetricsModule,
   ],
-  providers: [MessageChannelSyncStatusService],
+  providers: [
+    MessageChannelSyncStatusService,
+    provideWorkspaceScopedRepository(MessageFolderEntity),
+  ],
   exports: [MessageChannelSyncStatusService],
 })
 export class MessagingCommonModule {}

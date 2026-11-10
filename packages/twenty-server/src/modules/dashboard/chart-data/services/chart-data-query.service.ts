@@ -16,6 +16,7 @@ import {
 import { ObjectRecordGroupBy } from 'src/engine/api/graphql/workspace-query-builder/interfaces/object-record.interface';
 
 import { CommonGroupByQueryRunnerService } from 'src/engine/api/common/common-query-runners/common-group-by-query-runner.service';
+import { isUserAuthContext } from 'src/engine/core-modules/auth/guards/is-user-auth-context.guard';
 import { type WorkspaceAuthContext } from 'src/engine/core-modules/auth/types/workspace-auth-context.type';
 import { FlatEntityMaps } from 'src/engine/metadata-modules/flat-entity/types/flat-entity-maps.type';
 import { FlatFieldMetadata } from 'src/engine/metadata-modules/flat-field-metadata/types/flat-field-metadata.type';
@@ -91,11 +92,16 @@ export class ChartDataQueryService {
     secondaryAxisOrderBy,
     splitMultiValueFields,
   }: ExecuteGroupByQueryParams): Promise<GroupByRawResult[]> {
+    const currentWorkspaceMemberId = isUserAuthContext(authContext)
+      ? authContext.workspaceMemberId
+      : undefined;
+
     const gqlOperationFilter = convertChartFilterToGqlOperationFilter({
       filter,
-      flatObjectMetadata,
       flatFieldMetadataMaps,
+      flatObjectMetadataMaps,
       userTimezone,
+      currentWorkspaceMemberId,
     });
 
     const primaryGroupByField = getFieldMetadata(
@@ -155,10 +161,12 @@ export class ChartDataQueryService {
       dateGranularity: shouldApplyPrimaryDateGranularity
         ? (dateGranularity ?? GRAPH_DEFAULT_DATE_GRANULARITY)
         : undefined,
+      flatObjectMetadataMaps,
+      flatFieldMetadataMaps,
     });
 
     if (isDefined(primaryOrderBy)) {
-      orderBy.push(primaryOrderBy);
+      orderBy.push(...primaryOrderBy);
     }
 
     if (isDefined(secondaryGroupByFieldMetadataId)) {
@@ -209,7 +217,7 @@ export class ChartDataQueryService {
       );
 
       if (isDefined(secondaryAxisOrderBy)) {
-        const secondaryOrderByItem = getGroupByOrderBy({
+        const secondaryOrderBy = getGroupByOrderBy({
           graphOrderBy: secondaryAxisOrderBy,
           groupByFieldMetadata: secondaryGroupByField,
           groupBySubFieldName: secondaryGroupBySubFieldName,
@@ -218,10 +226,12 @@ export class ChartDataQueryService {
           dateGranularity: shouldApplySecondaryDateGranularity
             ? (secondaryDateGranularity ?? GRAPH_DEFAULT_DATE_GRANULARITY)
             : undefined,
+          flatObjectMetadataMaps,
+          flatFieldMetadataMaps,
         });
 
-        if (isDefined(secondaryOrderByItem)) {
-          orderBy.push(secondaryOrderByItem);
+        if (isDefined(secondaryOrderBy)) {
+          orderBy.push(...secondaryOrderBy);
         }
       }
     }
@@ -236,7 +246,7 @@ export class ChartDataQueryService {
       groupByDimensionValues: true,
     };
 
-    const results = await this.commonGroupByQueryRunnerService.execute(
+    const { results } = await this.commonGroupByQueryRunnerService.execute(
       {
         filter: gqlOperationFilter,
         orderBy: orderBy.length > 0 ? orderBy : undefined,

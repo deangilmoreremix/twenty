@@ -1,17 +1,24 @@
-import { AgentChatProviderContent } from '@/ai/components/AgentChatProviderContent';
-import { useIsFeatureEnabled } from '@/workspace/hooks/useIsFeatureEnabled';
-import { FeatureFlagKey } from '~/generated-metadata/graphql';
+import { type ReactNode, Suspense } from 'react';
 
-export const AgentChatProvider = ({
-  children,
-}: {
-  children: React.ReactNode;
-}) => {
-  const isAiEnabled = useIsFeatureEnabled(FeatureFlagKey.IS_AI_ENABLED);
+import { AgentChatChannelsEffect } from '@/ai/components/AgentChatChannelsEffect';
+import { AgentChatRuntimeEffects } from '@/ai/components/AgentChatRuntimeEffects';
+import { AgentChatThreadInitializationEffect } from '@/ai/components/AgentChatThreadInitializationEffect';
+import { AgentChatThreadParticipantOperationsEffect } from '@/ai/components/AgentChatThreadParticipantOperationsEffect';
+import { AgentChatThreadRecordOperationsEffect } from '@/ai/components/AgentChatThreadRecordOperationsEffect';
+import { AgentChatToolIndexInvalidationEffect } from '@/ai/components/AgentChatToolIndexInvalidationEffect';
 
-  if (!isAiEnabled) {
-    return <>{children}</>;
-  }
-
-  return <AgentChatProviderContent>{children}</AgentChatProviderContent>;
+type AgentChatProviderProps = {
+  children: ReactNode;
 };
+
+export const AgentChatProvider = ({ children }: AgentChatProviderProps) => (
+  <Suspense fallback={null}>
+    <AgentChatThreadInitializationEffect />
+    <AgentChatThreadRecordOperationsEffect />
+    <AgentChatThreadParticipantOperationsEffect />
+    <AgentChatChannelsEffect />
+    <AgentChatRuntimeEffects />
+    <AgentChatToolIndexInvalidationEffect />
+    {children}
+  </Suspense>
+);

@@ -1,68 +1,39 @@
 import { type ActivityTargetableObject } from '@/activities/types/ActivityTargetableEntity';
-import { getActivityTargetObjectFieldIdName } from '@/activities/utils/getActivityTargetObjectFieldIdName';
-import { CoreObjectNameSingular } from 'twenty-shared/types';
 import { type EnrichedObjectMetadataItem } from '@/object-metadata/types/EnrichedObjectMetadataItem';
+import { findTargetFieldInfo } from '@/object-record/record-field/ui/utils/junction/findTargetFieldInfo';
 import { isDefined } from 'twenty-shared/utils';
 
 export const getActivityTargetsFilter = ({
   targetableObjects,
-  activityObjectNameSingular,
+  activityTargetObjectMetadata,
   objectMetadataItems,
-  isMorphRelation = false,
 }: {
-  targetableObjects: ActivityTargetableObject[];
-  activityObjectNameSingular:
-    | CoreObjectNameSingular.Note
-    | CoreObjectNameSingular.Task;
+  targetableObjects: Pick<
+    ActivityTargetableObject,
+    'id' | 'targetObjectNameSingular'
+  >[];
+  activityTargetObjectMetadata: EnrichedObjectMetadataItem;
   objectMetadataItems: EnrichedObjectMetadataItem[];
-  isMorphRelation?: boolean;
 }) => {
-  const activityTargetObjectNameSingular =
-    activityObjectNameSingular === CoreObjectNameSingular.Task
-      ? CoreObjectNameSingular.TaskTarget
-      : CoreObjectNameSingular.NoteTarget;
+  const targetFilters = targetableObjects
+    .map((targetableObject) => {
+      const targetObjectMetadata = objectMetadataItems.find(
+        (objectMetadataItem) =>
+          objectMetadataItem.nameSingular ===
+          targetableObject.targetObjectNameSingular,
+      );
 
-  const activityTargetObjectMetadata = objectMetadataItems.find(
-    (objectMetadataItem) =>
-      objectMetadataItem.nameSingular === activityTargetObjectNameSingular,
-  );
+      const joinColumnName = findTargetFieldInfo(
+        activityTargetObjectMetadata.fields,
+        targetObjectMetadata?.id ?? '',
+        objectMetadataItems,
+      )?.joinColumnName;
 
-  const findManyActivityTargetsQueryFilter = Object.fromEntries(
-    targetableObjects
-      .map((targetableObject) => {
-        const targetObjectMetadataItem = objectMetadataItems.find(
-          (item) =>
-            item.nameSingular === targetableObject.targetObjectNameSingular,
-        );
+      return isDefined(joinColumnName)
+        ? { [joinColumnName]: { eq: targetableObject.id } }
+        : undefined;
+    })
+    .filter(isDefined);
 
-        if (!isDefined(targetObjectMetadataItem)) {
-          return undefined;
-        }
-
-        const joinColumnName = isMorphRelation
-          ? getActivityTargetObjectFieldIdName({
-              nameSingular: targetObjectMetadataItem.nameSingular,
-              isMorphRelation: true,
-            })
-          : activityTargetObjectMetadata?.fields.find(
-              (field) =>
-                field.relation?.targetObjectMetadata.id ===
-                targetObjectMetadataItem.id,
-            )?.settings?.joinColumnName;
-
-        if (!isDefined(joinColumnName)) {
-          return undefined;
-        }
-
-        return [
-          joinColumnName,
-          {
-            eq: targetableObject.id,
-          },
-        ];
-      })
-      .filter(isDefined),
-  );
-
-  return findManyActivityTargetsQueryFilter;
+  return { or: targetFilters };
 };

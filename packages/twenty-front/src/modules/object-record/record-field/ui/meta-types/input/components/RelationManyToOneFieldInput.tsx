@@ -18,7 +18,8 @@ import { useSetAtomComponentState } from '@/ui/utilities/state/jotai/hooks/useSe
 import { useLingui } from '@lingui/react/macro';
 import { useContext } from 'react';
 import { CustomError, isDefined } from 'twenty-shared/utils';
-import { IconForbid } from 'twenty-ui/display';
+import { doNotTranslate } from 'twenty-shared/i18n';
+import { IconForbid } from 'twenty-ui/icon';
 
 export const RelationManyToOneFieldInput = () => {
   const { t } = useLingui();
@@ -31,7 +32,7 @@ export const RelationManyToOneFieldInput = () => {
   });
   if (!isDefined(fieldMetadataItem) || !isDefined(objectMetadataItem)) {
     throw new CustomError(
-      'Field metadata item or object metadata item not found',
+      doNotTranslate('Field metadata item or object metadata item not found'),
       'FIELD_METADATA_ITEM_OR_OBJECT_METADATA_ITEM_NOT_FOUND',
     );
   }
@@ -61,7 +62,7 @@ export const RelationManyToOneFieldInput = () => {
   );
   if (!relationFieldMetadataItem) {
     throw new CustomError(
-      'Relation field metadata item not found',
+      doNotTranslate('Relation field metadata item not found'),
       'RELATION_FIELD_METADATA_ITEM_NOT_FOUND',
     );
   }

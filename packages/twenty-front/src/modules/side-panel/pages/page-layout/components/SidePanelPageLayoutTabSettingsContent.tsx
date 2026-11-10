@@ -1,28 +1,27 @@
-import { CommandMenuItem } from '@/command-menu/components/CommandMenuItem';
+import { currentWorkspaceState } from '@/auth/states/currentWorkspaceState';
 import { useDeletePageLayoutTab } from '@/page-layout/hooks/useDeletePageLayoutTab';
 import { useDuplicatePageLayoutTab } from '@/page-layout/hooks/useDuplicatePageLayoutTab';
 import { useMovePageLayoutTab } from '@/page-layout/hooks/useMovePageLayoutTab';
+import { useResetPageLayoutTabToDefault } from '@/page-layout/hooks/useResetPageLayoutTabToDefault';
 import { useSetAsPinnedTab } from '@/page-layout/hooks/useSetAsPinnedTab';
+import { useUnpinTab } from '@/page-layout/hooks/useUnpinTab';
 import { pageLayoutDraftComponentState } from '@/page-layout/states/pageLayoutDraftComponentState';
 import { pageLayoutTabSettingsOpenTabIdComponentState } from '@/page-layout/states/pageLayoutTabSettingsOpenTabIdComponentState';
+import { getIsFirstTabPinned } from '@/page-layout/utils/getIsFirstTabPinned';
+import { getIsSingleWidgetTab } from '@/page-layout/utils/getIsSingleWidgetTab';
 import { getTabListInstanceIdFromPageLayoutAndRecord } from '@/page-layout/utils/getTabListInstanceIdFromPageLayoutAndRecord';
 import { sortTabsByPosition } from '@/page-layout/utils/sortTabsByPosition';
-import { SidePanelGroup } from '@/side-panel/components/SidePanelGroup';
-import { SidePanelList } from '@/side-panel/components/SidePanelList';
 import { useSidePanelMenu } from '@/side-panel/hooks/useSidePanelMenu';
-import { TAB_SETTINGS_SELECTABLE_ITEM_IDS } from '@/side-panel/pages/page-layout/constants/settings/TabSettingsSelectableItemIds';
-import { SelectableListItem } from '@/ui/layout/selectable-list/components/SelectableListItem';
+import { RegularTabSettingsContent } from '@/side-panel/pages/page-layout/components/RegularTabSettingsContent';
+import { SingleWidgetTabSettingsContent } from '@/side-panel/pages/page-layout/components/SingleWidgetTabSettingsContent';
+import { activeTabIdComponentState } from '@/ui/layout/tab-list/states/activeTabIdComponentState';
 import { useAtomComponentState } from '@/ui/utilities/state/jotai/hooks/useAtomComponentState';
 import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateValue';
-import { t } from '@lingui/core/macro';
+import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomStateValue';
+import { useSetAtomComponentState } from '@/ui/utilities/state/jotai/hooks/useSetAtomComponentState';
+import { isNonEmptyString } from '@sniptt/guards';
+import { useNavigate } from 'react-router-dom';
 import { isDefined } from 'twenty-shared/utils';
-import {
-  IconChevronLeft,
-  IconChevronRight,
-  IconCopyPlus,
-  IconPinned,
-  IconTrash,
-} from 'twenty-ui/display';
 import { PageLayoutType } from '~/generated-metadata/graphql';
 
 type SidePanelPageLayoutTabSettingsContentProps = {
@@ -36,6 +35,10 @@ export const SidePanelPageLayoutTabSettingsContent = ({
 }: SidePanelPageLayoutTabSettingsContentProps) => {
   const { closeSidePanelMenu } = useSidePanelMenu();
 
+  const navigate = useNavigate();
+
+  const currentWorkspace = useAtomStateValue(currentWorkspaceState);
+
   const pageLayoutDraft = useAtomComponentStateValue(
     pageLayoutDraftComponentState,
     pageLayoutId,
@@ -46,6 +49,11 @@ export const SidePanelPageLayoutTabSettingsContent = ({
     layoutType: pageLayoutDraft.type,
     targetRecordIdentifier: { id: recordId, targetObjectNameSingular: '' },
   });
+
+  const setActiveTabId = useSetAtomComponentState(
+    activeTabIdComponentState,
+    tabListInstanceId,
+  );
 
   const [pageLayoutTabSettingsOpenTabId, setPageLayoutTabSettingsOpenTabId] =
     useAtomComponentState(
@@ -63,25 +71,41 @@ export const SidePanelPageLayoutTabSettingsContent = ({
     tabListInstanceId,
   });
   const { setAsPinnedTab } = useSetAsPinnedTab(pageLayoutId);
+  const { unpinTab } = useUnpinTab(pageLayoutId);
+  const { resetPageLayoutTabToDefault } =
+    useResetPageLayoutTabToDefault(pageLayoutId);
 
   if (!isDefined(pageLayoutTabSettingsOpenTabId)) {
     return null;
   }
 
-  const tabsSorted = sortTabsByPosition(pageLayoutDraft.tabs);
-  const currentIndex = tabsSorted.findIndex(
-    (t) => t.id === pageLayoutTabSettingsOpenTabId,
+  // Deleted tabs are only deactivated in the draft, so placement must follow the active ones
+  const tabsSorted = sortTabsByPosition(
+    pageLayoutDraft.tabs.filter((draftTab) => draftTab.isActive),
   );
-  if (currentIndex < 0) return null;
+  const currentIndex = tabsSorted.findIndex(
+    (tabItem) => tabItem.id === pageLayoutTabSettingsOpenTabId,
+  );
+  if (currentIndex < 0) {
+    return null;
+  }
   const tab = tabsSorted[currentIndex];
   const isRecordPage = pageLayoutDraft.type === PageLayoutType.RECORD_PAGE;
-  const hasPinnedTab = isRecordPage && tabsSorted.length > 1;
+  const hasPinnedTab =
+    isRecordPage &&
+    tabsSorted.length > 1 &&
+    getIsFirstTabPinned(pageLayoutDraft);
   const canMoveLeft = hasPinnedTab ? currentIndex > 1 : currentIndex > 0;
   const canMoveRight = currentIndex < tabsSorted.length - 1;
   const canDelete = tabsSorted.length > 1;
-  const isAlreadyPinned = currentIndex === 0;
+  const isAlreadyPinned = hasPinnedTab && currentIndex === 0;
   const canSetAsPinned =
     isRecordPage && !isAlreadyPinned && tabsSorted.length > 1;
+  const canUnpin = isAlreadyPinned;
+
+  const isResetToDefaultDisabled =
+    !isNonEmptyString(tab.applicationId) ||
+    tab.applicationId === currentWorkspace?.workspaceCustomApplication?.id;
 
   const handleDelete = () => {
     deleteTab(tab.id);
@@ -89,83 +113,59 @@ export const SidePanelPageLayoutTabSettingsContent = ({
     closeSidePanelMenu();
   };
 
-  const selectableItemIds = [
-    ...(canMoveLeft ? [TAB_SETTINGS_SELECTABLE_ITEM_IDS.MOVE_LEFT] : []),
-    ...(canMoveRight ? [TAB_SETTINGS_SELECTABLE_ITEM_IDS.MOVE_RIGHT] : []),
-    ...(canSetAsPinned ? [TAB_SETTINGS_SELECTABLE_ITEM_IDS.SET_AS_PINNED] : []),
-    TAB_SETTINGS_SELECTABLE_ITEM_IDS.DUPLICATE,
-    ...(canDelete ? [TAB_SETTINGS_SELECTABLE_ITEM_IDS.DELETE] : []),
-  ];
+  const handleResetToDefault = () => {
+    resetPageLayoutTabToDefault(tab.id);
+  };
+
+  const handleUnpin = () => {
+    unpinTab();
+    setActiveTabId(tab.id);
+    navigate(`#${tab.id}`);
+  };
+
+  const activeWidgets = tab.widgets.filter((widget) => widget.isActive);
+
+  const isSingleWidgetTab = getIsSingleWidgetTab({ tab });
+
+  if (isSingleWidgetTab) {
+    return (
+      <SingleWidgetTabSettingsContent
+        pageLayoutId={pageLayoutId}
+        singleWidget={activeWidgets.at(0)!}
+        canSetAsPinned={canSetAsPinned}
+        canUnpin={canUnpin}
+        canMoveLeft={canMoveLeft}
+        canMoveRight={canMoveRight}
+        isResetToDefaultDisabled={isResetToDefaultDisabled}
+        canDelete={canDelete}
+        onMoveLeft={() => moveLeft(tab.id)}
+        onMoveRight={() => moveRight(tab.id)}
+        onSetAsPinned={() => setAsPinnedTab(tab.id)}
+        onUnpin={handleUnpin}
+        onResetToDefault={handleResetToDefault}
+        onDelete={handleDelete}
+      />
+    );
+  }
 
   return (
-    <>
-      <SidePanelList commandGroups={[]} selectableItemIds={selectableItemIds}>
-        <SidePanelGroup heading={t`Settings`}>
-          {canMoveLeft && (
-            <SelectableListItem
-              itemId={TAB_SETTINGS_SELECTABLE_ITEM_IDS.MOVE_LEFT}
-              onEnter={() => moveLeft(tab.id)}
-            >
-              <CommandMenuItem
-                id={TAB_SETTINGS_SELECTABLE_ITEM_IDS.MOVE_LEFT}
-                Icon={IconChevronLeft}
-                label={t`Move left`}
-                onClick={() => moveLeft(tab.id)}
-              />
-            </SelectableListItem>
-          )}
-          {canMoveRight && (
-            <SelectableListItem
-              itemId={TAB_SETTINGS_SELECTABLE_ITEM_IDS.MOVE_RIGHT}
-              onEnter={() => moveRight(tab.id)}
-            >
-              <CommandMenuItem
-                id={TAB_SETTINGS_SELECTABLE_ITEM_IDS.MOVE_RIGHT}
-                Icon={IconChevronRight}
-                label={t`Move right`}
-                onClick={() => moveRight(tab.id)}
-              />
-            </SelectableListItem>
-          )}
-          {canSetAsPinned && (
-            <SelectableListItem
-              itemId={TAB_SETTINGS_SELECTABLE_ITEM_IDS.SET_AS_PINNED}
-              onEnter={() => setAsPinnedTab(tab.id)}
-            >
-              <CommandMenuItem
-                id={TAB_SETTINGS_SELECTABLE_ITEM_IDS.SET_AS_PINNED}
-                Icon={IconPinned}
-                label={t`Set as pinned tab`}
-                onClick={() => setAsPinnedTab(tab.id)}
-              />
-            </SelectableListItem>
-          )}
-          <SelectableListItem
-            itemId={TAB_SETTINGS_SELECTABLE_ITEM_IDS.DUPLICATE}
-            onEnter={() => duplicateTab(tab.id)}
-          >
-            <CommandMenuItem
-              id={TAB_SETTINGS_SELECTABLE_ITEM_IDS.DUPLICATE}
-              Icon={IconCopyPlus}
-              label={t`Duplicate`}
-              onClick={() => duplicateTab(tab.id)}
-            />
-          </SelectableListItem>
-          {canDelete && (
-            <SelectableListItem
-              itemId={TAB_SETTINGS_SELECTABLE_ITEM_IDS.DELETE}
-              onEnter={handleDelete}
-            >
-              <CommandMenuItem
-                id={TAB_SETTINGS_SELECTABLE_ITEM_IDS.DELETE}
-                Icon={IconTrash}
-                label={t`Delete`}
-                onClick={handleDelete}
-              />
-            </SelectableListItem>
-          )}
-        </SidePanelGroup>
-      </SidePanelList>
-    </>
+    <RegularTabSettingsContent
+      canSetAsPinned={canSetAsPinned}
+      canUnpin={canUnpin}
+      canMoveLeft={canMoveLeft}
+      canMoveRight={canMoveRight}
+      isResetToDefaultDisabled={isResetToDefaultDisabled}
+      canDelete={canDelete}
+      onMoveLeft={() => moveLeft(tab.id)}
+      onMoveRight={() => moveRight(tab.id)}
+      onSetAsPinned={() => setAsPinnedTab(tab.id)}
+      onUnpin={handleUnpin}
+      onDuplicate={() => {
+        const newTabId = duplicateTab(tab.id);
+        navigate(`#${newTabId}`);
+      }}
+      onResetToDefault={handleResetToDefault}
+      onDelete={handleDelete}
+    />
   );
 };

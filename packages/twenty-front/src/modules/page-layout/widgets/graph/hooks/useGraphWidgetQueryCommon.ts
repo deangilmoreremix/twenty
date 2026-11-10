@@ -1,9 +1,14 @@
 import { useObjectMetadataItemById } from '@/object-metadata/hooks/useObjectMetadataItemById';
-import { useUserTimezone } from '@/ui/input/components/internal/date/hooks/useUserTimezone';
+import { findFieldMetadataItemByFieldMetadataId } from '@/object-metadata/utils/findFieldMetadataItemByFieldMetadataId';
+import { flattenedFieldMetadataItemsSelector } from '@/object-metadata/states/flattenedFieldMetadataItemsSelector';
+import { useFilterValueDependencies } from '@/object-record/record-filter/hooks/useFilterValueDependencies';
+import { sanitizeChartRecordFilters } from '@/side-panel/pages/page-layout/utils/sanitizeChartRecordFilters';
+import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomStateValue';
 import {
   computeRecordGqlOperationFilter,
   isDefined,
 } from 'twenty-shared/utils';
+import { doNotTranslate } from 'twenty-shared/i18n';
 import {
   type AggregateChartConfiguration,
   type BarChartConfiguration,
@@ -28,22 +33,33 @@ export const useGraphWidgetQueryCommon = ({
 
   const aggregateFieldId = configuration.aggregateFieldMetadataId;
 
-  const aggregateField = objectMetadataItem.readableFields.find(
-    (field: { id: string }) => field.id === aggregateFieldId,
-  );
+  const aggregateField = findFieldMetadataItemByFieldMetadataId({
+    fieldMetadataItems: objectMetadataItem.readableFields,
+    fieldMetadataId: aggregateFieldId,
+  });
 
   if (!isDefined(aggregateField)) {
-    throw new Error('Aggregate field not found');
+    throw new Error(doNotTranslate('Aggregate field not found'));
   }
 
-  const { userTimezone } = useUserTimezone();
+  const { filterValueDependencies } = useFilterValueDependencies();
+
+  const flattenedFieldMetadataItems = useAtomStateValue(
+    flattenedFieldMetadataItemsSelector,
+  );
+
+  const { recordFilters: sanitizedRecordFilters } = sanitizeChartRecordFilters({
+    chartFilters: configuration.filter ?? {},
+    fieldMetadataItems: objectMetadataItem.fields,
+  });
 
   const gqlOperationFilter = computeRecordGqlOperationFilter({
-    fields: objectMetadataItem.fields,
-    filterValueDependencies: {
-      timeZone: userTimezone,
-    },
-    recordFilters: configuration.filter?.recordFilters ?? [],
+    fieldMetadataItems: flattenedFieldMetadataItems,
+    filterValueDependencies,
+    recordFilters: (sanitizedRecordFilters ?? []).map((recordFilter) => ({
+      ...recordFilter,
+      value: recordFilter.value ?? '',
+    })),
     recordFilterGroups: configuration.filter?.recordFilterGroups ?? [],
   });
 

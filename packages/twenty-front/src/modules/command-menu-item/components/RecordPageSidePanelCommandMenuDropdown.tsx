@@ -1,11 +1,18 @@
-import { CommandMenuItemComponent } from '@/command-menu-item/display/components/CommandMenuItemComponent';
-import { CommandMenuItemScope } from '@/command-menu-item/types/CommandMenuItemScope';
+import { SelectOptionIcon } from '@/ui/input/components/SelectOptionIcon';
 import { CommandMenuContext } from '@/command-menu-item/contexts/CommandMenuContext';
-import { CommandMenuComponentInstanceContext } from '@/command-menu/states/contexts/CommandMenuComponentInstanceContext';
+import { usePinnedCommandMenuItemsInlineLayout } from '@/command-menu-item/display/hooks/usePinnedCommandMenuItemsInlineLayout';
+import { useSidePanelFooterPinnedItemsAvailableWidth } from '@/command-menu-item/hooks/useSidePanelFooterPinnedItemsAvailableWidth';
+import { sidePanelWidgetFooterCommandMenuItemsState } from '@/ui/layout/side-panel/states/sidePanelWidgetFooterCommandMenuItemsState';
+import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomStateValue';
+import { useContext, useMemo } from 'react';
+import { isNonEmptyArray } from 'twenty-shared/utils';
+import { Dropdown } from 'twenty-ui/components/navigation';
+import { SidePanelOptionsDropdown } from '@/side-panel/components/SidePanelOptionsDropdown';
 import { getSidePanelCommandMenuDropdownIdFromCommandMenuId } from '@/command-menu-item/utils/getSidePanelCommandMenuDropdownIdFromCommandMenuId';
-import { OptionsDropdownMenu } from '@/ui/layout/dropdown/components/OptionsDropdownMenu';
+import { CommandMenuComponentInstanceContext } from '@/command-menu/states/contexts/CommandMenuComponentInstanceContext';
 import { useAvailableComponentInstanceIdOrThrow } from '@/ui/utilities/state/component-state/hooks/useAvailableComponentInstanceIdOrThrow';
-import { useContext } from 'react';
+import { CommandMenuDropdownActionItem } from '@/command-menu-item/display/components/CommandMenuDropdownActionItem';
+import { CommandMenuItemAvailabilityType } from '~/generated-metadata/graphql';
 
 export const RecordPageSidePanelCommandMenuDropdown = () => {
   const { commandMenuItems } = useContext(CommandMenuContext);
@@ -13,27 +20,76 @@ export const RecordPageSidePanelCommandMenuDropdown = () => {
   const commandMenuId = useAvailableComponentInstanceIdOrThrow(
     CommandMenuComponentInstanceContext,
   );
-
   const dropdownId =
     getSidePanelCommandMenuDropdownIdFromCommandMenuId(commandMenuId);
 
-  const recordSelectionActions = commandMenuItems.filter(
-    (action) => action.scope === CommandMenuItemScope.RecordSelection,
+  const sidePanelWidgetFooterCommandMenuItems = useAtomStateValue(
+    sidePanelWidgetFooterCommandMenuItemsState,
   );
 
-  const selectableItemIdArray = recordSelectionActions.map(
-    (action) => action.key,
+  const dropdownWidgetCommandMenuItems =
+    sidePanelWidgetFooterCommandMenuItems.filter(
+      (commandMenuItem) => commandMenuItem.isPinned === false,
+    );
+
+  const recordSelectionCommandMenuItems = useMemo(
+    () =>
+      commandMenuItems.filter(
+        (item) =>
+          item.availabilityType ===
+          CommandMenuItemAvailabilityType.RECORD_SELECTION,
+      ),
+    [commandMenuItems],
   );
+
+  const pinnedCommandMenuItems = useMemo(
+    () => commandMenuItems.filter((item) => item.isPinned === true),
+    [commandMenuItems],
+  );
+
+  const availableWidth = useSidePanelFooterPinnedItemsAvailableWidth();
+
+  const { pinnedOverflowCommandMenuItems } =
+    usePinnedCommandMenuItemsInlineLayout({
+      pinnedCommandMenuItems,
+      layoutKey: 'side-panel-footer',
+      containerWidth: availableWidth,
+    });
+
+  // A widget owning the footer hides the pinned buttons and leaves their measurements stale, so list every pinned item here.
+  const hasPinnedWidgetCommandMenuItems =
+    sidePanelWidgetFooterCommandMenuItems.some(
+      (commandMenuItem) => commandMenuItem.isPinned !== false,
+    );
+
+  const pinnedOverflowCommandMenuItemIds = new Set(
+    pinnedOverflowCommandMenuItems.map((item) => item.id),
+  );
+
+  const listedCommandMenuItems = hasPinnedWidgetCommandMenuItems
+    ? recordSelectionCommandMenuItems
+    : recordSelectionCommandMenuItems.filter(
+        (item) =>
+          item.isPinned !== true ||
+          pinnedOverflowCommandMenuItemIds.has(item.id),
+      );
 
   return (
-    <OptionsDropdownMenu
-      dropdownId={dropdownId}
-      selectableListId={commandMenuId}
-      selectableItemIdArray={selectableItemIdArray}
-    >
-      {recordSelectionActions.map((action) => (
-        <CommandMenuItemComponent action={action} key={action.key} />
+    <SidePanelOptionsDropdown dropdownId={dropdownId}>
+      {dropdownWidgetCommandMenuItems.map((commandMenuItem) => (
+        <Dropdown.ActionItem
+          key={commandMenuItem.id}
+          startIcon={<SelectOptionIcon Icon={commandMenuItem.Icon} />}
+          onClick={() => commandMenuItem.onClick()}
+        >
+          {commandMenuItem.label}
+        </Dropdown.ActionItem>
       ))}
-    </OptionsDropdownMenu>
+      {isNonEmptyArray(dropdownWidgetCommandMenuItems) &&
+        isNonEmptyArray(listedCommandMenuItems) && <Dropdown.Separator />}
+      {listedCommandMenuItems.map((item) => (
+        <CommandMenuDropdownActionItem item={item} key={item.id} />
+      ))}
+    </SidePanelOptionsDropdown>
   );
 };

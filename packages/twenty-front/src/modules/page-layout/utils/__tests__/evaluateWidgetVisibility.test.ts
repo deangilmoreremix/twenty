@@ -1,13 +1,16 @@
-import { type RulesLogic } from 'json-logic-js';
+import { type AdditionalOperation, type RulesLogic } from 'json-logic-js';
 
 import { evaluateWidgetVisibility } from '@/page-layout/utils/evaluateWidgetVisibility';
 
 describe('evaluateWidgetVisibility', () => {
   it('should return true (visible) when no conditionalDisplay is provided', () => {
     const result = evaluateWidgetVisibility({
+      conditionalAvailabilityExpression: undefined,
       conditionalDisplay: undefined,
       context: {
         device: 'DESKTOP',
+        selectedRecords: [],
+        featureFlags: {},
       },
     });
 
@@ -24,9 +27,12 @@ describe('evaluateWidgetVisibility', () => {
     };
 
     const result = evaluateWidgetVisibility({
+      conditionalAvailabilityExpression: undefined,
       conditionalDisplay,
       context: {
         device: 'MOBILE',
+        selectedRecords: [],
+        featureFlags: {},
       },
     });
 
@@ -43,9 +49,12 @@ describe('evaluateWidgetVisibility', () => {
     };
 
     const result = evaluateWidgetVisibility({
+      conditionalAvailabilityExpression: undefined,
       conditionalDisplay,
       context: {
         device: 'DESKTOP',
+        selectedRecords: [],
+        featureFlags: {},
       },
     });
 
@@ -62,9 +71,12 @@ describe('evaluateWidgetVisibility', () => {
     };
 
     const result = evaluateWidgetVisibility({
+      conditionalAvailabilityExpression: undefined,
       conditionalDisplay,
       context: {
         device: 'DESKTOP',
+        selectedRecords: [],
+        featureFlags: {},
       },
     });
 
@@ -81,9 +93,12 @@ describe('evaluateWidgetVisibility', () => {
     };
 
     const result = evaluateWidgetVisibility({
+      conditionalAvailabilityExpression: undefined,
       conditionalDisplay,
       context: {
         device: 'MOBILE',
+        selectedRecords: [],
+        featureFlags: {},
       },
     });
 
@@ -103,16 +118,22 @@ describe('evaluateWidgetVisibility', () => {
     };
 
     const resultMobile = evaluateWidgetVisibility({
+      conditionalAvailabilityExpression: undefined,
       conditionalDisplay,
       context: {
         device: 'MOBILE',
+        selectedRecords: [],
+        featureFlags: {},
       },
     });
 
     const resultDesktop = evaluateWidgetVisibility({
+      conditionalAvailabilityExpression: undefined,
       conditionalDisplay,
       context: {
         device: 'DESKTOP',
+        selectedRecords: [],
+        featureFlags: {},
       },
     });
 
@@ -121,17 +142,130 @@ describe('evaluateWidgetVisibility', () => {
   });
 
   it('should throw error for invalid operator', () => {
-    const invalidConditionalDisplay = {
+    const invalidConditionalDisplay: RulesLogic<AdditionalOperation> = {
       invalidOperator: 'test',
-    } as unknown as RulesLogic;
+    };
 
     expect(() => {
       evaluateWidgetVisibility({
+        conditionalAvailabilityExpression: undefined,
         conditionalDisplay: invalidConditionalDisplay,
         context: {
           device: 'DESKTOP',
+          selectedRecords: [],
+          featureFlags: {},
         },
       });
     }).toThrow();
+  });
+
+  describe('conditionalAvailabilityExpression', () => {
+    it('should return true when expression matches MOBILE device', () => {
+      const result = evaluateWidgetVisibility({
+        conditionalAvailabilityExpression: 'device == "MOBILE"',
+        conditionalDisplay: undefined,
+        context: {
+          device: 'MOBILE',
+          selectedRecords: [],
+          featureFlags: {},
+        },
+      });
+
+      expect(result).toBe(true);
+    });
+
+    it('should return false when expression does not match MOBILE device', () => {
+      const result = evaluateWidgetVisibility({
+        conditionalAvailabilityExpression: 'device == "MOBILE"',
+        conditionalDisplay: undefined,
+        context: {
+          device: 'DESKTOP',
+          selectedRecords: [],
+          featureFlags: {},
+        },
+      });
+
+      expect(result).toBe(false);
+    });
+
+    it('should return true when expression matches DESKTOP device', () => {
+      const result = evaluateWidgetVisibility({
+        conditionalAvailabilityExpression: 'device == "DESKTOP"',
+        conditionalDisplay: undefined,
+        context: {
+          device: 'DESKTOP',
+          selectedRecords: [],
+          featureFlags: {},
+        },
+      });
+
+      expect(result).toBe(true);
+    });
+
+    it('should take priority over conditionalDisplay when both are set', () => {
+      const conditionalDisplay: RulesLogic = {
+        and: [
+          {
+            '===': [{ var: 'device' }, 'DESKTOP'],
+          },
+        ],
+      };
+
+      const result = evaluateWidgetVisibility({
+        conditionalAvailabilityExpression: 'device == "MOBILE"',
+        conditionalDisplay,
+        context: {
+          device: 'DESKTOP',
+          selectedRecords: [],
+          featureFlags: {},
+        },
+      });
+
+      expect(result).toBe(false);
+    });
+
+    it('should fall through to conditionalDisplay when expression is null', () => {
+      const conditionalDisplay: RulesLogic = {
+        and: [
+          {
+            '===': [{ var: 'device' }, 'MOBILE'],
+          },
+        ],
+      };
+
+      const result = evaluateWidgetVisibility({
+        conditionalAvailabilityExpression: null,
+        conditionalDisplay,
+        context: {
+          device: 'DESKTOP',
+          selectedRecords: [],
+          featureFlags: {},
+        },
+      });
+
+      expect(result).toBe(false);
+    });
+
+    it('should fall through to conditionalDisplay when expression is undefined', () => {
+      const conditionalDisplay: RulesLogic = {
+        and: [
+          {
+            '===': [{ var: 'device' }, 'DESKTOP'],
+          },
+        ],
+      };
+
+      const result = evaluateWidgetVisibility({
+        conditionalAvailabilityExpression: undefined,
+        conditionalDisplay,
+        context: {
+          device: 'DESKTOP',
+          selectedRecords: [],
+          featureFlags: {},
+        },
+      });
+
+      expect(result).toBe(true);
+    });
   });
 });

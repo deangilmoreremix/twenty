@@ -54,7 +54,6 @@ export const fromCreatePageLayoutWidgetInputToFlatPageLayoutWidgetToCreate = ({
       title: createPageLayoutWidgetInput.title,
       type: createPageLayoutWidgetInput.type,
       objectMetadataId: createPageLayoutWidgetInput.objectMetadataId,
-      gridPosition: createPageLayoutWidgetInput.gridPosition,
       position: createPageLayoutWidgetInput.position,
     },
     flatPageLayoutTabMaps,
@@ -64,6 +63,8 @@ export const fromCreatePageLayoutWidgetInputToFlatPageLayoutWidgetToCreate = ({
   return {
     id: pageLayoutWidgetId,
     ...commonProperties,
+    isActive: true,
+    isSystemSideEffect: false,
     workspaceId,
     createdAt,
     updatedAt: createdAt,
@@ -73,7 +74,9 @@ export const fromCreatePageLayoutWidgetInputToFlatPageLayoutWidgetToCreate = ({
     applicationId: flatApplication.id,
     applicationUniversalIdentifier: flatApplication.universalIdentifier,
     conditionalDisplay: null,
+    conditionalAvailabilityExpression: null,
     overrides: null,
+    universalOverrides: null,
     universalConfiguration:
       fromPageLayoutWidgetConfigurationToUniversalConfiguration({
         configuration: createPageLayoutWidgetInput.configuration,

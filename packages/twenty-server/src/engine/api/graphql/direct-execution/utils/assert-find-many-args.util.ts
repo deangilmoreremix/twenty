@@ -1,12 +1,12 @@
 import { isArray, isNumber, isObject, isString } from 'class-validator';
 
-import { isDefined } from 'twenty-shared/utils';
+import { isDefined, isEmptyObject } from 'twenty-shared/utils';
 
 import {
   GraphqlDirectExecutionException,
   GraphqlDirectExecutionExceptionCode,
 } from 'src/engine/api/graphql/direct-execution/errors/graphql-direct-execution.exception';
-import { STANDARD_ERROR_MESSAGE } from 'src/engine/api/common/common-query-runners/errors/standard-error-message.constant';
+import { STANDARD_ERROR_MESSAGE } from 'src/engine/constants/standard-error-message.constant';
 import { type FindManyResolverArgs } from 'src/engine/api/graphql/workspace-resolver-builder/interfaces/workspace-resolvers-builder.interface';
 
 export function assertFindManyArgs(
@@ -66,7 +66,13 @@ export function assertFindManyArgs(
     );
   }
 
-  if ('orderBy' in args && isDefined(args.orderBy) && !isArray(args.orderBy)) {
+  if (
+    'orderBy' in args &&
+    isDefined(args.orderBy) &&
+    !isEmptyObject(args.orderBy) &&
+    !isArray(args.orderBy) &&
+    !isObject(args.orderBy)
+  ) {
     throw new GraphqlDirectExecutionException(
       'Invalid argument: "orderBy" must be an array',
       GraphqlDirectExecutionExceptionCode.INVALID_QUERY_INPUT,

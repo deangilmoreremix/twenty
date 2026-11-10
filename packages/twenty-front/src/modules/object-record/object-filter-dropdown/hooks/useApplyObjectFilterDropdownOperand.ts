@@ -8,19 +8,19 @@ import { selectedOperandInDropdownComponentState } from '@/object-record/object-
 import { useCreateEmptyRecordFilterFromFieldMetadataItem } from '@/object-record/record-filter/hooks/useCreateEmptyRecordFilterFromFieldMetadataItem';
 import { useGetRelativeDateFilterWithUserTimezone } from '@/object-record/record-filter/hooks/useGetRelativeDateFilterWithUserTimezone';
 import { type RecordFilter } from '@/object-record/record-filter/types/RecordFilter';
-import { RecordFilterOperand } from '@/object-record/record-filter/types/RecordFilterOperand';
+import { RecordFilterOperand } from 'twenty-shared/types';
 import { useUserTimezone } from '@/ui/input/components/internal/date/hooks/useUserTimezone';
 import { useAtomComponentSelectorValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentSelectorValue';
 import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateValue';
 import { useSetAtomComponentState } from '@/ui/utilities/state/jotai/hooks/useSetAtomComponentState';
 import { stringifyRelativeDateFilter } from '@/views/view-filter-value/utils/stringifyRelativeDateFilter';
 
-import { useFeatureFlagsMap } from '@/workspace/hooks/useFeatureFlagsMap';
 import { DEFAULT_RELATIVE_DATE_FILTER_VALUE } from 'twenty-shared/constants';
 import {
   isDefined,
   relativeDateFilterStringifiedSchema,
 } from 'twenty-shared/utils';
+import { doNotTranslate } from 'twenty-shared/i18n';
 
 export const useApplyObjectFilterDropdownOperand = () => {
   const { userTimezone } = useUserTimezone();
@@ -49,10 +49,6 @@ export const useApplyObjectFilterDropdownOperand = () => {
   const { getRelativeDateFilterWithUserTimezone } =
     useGetRelativeDateFilterWithUserTimezone();
 
-  const featureFlags = useFeatureFlagsMap();
-  const isWholeDayFilterEnabled =
-    featureFlags.IS_DATE_TIME_WHOLE_DAY_FILTER_ENABLED ?? false;
-
   const applyObjectFilterDropdownOperand = (
     newOperand: RecordFilterOperand,
   ) => {
@@ -74,7 +70,9 @@ export const useApplyObjectFilterDropdownOperand = () => {
     } else if (isValuelessOperand) {
       if (!isDefined(fieldMetadataItemUsedInDropdown)) {
         throw new Error(
-          'FieldMetadataItemUsedInDropdown is not defined, cannot create empty record filter, this should not happen',
+          doNotTranslate(
+            'FieldMetadataItemUsedInDropdown is not defined, cannot create empty record filter, this should not happen',
+          ),
         );
       }
 
@@ -127,7 +125,6 @@ export const useApplyObjectFilterDropdownOperand = () => {
             recordFilterToUpsert.value,
             newOperand,
             userTimezone,
-            isWholeDayFilterEnabled,
           );
         } else if (filterValueIsEmpty || isStillRelativeFilterValue.success) {
           const zonedDateToUse = Temporal.Now.zonedDateTimeISO(userTimezone);
@@ -139,10 +136,7 @@ export const useApplyObjectFilterDropdownOperand = () => {
 
             recordFilterToUpsert.value = initialNowDateFilterValue;
           } else {
-            if (
-              newOperand === RecordFilterOperand.IS &&
-              isWholeDayFilterEnabled
-            ) {
+            if (newOperand === RecordFilterOperand.IS) {
               recordFilterToUpsert.value = zonedDateToUse
                 .toPlainDate()
                 .toString();
@@ -172,21 +166,16 @@ const convertDateTimeFilterValue = (
   currentValue: string,
   targetOperand: RecordFilterOperand,
   userTimezone: string,
-  isWholeDayFilterEnabled = false,
 ): string => {
   const zonedDateToUse = Temporal.Now.zonedDateTimeISO(userTimezone);
 
   if (targetOperand === RecordFilterOperand.IS) {
     try {
-      const existingZoned = currentValue.includes('T')
+      const existingZoned = currentValue.includes(doNotTranslate('T'))
         ? Temporal.Instant.from(currentValue).toZonedDateTimeISO(userTimezone)
         : Temporal.PlainDate.from(currentValue).toZonedDateTime(userTimezone);
 
-      if (isWholeDayFilterEnabled) {
-        return existingZoned.toPlainDate().toString();
-      } else {
-        return existingZoned.toInstant().toString();
-      }
+      return existingZoned.toPlainDate().toString();
     } catch {
       return zonedDateToUse.toPlainDate().toString();
     }

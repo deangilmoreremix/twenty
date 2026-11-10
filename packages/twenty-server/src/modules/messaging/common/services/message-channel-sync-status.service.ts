@@ -1,38 +1,59 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
 
-import { Any, In } from 'typeorm';
+import { Any, In, Repository } from 'typeorm';
+import { type QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
 
+import {
+  MessageChannelPendingGroupEmailsAction,
+  MessageChannelSyncStage,
+  MessageChannelSyncStatus,
+  MessageFolderPendingSyncAction,
+} from 'twenty-shared/types';
 import { InjectCacheStorage } from 'src/engine/core-modules/cache-storage/decorators/cache-storage.decorator';
 import { CacheStorageService } from 'src/engine/core-modules/cache-storage/services/cache-storage.service';
 import { CacheStorageNamespace } from 'src/engine/core-modules/cache-storage/types/cache-storage-namespace.enum';
 import { MetricsService } from 'src/engine/core-modules/metrics/metrics.service';
 import { MetricsKeys } from 'src/engine/core-modules/metrics/types/metrics-keys.type';
-import { ConnectedAccountDataAccessService } from 'src/engine/metadata-modules/connected-account/data-access/services/connected-account-data-access.service';
-import { MessageChannelDataAccessService } from 'src/engine/metadata-modules/message-channel/data-access/services/message-channel-data-access.service';
-import { MessageFolderDataAccessService } from 'src/engine/metadata-modules/message-folder/data-access/services/message-folder-data-access.service';
-import { GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspace-datasource/global-workspace-orm.manager';
+import { UserWorkspaceEntity } from 'src/engine/core-modules/user-workspace/user-workspace.entity';
+import { ConnectedAccountEntity } from 'src/engine/metadata-modules/connected-account/entities/connected-account.entity';
+import { MessageChannelEntity } from 'src/engine/metadata-modules/message-channel/entities/message-channel.entity';
+import { MessageFolderEntity } from 'src/engine/metadata-modules/message-folder/entities/message-folder.entity';
+import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
 import { buildSystemAuthContext } from 'src/engine/twenty-orm/utils/build-system-auth-context.util';
 import { AccountsToReconnectService } from 'src/modules/connected-account/services/accounts-to-reconnect.service';
 import { AccountsToReconnectKeys } from 'src/modules/connected-account/types/accounts-to-reconnect-key-value.type';
-import {
-  MessageChannelPendingGroupEmailsAction,
-  MessageChannelSyncStage,
-  MessageChannelSyncStatus,
-} from 'src/modules/messaging/common/standard-objects/message-channel.workspace-entity';
-import { MessageFolderPendingSyncAction } from 'src/modules/messaging/common/standard-objects/message-folder.workspace-entity';
 import { type WorkspaceMemberWorkspaceEntity } from 'src/modules/workspace-member/standard-objects/workspace-member.workspace-entity';
+import { InjectWorkspaceScopedRepository } from 'src/engine/twenty-orm/workspace-scoped-repository/inject-workspace-scoped-repository.decorator';
+import { WorkspaceScopedRepository } from 'src/engine/twenty-orm/workspace-scoped-repository/workspace-scoped-repository';
+import { type WorkspaceBroadcastEvent } from 'src/engine/subscriptions/workspace-event-broadcaster/types/workspace-broadcast-event.type';
+import { WorkspaceEventBroadcaster } from 'src/engine/subscriptions/workspace-event-broadcaster/workspace-event-broadcaster.service';
+import { computeMessageImportProgress } from 'src/engine/metadata-modules/message-channel/utils/compute-message-import-progress.util';
+
+type UpdatedMessageChannel = Pick<
+  MessageChannelEntity,
+  'id' | 'syncStatus' | 'syncStage'
+> & { userWorkspaceId: string };
 
 @Injectable()
 export class MessageChannelSyncStatusService {
+  private readonly logger = new Logger(MessageChannelSyncStatusService.name);
+
   constructor(
     @InjectCacheStorage(CacheStorageNamespace.ModuleMessaging)
     private readonly cacheStorage: CacheStorageService,
-    private readonly globalWorkspaceOrmManager: GlobalWorkspaceOrmManager,
-    private readonly messageChannelDataAccessService: MessageChannelDataAccessService,
-    private readonly messageFolderDataAccessService: MessageFolderDataAccessService,
-    private readonly connectedAccountDataAccessService: ConnectedAccountDataAccessService,
+    private readonly workspaceOrmManager: WorkspaceOrmManager,
+    @InjectRepository(MessageChannelEntity)
+    private readonly messageChannelRepository: Repository<MessageChannelEntity>,
+    @InjectWorkspaceScopedRepository(MessageFolderEntity)
+    private readonly messageFolderRepository: WorkspaceScopedRepository<MessageFolderEntity>,
+    @InjectRepository(ConnectedAccountEntity)
+    private readonly connectedAccountRepository: Repository<ConnectedAccountEntity>,
+    @InjectRepository(UserWorkspaceEntity)
+    private readonly userWorkspaceRepository: Repository<UserWorkspaceEntity>,
     private readonly accountsToReconnectService: AccountsToReconnectService,
     private readonly metricsService: MetricsService,
+    private readonly workspaceEventBroadcaster: WorkspaceEventBroadcaster,
   ) {}
 
   public async markAsMessagesListFetchPending(
@@ -44,18 +65,10 @@ export class MessageChannelSyncStatusService {
       return;
     }
 
-    const authContext = buildSystemAuthContext(workspaceId);
-
-    await this.globalWorkspaceOrmManager.executeInWorkspaceContext(async () => {
-      await this.messageChannelDataAccessService.update(
-        workspaceId,
-        { id: In(messageChannelIds) },
-        {
-          syncStage: MessageChannelSyncStage.MESSAGE_LIST_FETCH_PENDING,
-          ...(!preserveSyncStageStartedAt ? { syncStageStartedAt: null } : {}),
-        },
-      );
-    }, authContext);
+    await this.updateMessageChannels(messageChannelIds, workspaceId, {
+      syncStage: MessageChannelSyncStage.MESSAGE_LIST_FETCH_PENDING,
+      ...(!preserveSyncStageStartedAt ? { syncStageStartedAt: null } : {}),
+    });
   }
 
   public async markAsMessagesImportPending(
@@ -67,18 +80,10 @@ export class MessageChannelSyncStatusService {
       return;
     }
 
-    const authContext = buildSystemAuthContext(workspaceId);
-
-    await this.globalWorkspaceOrmManager.executeInWorkspaceContext(async () => {
-      await this.messageChannelDataAccessService.update(
-        workspaceId,
-        { id: In(messageChannelIds) },
-        {
-          syncStage: MessageChannelSyncStage.MESSAGES_IMPORT_PENDING,
-          ...(!preserveSyncStageStartedAt ? { syncStageStartedAt: null } : {}),
-        },
-      );
-    }, authContext);
+    await this.updateMessageChannels(messageChannelIds, workspaceId, {
+      syncStage: MessageChannelSyncStage.MESSAGES_IMPORT_PENDING,
+      ...(!preserveSyncStageStartedAt ? { syncStageStartedAt: null } : {}),
+    });
   }
 
   public async resetAndMarkAsMessagesListFetchPending(
@@ -90,35 +95,41 @@ export class MessageChannelSyncStatusService {
     }
 
     for (const messageChannelId of messageChannelIds) {
-      await this.cacheStorage.del(
+      await this.cacheStorage.mdel([
         `messages-to-import:${workspaceId}:${messageChannelId}`,
-      );
+        `messages-to-import-total:${workspaceId}:${messageChannelId}`,
+        `messages-imported:${workspaceId}:${messageChannelId}`,
+      ]);
     }
 
     const authContext = buildSystemAuthContext(workspaceId);
 
-    await this.globalWorkspaceOrmManager.executeInWorkspaceContext(async () => {
-      await this.messageChannelDataAccessService.update(
-        workspaceId,
-        { id: In(messageChannelIds) },
-        {
-          syncCursor: '',
-          syncStageStartedAt: null,
-          throttleFailureCount: 0,
-          throttleRetryAfter: null,
-          pendingGroupEmailsAction: MessageChannelPendingGroupEmailsAction.NONE,
-        },
-      );
+    await this.workspaceOrmManager.executeInWorkspaceContext(
+      async () => {
+        await this.messageChannelRepository.update(
+          { id: In(messageChannelIds), workspaceId },
+          {
+            syncCursor: '',
+            syncStageStartedAt: null,
+            throttleFailureCount: 0,
+            throttleRetryAfter: null,
+            pendingGroupEmailsAction:
+              MessageChannelPendingGroupEmailsAction.NONE,
+          },
+        );
 
-      await this.messageFolderDataAccessService.update(
-        workspaceId,
-        { messageChannelId: In(messageChannelIds) },
-        {
-          syncCursor: '',
-          pendingSyncAction: MessageFolderPendingSyncAction.NONE,
-        },
-      );
-    }, authContext);
+        await this.messageFolderRepository.update(
+          workspaceId,
+          { messageChannelId: In(messageChannelIds) },
+          {
+            syncCursor: '',
+            pendingSyncAction: MessageFolderPendingSyncAction.NONE,
+          },
+        );
+      },
+      authContext,
+      { lite: true },
+    );
 
     await this.markAsMessagesListFetchPending(messageChannelIds, workspaceId);
   }
@@ -133,13 +144,16 @@ export class MessageChannelSyncStatusService {
 
     const authContext = buildSystemAuthContext(workspaceId);
 
-    await this.globalWorkspaceOrmManager.executeInWorkspaceContext(async () => {
-      await this.messageChannelDataAccessService.update(
-        workspaceId,
-        { id: In(messageChannelIds) },
-        { syncStageStartedAt: null },
-      );
-    }, authContext);
+    await this.workspaceOrmManager.executeInWorkspaceContext(
+      async () => {
+        await this.messageChannelRepository.update(
+          { id: In(messageChannelIds), workspaceId },
+          { syncStageStartedAt: null },
+        );
+      },
+      authContext,
+      { lite: true },
+    );
   }
 
   public async markAsMessagesListFetchScheduled(
@@ -150,19 +164,38 @@ export class MessageChannelSyncStatusService {
       return;
     }
 
-    const authContext = buildSystemAuthContext(workspaceId);
+    await this.updateMessageChannels(messageChannelIds, workspaceId, {
+      syncStage: MessageChannelSyncStage.MESSAGE_LIST_FETCH_SCHEDULED,
+      syncStatus: MessageChannelSyncStatus.ONGOING,
+      syncStageStartedAt: new Date().toISOString(),
+    });
+  }
 
-    await this.globalWorkspaceOrmManager.executeInWorkspaceContext(async () => {
-      await this.messageChannelDataAccessService.update(
+  public async markAsMessagesListFetchScheduledIfPending(
+    messageChannelIds: string[],
+    workspaceId: string,
+  ): Promise<string[]> {
+    if (!messageChannelIds.length) {
+      return [];
+    }
+
+    const updateResult = await this.messageChannelRepository
+      .createQueryBuilder()
+      .update()
+      .set({
+        syncStage: MessageChannelSyncStage.MESSAGE_LIST_FETCH_SCHEDULED,
+        syncStageStartedAt: new Date(),
+      })
+      .where({
+        id: In(messageChannelIds),
         workspaceId,
-        { id: In(messageChannelIds) },
-        {
-          syncStage: MessageChannelSyncStage.MESSAGE_LIST_FETCH_SCHEDULED,
-          syncStatus: MessageChannelSyncStatus.ONGOING,
-          syncStageStartedAt: new Date().toISOString(),
-        },
-      );
-    }, authContext);
+        isSyncEnabled: true,
+        syncStage: MessageChannelSyncStage.MESSAGE_LIST_FETCH_PENDING,
+      })
+      .returning('id')
+      .execute();
+
+    return updateResult.raw.map((row: { id: string }) => row.id);
   }
 
   public async markAsMessagesListFetchOngoing(
@@ -173,22 +206,14 @@ export class MessageChannelSyncStatusService {
       return;
     }
 
-    const authContext = buildSystemAuthContext(workspaceId);
-
-    await this.globalWorkspaceOrmManager.executeInWorkspaceContext(async () => {
-      await this.messageChannelDataAccessService.update(
-        workspaceId,
-        { id: In(messageChannelIds) },
-        {
-          syncStage: MessageChannelSyncStage.MESSAGE_LIST_FETCH_ONGOING,
-          syncStatus: MessageChannelSyncStatus.ONGOING,
-          syncStageStartedAt: new Date().toISOString(),
-        },
-      );
-    }, authContext);
+    await this.updateMessageChannels(messageChannelIds, workspaceId, {
+      syncStage: MessageChannelSyncStage.MESSAGE_LIST_FETCH_ONGOING,
+      syncStatus: MessageChannelSyncStatus.ONGOING,
+      syncStageStartedAt: new Date().toISOString(),
+    });
   }
 
-  public async markAsCompletedAndMarkAsMessagesListFetchPending(
+  public async markAsMessageSyncCompleted(
     messageChannelIds: string[],
     workspaceId: string,
   ) {
@@ -196,24 +221,18 @@ export class MessageChannelSyncStatusService {
       return;
     }
 
-    const authContext = buildSystemAuthContext(workspaceId);
+    await this.clearImportProgress(messageChannelIds, workspaceId);
 
-    await this.globalWorkspaceOrmManager.executeInWorkspaceContext(async () => {
-      await this.messageChannelDataAccessService.update(
-        workspaceId,
-        { id: In(messageChannelIds) },
-        {
-          syncStatus: MessageChannelSyncStatus.ACTIVE,
-          syncStage: MessageChannelSyncStage.MESSAGE_LIST_FETCH_PENDING,
-          throttleFailureCount: 0,
-          throttleRetryAfter: null,
-          syncStageStartedAt: null,
-          syncedAt: new Date().toISOString(),
-        },
-      );
-    }, authContext);
+    await this.updateMessageChannels(messageChannelIds, workspaceId, {
+      syncStatus: MessageChannelSyncStatus.ACTIVE,
+      syncStage: MessageChannelSyncStage.MESSAGE_LIST_FETCH_PENDING,
+      throttleFailureCount: 0,
+      throttleRetryAfter: null,
+      syncStageStartedAt: null,
+      syncedAt: new Date().toISOString(),
+    });
 
-    await this.metricsService.batchIncrementCounter({
+    await this.metricsService.incrementCounterForEvents({
       key: MetricsKeys.MessageChannelSyncJobActive,
       eventIds: messageChannelIds,
     });
@@ -227,17 +246,9 @@ export class MessageChannelSyncStatusService {
       return;
     }
 
-    const authContext = buildSystemAuthContext(workspaceId);
-
-    await this.globalWorkspaceOrmManager.executeInWorkspaceContext(async () => {
-      await this.messageChannelDataAccessService.update(
-        workspaceId,
-        { id: In(messageChannelIds) },
-        {
-          syncStage: MessageChannelSyncStage.MESSAGES_IMPORT_SCHEDULED,
-        },
-      );
-    }, authContext);
+    await this.updateMessageChannels(messageChannelIds, workspaceId, {
+      syncStage: MessageChannelSyncStage.MESSAGES_IMPORT_SCHEDULED,
+    });
   }
 
   public async markAsMessagesImportOngoing(
@@ -248,81 +259,185 @@ export class MessageChannelSyncStatusService {
       return;
     }
 
-    const authContext = buildSystemAuthContext(workspaceId);
-
-    await this.globalWorkspaceOrmManager.executeInWorkspaceContext(async () => {
-      await this.messageChannelDataAccessService.update(
-        workspaceId,
-        { id: In(messageChannelIds) },
-        {
-          syncStage: MessageChannelSyncStage.MESSAGES_IMPORT_ONGOING,
-          syncStatus: MessageChannelSyncStatus.ONGOING,
-          syncStageStartedAt: new Date().toISOString(),
-        },
-      );
-    }, authContext);
+    await this.updateMessageChannels(messageChannelIds, workspaceId, {
+      syncStage: MessageChannelSyncStage.MESSAGES_IMPORT_ONGOING,
+      syncStatus: MessageChannelSyncStatus.ONGOING,
+      syncStageStartedAt: new Date().toISOString(),
+    });
   }
 
-  public async markAsFailed(
-    messageChannelIds: string[],
-    workspaceId: string,
+  public async markAsFailed({
+    messageChannelIds,
+    workspaceId,
+    syncStatus,
+    authFailedReason = null,
+  }: {
+    messageChannelIds: string[];
+    workspaceId: string;
     syncStatus:
       | MessageChannelSyncStatus.FAILED_INSUFFICIENT_PERMISSIONS
-      | MessageChannelSyncStatus.FAILED_UNKNOWN,
-  ) {
+      | MessageChannelSyncStatus.FAILED_UNKNOWN;
+    authFailedReason?: string | null;
+  }) {
     if (!messageChannelIds.length) {
       return;
     }
 
+    this.logger.warn(
+      `Marking message channels [${messageChannelIds.join(', ')}] as ${syncStatus} in workspace ${workspaceId}`,
+    );
+
+    await this.clearImportProgress(messageChannelIds, workspaceId);
+
+    await this.updateMessageChannels(messageChannelIds, workspaceId, {
+      syncStage: MessageChannelSyncStage.FAILED,
+      syncStatus: syncStatus,
+      throttleRetryAfter: null,
+    });
+
     const authContext = buildSystemAuthContext(workspaceId);
 
-    await this.globalWorkspaceOrmManager.executeInWorkspaceContext(async () => {
-      await this.messageChannelDataAccessService.update(
-        workspaceId,
-        { id: In(messageChannelIds) },
-        {
-          syncStage: MessageChannelSyncStage.FAILED,
-          syncStatus: syncStatus,
-          throttleRetryAfter: null,
+    await this.workspaceOrmManager.executeInWorkspaceContext(
+      async () => {
+        const metricsKey =
+          syncStatus ===
+          MessageChannelSyncStatus.FAILED_INSUFFICIENT_PERMISSIONS
+            ? MetricsKeys.MessageChannelSyncJobFailedInsufficientPermissions
+            : MetricsKeys.MessageChannelSyncJobFailedUnknown;
+
+        await this.metricsService.incrementCounterForEvents({
+          key: metricsKey,
+          eventIds: messageChannelIds,
+        });
+
+        if (
+          syncStatus ===
+          MessageChannelSyncStatus.FAILED_INSUFFICIENT_PERMISSIONS
+        ) {
+          const messageChannels = await this.messageChannelRepository.find({
+            where: { id: In(messageChannelIds), workspaceId },
+          });
+
+          const connectedAccountIds = messageChannels.map(
+            (messageChannel) => messageChannel.connectedAccountId,
+          );
+
+          await this.connectedAccountRepository.update(
+            { id: Any(connectedAccountIds), workspaceId },
+            {
+              authFailedAt: new Date(),
+              authFailedReason,
+            },
+          );
+
+          await this.addToAccountsToReconnect(
+            messageChannels.map((messageChannel) => messageChannel.id),
+            workspaceId,
+          );
+        }
+      },
+      authContext,
+      { lite: true },
+    );
+  }
+
+  public async getImportProgress({
+    messageChannelId,
+    workspaceId,
+  }: {
+    messageChannelId: string;
+    workspaceId: string;
+  }): Promise<number | null> {
+    const [totalMessagesToImportCount, importedMessagesCount] =
+      await this.cacheStorage.mget<number>([
+        `messages-to-import-total:${workspaceId}:${messageChannelId}`,
+        `messages-imported:${workspaceId}:${messageChannelId}`,
+      ]);
+
+    return computeMessageImportProgress({
+      importedMessagesCount,
+      totalMessagesToImportCount,
+    });
+  }
+
+  private async clearImportProgress(
+    messageChannelIds: string[],
+    workspaceId: string,
+  ) {
+    await this.cacheStorage.mdel(
+      messageChannelIds.flatMap((messageChannelId) => [
+        `messages-to-import-total:${workspaceId}:${messageChannelId}`,
+        `messages-imported:${workspaceId}:${messageChannelId}`,
+      ]),
+    );
+  }
+
+  private async updateMessageChannels(
+    messageChannelIds: string[],
+    workspaceId: string,
+    values: QueryDeepPartialEntity<MessageChannelEntity>,
+  ) {
+    const authContext = buildSystemAuthContext(workspaceId);
+
+    const updatedMessageChannels =
+      await this.workspaceOrmManager.executeInWorkspaceContext(
+        async () => {
+          const updateResult = await this.messageChannelRepository
+            .createQueryBuilder()
+            .update()
+            .set(values)
+            .where({ id: In(messageChannelIds), workspaceId })
+            .returning(
+              `id, "syncStatus", "syncStage", (SELECT "userWorkspaceId" FROM core."connectedAccount" WHERE core."connectedAccount".id = "messageChannel"."connectedAccountId") AS "userWorkspaceId"`,
+            )
+            .execute();
+
+          return updateResult.raw as UpdatedMessageChannel[];
         },
+        authContext,
+        { lite: true },
       );
 
-      const metricsKey =
-        syncStatus === MessageChannelSyncStatus.FAILED_INSUFFICIENT_PERMISSIONS
-          ? MetricsKeys.MessageChannelSyncJobFailedInsufficientPermissions
-          : MetricsKeys.MessageChannelSyncJobFailedUnknown;
+    await this.broadcastMessageChannelsUpdated(
+      updatedMessageChannels,
+      workspaceId,
+    );
+  }
 
-      await this.metricsService.batchIncrementCounter({
-        key: metricsKey,
-        eventIds: messageChannelIds,
-      });
+  private async broadcastMessageChannelsUpdated(
+    updatedMessageChannels: UpdatedMessageChannel[],
+    workspaceId: string,
+  ): Promise<void> {
+    try {
+      const events: WorkspaceBroadcastEvent[] = await Promise.all(
+        updatedMessageChannels.map(
+          async ({ id, syncStatus, syncStage, userWorkspaceId }) => ({
+            type: 'updated',
+            entityName: 'messageChannel',
+            recordId: id,
+            properties: {
+              after: {
+                id,
+                syncStatus,
+                syncStage,
+                importProgress: await this.getImportProgress({
+                  messageChannelId: id,
+                  workspaceId,
+                }),
+              },
+            },
+            recipientUserWorkspaceIds: [userWorkspaceId],
+          }),
+        ),
+      );
 
-      if (
-        syncStatus === MessageChannelSyncStatus.FAILED_INSUFFICIENT_PERMISSIONS
-      ) {
-        const messageChannels = await this.messageChannelDataAccessService.find(
-          workspaceId,
-          { id: In(messageChannelIds) },
-        );
-
-        const connectedAccountIds = messageChannels.map(
-          (messageChannel) => messageChannel.connectedAccountId,
-        );
-
-        await this.connectedAccountDataAccessService.update(
-          workspaceId,
-          { id: Any(connectedAccountIds) },
-          {
-            authFailedAt: new Date(),
-          },
-        );
-
-        await this.addToAccountsToReconnect(
-          messageChannels.map((messageChannel) => messageChannel.id),
-          workspaceId,
-        );
-      }
-    }, authContext);
+      await this.workspaceEventBroadcaster.broadcast({ workspaceId, events });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to broadcast updated event for message channels [${updatedMessageChannels.map(({ id }) => id).join(', ')}] in workspace ${workspaceId}`,
+        error,
+      );
+    }
   }
 
   private async addToAccountsToReconnect(
@@ -333,32 +448,34 @@ export class MessageChannelSyncStatusService {
       return;
     }
 
-    const messageChannels = await this.messageChannelDataAccessService.findMany(
-      workspaceId,
-      {
-        where: { id: In(messageChannelIds) },
-      },
-    );
+    const messageChannels = await this.messageChannelRepository.find({
+      where: { id: In(messageChannelIds), workspaceId },
+    });
 
     const workspaceMemberRepository =
-      await this.globalWorkspaceOrmManager.getRepository<WorkspaceMemberWorkspaceEntity>(
-        workspaceId,
+      this.workspaceOrmManager.getRepositoryWithoutPermissionChecks<WorkspaceMemberWorkspaceEntity>(
         'workspaceMember',
-        { shouldBypassPermissionChecks: true },
       );
 
     for (const messageChannel of messageChannels) {
-      const connectedAccount =
-        await this.connectedAccountDataAccessService.findOne(workspaceId, {
-          where: { id: messageChannel.connectedAccountId },
-        });
+      const connectedAccount = await this.connectedAccountRepository.findOne({
+        where: { id: messageChannel.connectedAccountId, workspaceId },
+      });
 
       if (!connectedAccount) {
         continue;
       }
 
+      const userWorkspace = await this.userWorkspaceRepository.findOne({
+        where: { id: connectedAccount.userWorkspaceId },
+      });
+
+      if (!userWorkspace) {
+        continue;
+      }
+
       const workspaceMember = await workspaceMemberRepository.findOne({
-        where: { id: connectedAccount.accountOwnerId },
+        where: { userId: userWorkspace.userId },
       });
 
       if (!workspaceMember) {

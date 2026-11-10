@@ -1,26 +1,21 @@
 import { styled } from '@linaria/react';
-import { type ReactNode, useContext } from 'react';
+import { type ReactNode } from 'react';
 
+import { MediaAccessIndicator } from '@/media-access/components/MediaAccessIndicator';
 import { NavigationDrawerCollapseButton } from '@/ui/navigation/navigation-drawer/components/NavigationDrawerCollapseButton';
 
+import { useIsSettingsPage } from '@/navigation/hooks/useIsSettingsPage';
+import { useNavigationDrawerExpanded } from '@/ui/navigation/navigation-drawer/hooks/useNavigationDrawerExpanded';
 import { PAGE_ACTION_CONTAINER_CLICK_OUTSIDE_ID } from '@/ui/layout/page/constants/PageActionContainerClickOutsideId';
 import { PAGE_BAR_MIN_HEIGHT } from '@/ui/layout/page/constants/PageBarMinHeight';
-import { isNavigationDrawerExpandedState } from '@/ui/navigation/states/isNavigationDrawerExpanded';
-import { useIsMobile } from '@/ui/utilities/responsive/hooks/useIsMobile';
-import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomStateValue';
+import { useIsMobile } from 'twenty-ui/utilities';
 import { AnimatePresence } from 'framer-motion';
 import { isDefined } from 'twenty-shared/utils';
-import {
-  type IconComponent,
-  IconX,
-  OverflowingTextWithTooltip,
-} from 'twenty-ui/display';
-import { LightIconButton } from 'twenty-ui/input';
-import {
-  MOBILE_VIEWPORT,
-  ThemeContext,
-  themeCssVariables,
-} from 'twenty-ui/theme-constants';
+import { LightIconButton } from 'twenty-ui/components/input';
+import { OverflowingTextWithTooltip } from 'twenty-ui/primitives/typography';
+import { type IconComponent, IconX } from 'twenty-ui/icon';
+import { MOBILE_VIEWPORT, useTheme, themeCssVariables } from 'twenty-ui/theme';
+import { useLingui } from '@lingui/react/macro';
 
 const StyledTopBarContainer = styled.div<{ isMobile: boolean }>`
   align-items: center;
@@ -104,26 +99,28 @@ export const PageHeader = ({
   children,
   className,
 }: PageHeaderProps) => {
+  const { t } = useLingui();
   const isMobile = useIsMobile();
-  const { theme } = useContext(ThemeContext);
-  const isNavigationDrawerExpanded = useAtomStateValue(
-    isNavigationDrawerExpandedState,
-  );
+  const isSettingsPage = useIsSettingsPage();
+  const theme = useTheme();
+  const isNavigationDrawerExpanded = useNavigationDrawerExpanded();
 
   return (
     <AnimatePresence initial={false}>
       <StyledTopBarContainer className={className} isMobile={isMobile}>
         <StyledLeftContainer>
-          {!isMobile && !isNavigationDrawerExpanded && (
+          {!isNavigationDrawerExpanded && (!isMobile || isSettingsPage) && (
             <NavigationDrawerCollapseButton direction="right" />
           )}
           {hasClosePageButton && (
             <LightIconButton
-              Icon={IconX}
-              size="small"
-              accent="tertiary"
+              size="sm"
+              emphasis="subtle"
               onClick={() => onClosePage?.()}
-            />
+              aria-label={t`Close page`}
+            >
+              <IconX />
+            </LightIconButton>
           )}
 
           <StyledTopBarIconStyledTitleContainer>
@@ -147,6 +144,7 @@ export const PageHeader = ({
           data-click-outside-id={PAGE_ACTION_CONTAINER_CLICK_OUTSIDE_ID}
         >
           {children}
+          {isMobile && <MediaAccessIndicator />}
         </StyledPageActionContainer>
       </StyledTopBarContainer>
     </AnimatePresence>

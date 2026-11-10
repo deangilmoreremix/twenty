@@ -1,7 +1,9 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
+  Param,
   Post,
   Req,
   Res,
@@ -12,6 +14,7 @@ import {
 } from '@nestjs/common';
 
 import { type Request, type Response } from 'express';
+import { ApiPath } from 'twenty-shared/types';
 import { v4 } from 'uuid';
 
 import { InjectRepository } from '@nestjs/typeorm';
@@ -31,7 +34,6 @@ import { NoPermissionGuard } from 'src/engine/guards/no-permission.guard';
 import { PublicEndpointGuard } from 'src/engine/guards/public-endpoint.guard';
 import { Repository } from 'typeorm';
 
-// RFC 7591: 10 registrations per hour per IP
 const REGISTRATION_RATE_LIMIT_MAX =
   process.env.NODE_ENV === NodeEnvironment.DEVELOPMENT ? 100 : 10;
 const REGISTRATION_RATE_LIMIT_WINDOW_MS = 3_600_000;
@@ -39,7 +41,7 @@ const REGISTRATION_RATE_LIMIT_WINDOW_MS = 3_600_000;
 const ALLOWED_GRANT_TYPES = ['authorization_code', 'refresh_token'];
 const ALLOWED_RESPONSE_TYPES = ['code'];
 
-@Controller('oauth')
+@Controller(ApiPath.OAuth)
 @UseFilters(AuthRestApiExceptionFilter)
 export class OAuthRegistrationController {
   constructor(
@@ -65,7 +67,6 @@ export class OAuthRegistrationController {
       return rateLimitResult;
     }
 
-    // Validate redirect URIs
     for (const uri of body.redirect_uris) {
       const result = validateRedirectUri(uri);
 
@@ -88,7 +89,6 @@ export class OAuthRegistrationController {
       };
     }
 
-    // Validate grant_types — only authorization_code allowed for dynamic clients
     const grantTypes = body.grant_types ?? ['authorization_code'];
 
     for (const grantType of grantTypes) {
@@ -102,7 +102,6 @@ export class OAuthRegistrationController {
       }
     }
 
-    // Validate response_types
     const responseTypes = body.response_types ?? ['code'];
 
     for (const responseType of responseTypes) {
@@ -116,20 +115,25 @@ export class OAuthRegistrationController {
       }
     }
 
-    // Validate token_endpoint_auth_method — only 'none' for public clients
-    const tokenEndpointAuthMethod = body.token_endpoint_auth_method ?? 'none';
+    // Dynamic registrations are always public — we don't issue a client
+    // secret via DCR. Silently downgrade any auth method to "none".
+    const requestedTokenEndpointAuthMethod =
+      body.token_endpoint_auth_method ?? 'none';
+    const tokenEndpointAuthMethod = 'none';
 
-    if (tokenEndpointAuthMethod !== 'none') {
+    if (
+      requestedTokenEndpointAuthMethod !== 'none' &&
+      requestedTokenEndpointAuthMethod !== 'client_secret_post' &&
+      requestedTokenEndpointAuthMethod !== 'client_secret_basic'
+    ) {
       res.status(400);
 
       return {
         error: 'invalid_client_metadata',
-        error_description:
-          'Only token_endpoint_auth_method "none" is supported for dynamic registrations (public clients with PKCE)',
+        error_description: `Unsupported token_endpoint_auth_method: ${requestedTokenEndpointAuthMethod}`,
       };
     }
 
-    // Parse and validate scopes — cap to allowed scopes
     const validScopes: readonly string[] = ALL_OAUTH_SCOPES;
     const requestedScopes = body.scope
       ? body.scope.split(' ').filter((s) => validScopes.includes(s))
@@ -140,9 +144,6 @@ export class OAuthRegistrationController {
     const registration = this.applicationRegistrationRepository.create({
       universalIdentifier: v4(),
       name: body.client_name,
-      description: null,
-      logoUrl: body.logo_uri ?? null,
-      author: null,
       oAuthClientId: clientId,
       oAuthClientSecretHash: null,
       oAuthRedirectUris: body.redirect_uris,
@@ -150,13 +151,15 @@ export class OAuthRegistrationController {
       createdByUserId: null,
       ownerWorkspaceId: null,
       sourceType: ApplicationRegistrationSourceType.OAUTH_ONLY,
-      websiteUrl: body.client_uri ?? null,
+      logo: body.logo_uri ?? null,
     });
 
     await this.applicationRegistrationRepository.save(registration);
 
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Pragma', 'no-cache');
+
+    const issuer = `${req.protocol}://${req.get('host')}`;
 
     return {
       client_id: clientId,
@@ -167,6 +170,49 @@ export class OAuthRegistrationController {
       token_endpoint_auth_method: tokenEndpointAuthMethod,
       scope: requestedScopes.join(' '),
       client_id_issued_at: Math.floor(Date.now() / 1000),
+      registration_client_uri: `${issuer}/${ApiPath.OAuth}/register/${clientId}`,
+    };
+  }
+
+  // RFC 7592 read-back. No registration_access_token is issued; the client_id
+  // is an unguessable UUID and the fields returned are already public.
+  @Get('register/:clientId')
+  @UseGuards(PublicEndpointGuard, NoPermissionGuard)
+  async readRegistration(
+    @Param('clientId') clientId: string,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const registration = await this.applicationRegistrationRepository.findOne({
+      where: {
+        oAuthClientId: clientId,
+        sourceType: ApplicationRegistrationSourceType.OAUTH_ONLY,
+      },
+    });
+
+    if (!registration) {
+      res.status(404);
+
+      return {
+        error: 'invalid_client',
+        error_description: 'Client not found',
+      };
+    }
+
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Pragma', 'no-cache');
+
+    const issuer = `${req.protocol}://${req.get('host')}`;
+
+    return {
+      client_id: registration.oAuthClientId,
+      client_name: registration.name,
+      redirect_uris: registration.oAuthRedirectUris,
+      grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'],
+      token_endpoint_auth_method: 'none',
+      scope: registration.oAuthScopes.join(' '),
+      registration_client_uri: `${issuer}/${ApiPath.OAuth}/register/${registration.oAuthClientId}`,
     };
   }
 

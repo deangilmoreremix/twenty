@@ -1,103 +1,111 @@
-import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
+import { Injectable, Logger } from '@nestjs/common';
 
-import { createWriteStream } from 'fs';
 import * as fs from 'fs/promises';
-import { join } from 'path';
-import { type Readable } from 'stream';
-import { pipeline } from 'stream/promises';
 
+import {
+  decodeFrontComponentTypeReferences,
+  encodeFrontComponentTypeReferencesOrThrow,
+} from 'twenty-shared/front-component-build';
 import { FileFolder } from 'twenty-shared/types';
-import { Repository } from 'typeorm';
+import { isDefined } from 'twenty-shared/utils';
 
 import { ApplicationEntity } from 'src/engine/core-modules/application/application.entity';
-import { FileStorageService } from 'src/engine/core-modules/file-storage/file-storage.service';
+import { FileStorageService } from 'src/engine/core-modules/file-storage/services/file-storage.service';
 import {
   FileStorageException,
   FileStorageExceptionCode,
 } from 'src/engine/core-modules/file-storage/interfaces/file-storage-exception';
-import { TemporaryDirManager } from 'src/engine/core-modules/logic-function/logic-function-drivers/utils/temporary-dir-manager';
 import { type SdkModuleName } from 'src/engine/core-modules/sdk-client/constants/allowed-sdk-modules';
 import {
   SdkClientException,
   SdkClientExceptionCode,
 } from 'src/engine/core-modules/sdk-client/exceptions/sdk-client.exception';
+import { SdkClientGenerationService } from 'src/engine/core-modules/sdk-client/sdk-client-generation.service';
 import { WorkspaceCacheService } from 'src/engine/workspace-cache/services/workspace-cache.service';
+import { readLruEntry, writeLruEntry } from 'src/utils/lru-map.util';
 import { streamToBuffer } from 'src/utils/stream-to-buffer';
+import { InjectWorkspaceScopedRepository } from 'src/engine/twenty-orm/workspace-scoped-repository/inject-workspace-scoped-repository.decorator';
+import { WorkspaceScopedRepository } from 'src/engine/twenty-orm/workspace-scoped-repository/workspace-scoped-repository';
 
 const SDK_CLIENT_ARCHIVE_NAME = 'twenty-client-sdk.zip';
+const SDK_TYPE_REFERENCES_CACHE_MAX_ENTRIES = 8;
+const SDK_TYPE_REFERENCES_CACHE_MAX_ENTRY_BYTES = 1024 * 1024;
 
 @Injectable()
 export class SdkClientArchiveService {
+  private readonly typeReferencesCache = new Map<
+    string,
+    { checksum: string; content: Buffer }
+  >();
+
+  private readonly logger = new Logger(SdkClientArchiveService.name);
+
   constructor(
     private readonly fileStorageService: FileStorageService,
-    @InjectRepository(ApplicationEntity)
-    private readonly applicationRepository: Repository<ApplicationEntity>,
+    @InjectWorkspaceScopedRepository(ApplicationEntity)
+    private readonly applicationRepository: WorkspaceScopedRepository<ApplicationEntity>,
     private readonly workspaceCacheService: WorkspaceCacheService,
+    private readonly sdkClientGenerationService: SdkClientGenerationService,
   ) {}
 
   async downloadAndExtractToPackage({
     workspaceId,
+    applicationId,
     applicationUniversalIdentifier,
     targetPackagePath,
   }: {
     workspaceId: string;
+    applicationId: string;
     applicationUniversalIdentifier: string;
     targetPackagePath: string;
   }): Promise<void> {
-    const temporaryDirManager = new TemporaryDirManager();
+    const archiveBuffer = await this.downloadArchiveBufferOrGenerate({
+      workspaceId,
+      applicationId,
+      applicationUniversalIdentifier,
+    });
 
-    try {
-      const { sourceTemporaryDir } = await temporaryDirManager.init();
-      const archivePath = join(sourceTemporaryDir, SDK_CLIENT_ARCHIVE_NAME);
+    await fs.rm(targetPackagePath, { recursive: true, force: true });
+    await fs.mkdir(targetPackagePath, { recursive: true });
 
-      const archiveStream = await this.readArchiveStream({
-        workspaceId,
-        applicationUniversalIdentifier,
-      });
+    const { default: unzipper } = await import('unzipper');
+    const directory = await unzipper.Open.buffer(archiveBuffer);
 
-      await pipeline(archiveStream, createWriteStream(archivePath));
-
-      await fs.rm(targetPackagePath, { recursive: true, force: true });
-      await fs.mkdir(targetPackagePath, { recursive: true });
-
-      const { default: unzipper } = await import('unzipper');
-      const directory = await unzipper.Open.file(archivePath);
-
-      await directory.extract({ path: targetPackagePath });
-    } finally {
-      await temporaryDirManager.clean();
-    }
+    await directory.extract({ path: targetPackagePath });
   }
 
   async downloadArchiveBuffer({
     workspaceId,
+    applicationId,
     applicationUniversalIdentifier,
   }: {
     workspaceId: string;
+    applicationId: string;
     applicationUniversalIdentifier: string;
   }): Promise<Buffer> {
-    const archiveStream = await this.readArchiveStream({
+    return this.downloadArchiveBufferOrGenerate({
       workspaceId,
+      applicationId,
       applicationUniversalIdentifier,
     });
-
-    return streamToBuffer(archiveStream);
   }
 
   async getClientModuleFromArchive({
     workspaceId,
+    applicationId,
     applicationUniversalIdentifier,
     moduleName,
   }: {
     workspaceId: string;
+    applicationId: string;
     applicationUniversalIdentifier: string;
     moduleName: SdkModuleName;
   }): Promise<Buffer> {
     const filePath = `dist/${moduleName}.mjs`;
 
-    const archiveBuffer = await this.downloadArchiveBuffer({
+    const archiveBuffer = await this.downloadArchiveBufferOrGenerate({
       workspaceId,
+      applicationId,
       applicationUniversalIdentifier,
     });
 
@@ -118,6 +126,80 @@ export class SdkClientArchiveService {
     return entry.buffer();
   }
 
+  async getClientTypeReferences(params: {
+    workspaceId: string;
+    applicationId: string;
+    applicationUniversalIdentifier: string;
+  }): Promise<Record<string, string>> {
+    const archiveIdentifier = {
+      workspaceId: params.workspaceId,
+      applicationUniversalIdentifier: params.applicationUniversalIdentifier,
+      fileFolder: FileFolder.GeneratedSdkClient,
+      resourcePath: SDK_CLIENT_ARCHIVE_NAME,
+    };
+    const metadata =
+      await this.fileStorageService.getFileMetadata(archiveIdentifier);
+    const checksum = metadata?.checksum;
+    const cacheKey = `${params.workspaceId}:${params.applicationUniversalIdentifier}`;
+    const cached = readLruEntry({
+      map: this.typeReferencesCache,
+      key: cacheKey,
+    });
+
+    if (isDefined(checksum) && cached?.checksum === checksum) {
+      return decodeFrontComponentTypeReferences(cached.content);
+    }
+
+    this.typeReferencesCache.delete(cacheKey);
+
+    const archiveBuffer = await this.downloadArchiveBufferOrGenerate(params);
+    const { default: unzipper } = await import('unzipper');
+    const directory = await unzipper.Open.buffer(archiveBuffer);
+    const archiveFiles = directory.files.map((file) => ({
+      file,
+      path: file.path.replace(/^\.\//, ''),
+    }));
+    const files = await Promise.all(
+      archiveFiles
+        .filter(
+          ({ path }) =>
+            /\.[cm]?ts$/.test(path) || path.endsWith('package.json'),
+        )
+        .map(
+          async ({ file, path }) =>
+            [
+              `/node_modules/twenty-client-sdk/${path}`,
+              (await file.buffer()).toString(),
+            ] as const,
+        ),
+    );
+    const references = Object.fromEntries(files);
+
+    if (!isDefined(checksum)) {
+      return references;
+    }
+
+    const currentMetadata =
+      await this.fileStorageService.getFileMetadata(archiveIdentifier);
+
+    if (currentMetadata?.checksum !== checksum) {
+      return references;
+    }
+
+    const content = encodeFrontComponentTypeReferencesOrThrow(references);
+
+    if (content.length <= SDK_TYPE_REFERENCES_CACHE_MAX_ENTRY_BYTES) {
+      writeLruEntry({
+        map: this.typeReferencesCache,
+        key: cacheKey,
+        value: { checksum, content },
+        maxEntries: SDK_TYPE_REFERENCES_CACHE_MAX_ENTRIES,
+      });
+    }
+
+    return references;
+  }
+
   async markSdkLayerFresh({
     applicationId,
     workspaceId,
@@ -126,7 +208,8 @@ export class SdkClientArchiveService {
     workspaceId: string;
   }): Promise<void> {
     await this.applicationRepository.update(
-      { id: applicationId, workspaceId },
+      workspaceId,
+      { id: applicationId },
       { isSdkLayerStale: false },
     );
 
@@ -135,32 +218,42 @@ export class SdkClientArchiveService {
     ]);
   }
 
-  private async readArchiveStream({
+  private async downloadArchiveBufferOrGenerate({
     workspaceId,
+    applicationId,
     applicationUniversalIdentifier,
   }: {
     workspaceId: string;
+    applicationId: string;
     applicationUniversalIdentifier: string;
-  }): Promise<Readable> {
+  }): Promise<Buffer> {
     try {
-      return await this.fileStorageService.readFile({
+      const stream = await this.fileStorageService.readFile({
         workspaceId,
         applicationUniversalIdentifier,
         fileFolder: FileFolder.GeneratedSdkClient,
         resourcePath: SDK_CLIENT_ARCHIVE_NAME,
       });
+
+      return await streamToBuffer(stream);
     } catch (error) {
       if (
-        error instanceof FileStorageException &&
-        error.code === FileStorageExceptionCode.FILE_NOT_FOUND
+        !(error instanceof FileStorageException) ||
+        error.code !== FileStorageExceptionCode.FILE_NOT_FOUND
       ) {
-        throw new SdkClientException(
-          `SDK client archive "${SDK_CLIENT_ARCHIVE_NAME}" not found for application "${applicationUniversalIdentifier}" in workspace "${workspaceId}".`,
-          SdkClientExceptionCode.ARCHIVE_NOT_FOUND,
-        );
+        throw error;
       }
-
-      throw error;
     }
+
+    this.logger.warn(
+      `SDK client archive missing for application "${applicationUniversalIdentifier}" in workspace "${workspaceId}", generating on-the-fly`,
+    );
+
+    return this.sdkClientGenerationService.generateSdkClientForApplication({
+      workspaceId,
+      applicationId,
+      applicationUniversalIdentifier,
+      trigger: 'missing-archive',
+    });
   }
 }

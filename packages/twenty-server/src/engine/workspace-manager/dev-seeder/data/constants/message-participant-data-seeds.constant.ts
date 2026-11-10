@@ -72,6 +72,7 @@ type ParticipantData = {
   workspaceMemberId: string;
   personId: string;
   displayName: string;
+  handle: string;
 };
 
 const GET_RANDOM_FAKE_PARTICIPANT = () => {
@@ -120,6 +121,7 @@ const CREATE_PERSON_PARTICIPANT = (
     workspaceMemberId: defaultWorkspaceMemberId,
     personId: PERSON_ID,
     displayName: `Person ${PERSON_INDEX}`,
+    handle: `person${PERSON_INDEX}@example.com`,
   };
 };
 
@@ -141,26 +143,30 @@ const CREATE_WORKSPACE_MEMBER_PARTICIPANT = (
     case WORKSPACE_MEMBER_DATA_SEED_IDS.TIM:
       return {
         workspaceMemberId: WORKSPACE_MEMBER_ID,
-        personId: personIds[0] || personIds[0],
+        personId: personIds[0],
         displayName: 'Tim Apple',
+        handle: 'tim@apple.dev',
       };
     case WORKSPACE_MEMBER_DATA_SEED_IDS.JONY:
       return {
         workspaceMemberId: WORKSPACE_MEMBER_ID,
         personId: personIds[1] || personIds[0],
         displayName: 'Jony Ive',
+        handle: 'jony@apple.dev',
       };
     case WORKSPACE_MEMBER_DATA_SEED_IDS.PHIL:
       return {
         workspaceMemberId: WORKSPACE_MEMBER_ID,
         personId: personIds[2] || personIds[0],
         displayName: 'Phil Schiller',
+        handle: 'phil@apple.dev',
       };
     default:
       return {
         workspaceMemberId: WORKSPACE_MEMBER_ID,
-        personId: personIds[0] || personIds[0],
+        personId: personIds[0],
         displayName: 'Workspace Member',
+        handle: 'member@apple.dev',
       };
   }
 };
@@ -176,6 +182,7 @@ const CREATE_FAKE_PARTICIPANT = (
     personId:
       personIds[Math.floor(Math.random() * Math.min(10, personIds.length))],
     displayName: FAKE.name,
+    handle: FAKE.email,
   };
 };
 
@@ -187,7 +194,6 @@ const CREATE_PARTICIPANT_DATA = (
 ): ParticipantData => {
   const PARTICIPANT_TYPE = Math.random();
 
-  // Try person participant (40% chance)
   if (PARTICIPANT_TYPE < 0.4) {
     const PERSON_PARTICIPANT = CREATE_PERSON_PARTICIPANT(
       personIds,
@@ -198,7 +204,6 @@ const CREATE_PARTICIPANT_DATA = (
     if (PERSON_PARTICIPANT) return PERSON_PARTICIPANT;
   }
 
-  // Try workspace member participant (30% chance, 0.4-0.7 range)
   if (PARTICIPANT_TYPE >= 0.4 && PARTICIPANT_TYPE < 0.7) {
     const WORKSPACE_PARTICIPANT = CREATE_WORKSPACE_MEMBER_PARTICIPANT(
       workspaceMemberIds,
@@ -209,7 +214,6 @@ const CREATE_PARTICIPANT_DATA = (
     if (WORKSPACE_PARTICIPANT) return WORKSPACE_PARTICIPANT;
   }
 
-  // Fallback to fake participant
   return CREATE_FAKE_PARTICIPANT(workspaceMemberIds, personIds);
 };
 
@@ -231,9 +235,7 @@ const CREATE_MESSAGE_PARTICIPANTS = (
     const ROLE = IS_SENDER
       ? MessageParticipantRole.FROM
       : MessageParticipantRole.TO;
-    const HANDLE = IS_SENDER ? 'outgoing' : 'incoming';
 
-    // Random date within the last 3 months
     const NOW = new Date();
     const RANDOM_DAYS_OFFSET = Math.floor(Math.random() * 90);
     const PARTICIPANT_DATE = new Date(
@@ -255,7 +257,7 @@ const CREATE_MESSAGE_PARTICIPANTS = (
       workspaceMemberId: PARTICIPANT_DATA.workspaceMemberId,
       personId: PARTICIPANT_DATA.personId,
       displayName: PARTICIPANT_DATA.displayName,
-      handle: HANDLE,
+      handle: PARTICIPANT_DATA.handle,
       role: ROLE,
       messageId,
     });

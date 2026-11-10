@@ -14,6 +14,12 @@ export class UsageAnalyticsDTO {
   @Field(() => [UsageBreakdownItemDTO])
   usageByOperationType: UsageBreakdownItemDTO[];
 
+  @Field(() => [UsageBreakdownItemDTO])
+  usageByApplication: UsageBreakdownItemDTO[];
+
+  @Field(() => [UsageBreakdownItemDTO])
+  usageByModel: UsageBreakdownItemDTO[];
+
   @Field(() => [UsageTimeSeriesDTO])
   timeSeries: UsageTimeSeriesDTO[];
 

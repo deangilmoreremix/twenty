@@ -1,8 +1,9 @@
 import { NavigationMenuItemType } from 'twenty-shared/types';
-import { isDefined } from 'twenty-shared/utils';
+import { canReachSomeRecords, isDefined } from 'twenty-shared/utils';
 import { type NavigationMenuItem } from '~/generated-metadata/graphql';
 
 import { FOLDER_ICON_DEFAULT } from '@/navigation-menu-item/common/constants/FolderIconDefault';
+import { isAutomationNavigationMenuItemType } from '@/navigation-menu-item/common/utils/isAutomationNavigationMenuItemType';
 import { isNavigationMenuItemFolder } from '@/navigation-menu-item/common/utils/isNavigationMenuItemFolder';
 import { getObjectMetadataForNavigationMenuItem } from '@/navigation-menu-item/display/object/utils/getObjectMetadataForNavigationMenuItem';
 import { type EnrichedObjectMetadataItem } from '@/object-metadata/types/EnrichedObjectMetadataItem';
@@ -17,6 +18,7 @@ type GetWorkspaceSidebarOrphanItemsInDisplayOrderArgs = {
   objectPermissionsByObjectMetadataId: Parameters<
     typeof getObjectPermissionsForObject
   >[0];
+  includeInaccessibleObjectBackedItems?: boolean;
 };
 
 export const getWorkspaceSidebarOrphanItemsInDisplayOrder = ({
@@ -25,6 +27,7 @@ export const getWorkspaceSidebarOrphanItemsInDisplayOrder = ({
   objectMetadataItems,
   views,
   objectPermissionsByObjectMetadataId,
+  includeInaccessibleObjectBackedItems = false,
 }: GetWorkspaceSidebarOrphanItemsInDisplayOrderArgs): NavigationMenuItem[] => {
   const flatWorkspaceItems = workspaceNavigationMenuItems
     .filter((item) => !isDefined(item.folderId))
@@ -42,26 +45,46 @@ export const getWorkspaceSidebarOrphanItemsInDisplayOrder = ({
       });
     } else {
       const validItem = processedItemsById.get(item.id);
-      if (!isDefined(validItem)) {
+      if (!isDefined(validItem) && !includeInaccessibleObjectBackedItems) {
         return acc;
       }
-      if (validItem.type === NavigationMenuItemType.LINK) {
-        acc.push(validItem);
-      } else {
-        const objectMetadataItem = getObjectMetadataForNavigationMenuItem(
-          validItem,
-          objectMetadataItems,
-          views,
-        );
-        if (
-          isDefined(objectMetadataItem) &&
-          getObjectPermissionsForObject(
+      const rowSource = isDefined(validItem) ? validItem : item;
+
+      if (
+        rowSource.type === NavigationMenuItemType.LINK ||
+        rowSource.type === NavigationMenuItemType.PAGE_LAYOUT ||
+        rowSource.type === NavigationMenuItemType.NATIVE_PAGE ||
+        isAutomationNavigationMenuItemType(rowSource.type)
+      ) {
+        acc.push(rowSource);
+        return acc;
+      }
+
+      const objectMetadataItem = getObjectMetadataForNavigationMenuItem(
+        rowSource,
+        objectMetadataItems,
+        views,
+      );
+
+      if (!isDefined(objectMetadataItem)) {
+        return acc;
+      }
+
+      if (includeInaccessibleObjectBackedItems) {
+        acc.push(rowSource);
+        return acc;
+      }
+
+      if (
+        canReachSomeRecords({
+          objectRecordsPermissions: getObjectPermissionsForObject(
             objectPermissionsByObjectMetadataId,
             objectMetadataItem.id,
-          ).canReadObjectRecords
-        ) {
-          acc.push(validItem);
-        }
+          ),
+          operationType: 'read',
+        })
+      ) {
+        acc.push(rowSource);
       }
     }
     return acc;

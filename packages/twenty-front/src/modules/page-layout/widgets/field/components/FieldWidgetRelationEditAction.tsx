@@ -1,5 +1,4 @@
 import { useObjectMetadataItems } from '@/object-metadata/hooks/useObjectMetadataItems';
-import { useRecordFieldsScopeContextOrThrow } from '@/object-record/record-field-list/contexts/RecordFieldsScopeContext';
 import { RecordDetailMorphRelationSectionDropdown } from '@/object-record/record-field-list/record-detail-section/relation/components/RecordDetailMorphRelationSectionDropdown';
 import { RecordDetailRelationSectionDropdown } from '@/object-record/record-field-list/record-detail-section/relation/components/RecordDetailRelationSectionDropdown';
 import {
@@ -17,15 +16,15 @@ import {
   type FieldRelationMetadata,
 } from '@/object-record/record-field/ui/types/FieldMetadata';
 import { isFieldMorphRelation } from '@/object-record/record-field/ui/types/guards/isFieldMorphRelation';
-import { getRecordFieldCardRelationPickerDropdownId } from '@/object-record/record-show/utils/getRecordFieldCardRelationPickerDropdownId';
-import { isDropdownOpenComponentState } from '@/ui/layout/dropdown/states/isDropdownOpenComponentState';
-import { useIsMobile } from '@/ui/utilities/responsive/hooks/useIsMobile';
-import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateValue';
+import { recordStoreFamilySelector } from '@/object-record/record-store/states/selectors/recordStoreFamilySelector';
+import { useAtomFamilySelectorValue } from '@/ui/utilities/state/jotai/hooks/useAtomFamilySelectorValue';
 import { styled } from '@linaria/react';
-import { CustomError } from 'twenty-shared/utils';
-import { IconPencil } from 'twenty-ui/display';
-import { LightIconButton } from 'twenty-ui/input';
-import { themeCssVariables } from 'twenty-ui/theme-constants';
+import { CustomError, isDefined } from 'twenty-shared/utils';
+import { doNotTranslate } from 'twenty-shared/i18n';
+import { IconPencil, IconPlus } from 'twenty-ui/icon';
+import { IconButton } from 'twenty-ui/components/input';
+import { RelationType } from '~/generated-metadata/graphql';
+import { useLingui } from '@lingui/react/macro';
 
 type FieldWidgetRelationEditActionProps = {
   fieldDefinition:
@@ -34,30 +33,16 @@ type FieldWidgetRelationEditActionProps = {
   recordId: string;
 };
 
-const StyledEditButtonWrapper = styled.div<{
-  isDropdownOpen: boolean;
-  isMobile: boolean;
-}>`
-  opacity: ${({ isDropdownOpen, isMobile }) =>
-    isDropdownOpen ? '1' : isMobile ? '1' : '0'};
-  pointer-events: ${({ isDropdownOpen }) => (isDropdownOpen ? 'auto' : 'none')};
-  transition: ${({ isDropdownOpen }) =>
-    isDropdownOpen
-      ? 'none'
-      : `opacity ${themeCssVariables.animation.duration.instant}s ease`};
-
-  .widget:hover & {
-    opacity: 1;
-    pointer-events: auto;
-  }
+const StyledEditButtonWrapper = styled.div`
+  opacity: 1;
+  pointer-events: auto;
 `;
 
 export const FieldWidgetRelationEditAction = ({
   fieldDefinition,
   recordId,
 }: FieldWidgetRelationEditActionProps) => {
-  const { scopeInstanceId } = useRecordFieldsScopeContextOrThrow();
-
+  const { t } = useLingui();
   const { objectMetadataItems } = useObjectMetadataItems();
   const objectMetadataItem = objectMetadataItems.find(
     (item) =>
@@ -66,7 +51,7 @@ export const FieldWidgetRelationEditAction = ({
 
   if (!objectMetadataItem) {
     throw new CustomError(
-      'Object metadata item not found',
+      doNotTranslate('Object metadata item not found'),
       'OBJECT_METADATA_ITEM_NOT_FOUND',
     );
   }
@@ -92,48 +77,49 @@ export const FieldWidgetRelationEditAction = ({
 
   const isMorphRelation = isFieldMorphRelation(fieldDefinition);
 
-  const relationSelectionDropdownId =
-    getRecordFieldCardRelationPickerDropdownId({
-      fieldDefinition,
-      recordId,
-      instanceId: scopeInstanceId,
-    });
+  const relationValue = useAtomFamilySelectorValue(recordStoreFamilySelector, {
+    recordId,
+    fieldName: fieldDefinition.metadata.fieldName,
+  });
 
-  const isDropdownOpen = useAtomComponentStateValue(
-    isDropdownOpenComponentState,
-    relationSelectionDropdownId,
-  );
+  const hasAtLeastOneRelationRecord = Array.isArray(relationValue)
+    ? relationValue.length > 0
+    : isDefined(relationValue);
 
-  const isMobile = useIsMobile();
+  const isEditAction =
+    fieldDefinition.metadata.relationType === RelationType.MANY_TO_ONE ||
+    hasAtLeastOneRelationRecord;
+
+  const TriggerIcon = isEditAction ? IconPencil : IconPlus;
+  const triggerLabel = isEditAction ? t`Edit relation` : t`Add relation`;
 
   const dropdownTriggerClickableComponent = (
-    <StyledEditButtonWrapper
-      isDropdownOpen={isDropdownOpen}
-      isMobile={isMobile}
-    >
-      <LightIconButton Icon={IconPencil} accent="secondary" />
-    </StyledEditButtonWrapper>
+    <IconButton variant="ghost" size="sm" aria-label={triggerLabel}>
+      <TriggerIcon />
+    </IconButton>
   );
 
   return (
-    <FieldContext.Provider value={fieldContextValue}>
-      <FieldInputEventContext.Provider value={{ onSubmit: handleSubmit }}>
-        {isMorphRelation ? (
-          <RecordDetailMorphRelationSectionDropdown
-            loading={false}
-            dropdownTriggerClickableComponent={
-              dropdownTriggerClickableComponent
-            }
-          />
-        ) : (
-          <RecordDetailRelationSectionDropdown
-            loading={false}
-            dropdownTriggerClickableComponent={
-              dropdownTriggerClickableComponent
-            }
-          />
-        )}
-      </FieldInputEventContext.Provider>
-    </FieldContext.Provider>
+    <StyledEditButtonWrapper>
+      <FieldContext.Provider value={fieldContextValue}>
+        <FieldInputEventContext.Provider value={{ onSubmit: handleSubmit }}>
+          {isMorphRelation ? (
+            <RecordDetailMorphRelationSectionDropdown
+              loading={false}
+              dropdownTriggerClickableComponent={
+                dropdownTriggerClickableComponent
+              }
+            />
+          ) : (
+            <RecordDetailRelationSectionDropdown
+              loading={false}
+              dropdownTriggerClickableComponent={
+                dropdownTriggerClickableComponent
+              }
+            />
+          )}
+        </FieldInputEventContext.Provider>
+      </FieldContext.Provider>
+    </StyledEditButtonWrapper>
   );
 };

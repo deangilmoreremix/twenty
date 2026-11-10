@@ -1,13 +1,10 @@
 import {
   type ChartFilter,
   type CompositeFieldSubFieldName,
-  type FilterableAndTSVectorFieldType,
-  type PartialFieldMetadataItem,
   type RecordFilterGroupLogicalOperator,
   type ViewFilterOperand,
 } from 'twenty-shared/types';
 import {
-  computeRecordGqlOperationFilter,
   isDefined,
   type RecordFilter,
   type RecordFilterGroup,
@@ -16,22 +13,24 @@ import {
 import { type ObjectRecordFilter } from 'src/engine/api/graphql/workspace-query-builder/interfaces/object-record.interface';
 
 import { type FlatEntityMaps } from 'src/engine/metadata-modules/flat-entity/types/flat-entity-maps.type';
-import { findFlatEntityByIdInFlatEntityMaps } from 'src/engine/metadata-modules/flat-entity/utils/find-flat-entity-by-id-in-flat-entity-maps.util';
 import { type FlatFieldMetadata } from 'src/engine/metadata-modules/flat-field-metadata/types/flat-field-metadata.type';
 import { type FlatObjectMetadata } from 'src/engine/metadata-modules/flat-object-metadata/types/flat-object-metadata.type';
+import { computeRecordGqlOperationFilterFromFlatMaps } from 'src/engine/utils/compute-record-gql-operation-filter-from-flat-maps.util';
 
 type ConvertChartFilterToGqlOperationFilterParams = {
   filter: ChartFilter | undefined;
-  flatObjectMetadata: FlatObjectMetadata;
   flatFieldMetadataMaps: FlatEntityMaps<FlatFieldMetadata>;
+  flatObjectMetadataMaps: FlatEntityMaps<FlatObjectMetadata>;
   userTimezone: string;
+  currentWorkspaceMemberId?: string;
 };
 
 export const convertChartFilterToGqlOperationFilter = ({
   filter,
-  flatObjectMetadata,
   flatFieldMetadataMaps,
+  flatObjectMetadataMaps,
   userTimezone,
+  currentWorkspaceMemberId,
 }: ConvertChartFilterToGqlOperationFilterParams): ObjectRecordFilter => {
   if (!isDefined(filter)) {
     return {};
@@ -44,54 +43,18 @@ export const convertChartFilterToGqlOperationFilter = ({
     return {};
   }
 
-  const fieldIds = flatObjectMetadata.fieldIds ?? [];
-  const fields: PartialFieldMetadataItem[] = fieldIds
-    .map((fieldId: string) => {
-      const field = findFlatEntityByIdInFlatEntityMaps({
-        flatEntityId: fieldId,
-        flatEntityMaps: flatFieldMetadataMaps,
-      });
-
-      if (!isDefined(field)) {
-        return null;
-      }
-
-      return {
-        id: field.id,
-        name: field.name,
-        type: field.type,
-        label: field.label,
-        options: field.options?.map((opt) => ({
-          id: opt.id ?? '',
-          label: opt.label,
-          value: opt.value,
-          color: 'color' in opt ? opt.color : undefined,
-          position: opt.position,
-        })),
-      };
-    })
-    .filter(isDefined);
-
   const convertedRecordFilters: Omit<RecordFilter, 'id'>[] = recordFilters.map(
-    (recordFilter) => {
-      const field = findFlatEntityByIdInFlatEntityMaps({
-        flatEntityId: recordFilter.fieldMetadataId,
-        flatEntityMaps: flatFieldMetadataMaps,
-      });
-
-      return {
-        fieldMetadataId: recordFilter.fieldMetadataId,
-        value: recordFilter.value ?? '',
-        type: (field?.type ??
-          recordFilter.type ??
-          '') as FilterableAndTSVectorFieldType,
-        recordFilterGroupId: recordFilter.recordFilterGroupId ?? undefined,
-        operand: recordFilter.operand as ViewFilterOperand,
-        subFieldName: (recordFilter.subFieldName ?? undefined) as
-          | CompositeFieldSubFieldName
-          | undefined,
-      };
-    },
+    (recordFilter) => ({
+      fieldMetadataId: recordFilter.fieldMetadataId,
+      value: recordFilter.value ?? '',
+      recordFilterGroupId: recordFilter.recordFilterGroupId ?? undefined,
+      operand: recordFilter.operand as ViewFilterOperand,
+      subFieldName: (recordFilter.subFieldName ?? undefined) as
+        | CompositeFieldSubFieldName
+        | undefined,
+      relationTargetFieldMetadataId:
+        recordFilter.relationTargetFieldMetadataId ?? null,
+    }),
   );
 
   const convertedRecordFilterGroups: RecordFilterGroup[] =
@@ -103,12 +66,14 @@ export const convertChartFilterToGqlOperationFilter = ({
         recordFilterGroup.logicalOperator as RecordFilterGroupLogicalOperator,
     }));
 
-  return computeRecordGqlOperationFilter({
-    fields,
+  return computeRecordGqlOperationFilterFromFlatMaps({
+    flatFieldMetadataMaps,
+    flatObjectMetadataMaps,
     recordFilters: convertedRecordFilters,
     recordFilterGroups: convertedRecordFilterGroups,
     filterValueDependencies: {
       timeZone: userTimezone,
+      currentWorkspaceMemberId,
     },
   });
 };

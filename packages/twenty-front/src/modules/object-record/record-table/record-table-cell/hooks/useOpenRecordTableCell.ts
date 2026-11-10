@@ -1,45 +1,33 @@
+import { type OpenTableCellArgs } from '@/object-record/record-table/types/OpenTableCellArgs';
 import { useInitDraftValue } from '@/object-record/record-field/ui/hooks/useInitDraftValue';
-import { type FieldDefinition } from '@/object-record/record-field/ui/types/FieldDefinition';
-import { type FieldMetadata } from '@/object-record/record-field/ui/types/FieldMetadata';
 import { isFieldValueEmpty } from '@/object-record/record-field/ui/utils/isFieldValueEmpty';
 import { recordStoreFamilySelector } from '@/object-record/record-store/states/selectors/recordStoreFamilySelector';
 import { FOCUS_CLICK_OUTSIDE_LISTENER_ID } from '@/object-record/record-table/constants/FocusClickOutsideListenerId';
 import { RECORD_TABLE_CELL_INPUT_ID_PREFIX } from '@/object-record/record-table/constants/RecordTableCellInputIdPrefix';
 import { useLeaveTableFocus } from '@/object-record/record-table/hooks/internal/useLeaveTableFocus';
-import { type TableCellPosition } from '@/object-record/record-table/types/TableCellPosition';
 import { useDragSelect } from '@/ui/utilities/drag-select/hooks/useDragSelect';
 import { useClickOutsideListener } from '@/ui/utilities/pointer-event/hooks/useClickOutsideListener';
 import { useOpenFieldInputEditMode } from '@/object-record/record-field/ui/hooks/useOpenFieldInputEditMode';
-import { recordIndexOpenRecordInState } from '@/object-record/record-index/states/recordIndexOpenRecordInState';
 import { RECORD_TABLE_CLICK_OUTSIDE_LISTENER_ID } from '@/object-record/record-table/constants/RecordTableClickOutsideListenerId';
 import { recordTableCellEditModePositionComponentState } from '@/object-record/record-table/states/recordTableCellEditModePositionComponentState';
-import { getDropdownFocusIdForRecordField } from '@/object-record/utils/getDropdownFocusIdForRecordField';
 import { getRecordFieldInputInstanceId } from '@/object-record/utils/getRecordFieldInputId';
-import { useSetActiveDropdownFocusIdAndMemorizePrevious } from '@/ui/layout/dropdown/hooks/useSetFocusedDropdownIdAndMemorizePrevious';
 
-import { useRecordFieldsScopeContextOrThrow } from '@/object-record/record-field-list/contexts/RecordFieldsScopeContext';
+import { useRecordIndexContextOrThrow } from '@/object-record/record-index/contexts/RecordIndexContext';
+import { useResolveOpenRecordIn } from '@/object-record/record-index/hooks/useResolveOpenRecordIn';
 import { useOpenRecordFromIndexView } from '@/object-record/record-index/hooks/useOpenRecordFromIndexView';
 import { useActiveRecordTableRow } from '@/object-record/record-table/hooks/useActiveRecordTableRow';
 import { useFocusedRecordTableRow } from '@/object-record/record-table/hooks/useFocusedRecordTableRow';
 import { useFocusRecordTableCell } from '@/object-record/record-table/record-table-cell/hooks/useFocusRecordTableCell';
 import { isRecordTableRowFocusActiveComponentState } from '@/object-record/record-table/states/isRecordTableRowFocusActiveComponentState';
 import { clickOutsideListenerIsActivatedComponentState } from '@/ui/utilities/pointer-event/states/clickOutsideListenerIsActivatedComponentState';
+import { useRemoveLastFocusItemFromFocusStackByComponentType } from '@/ui/utilities/focus/hooks/useRemoveFocusItemFromFocusStackByComponentType';
+import { FocusComponentType } from '@/ui/utilities/focus/types/FocusComponentType';
 import { useSetAtomComponentState } from '@/ui/utilities/state/jotai/hooks/useSetAtomComponentState';
 import { useStore } from 'jotai';
 import { useCallback } from 'react';
-import { ViewOpenRecordIn } from '~/generated-metadata/graphql';
-
-export type OpenTableCellArgs = {
-  initialValue?: string;
-  cellPosition: TableCellPosition;
-  isReadOnly: boolean;
-  fieldDefinition: FieldDefinition<FieldMetadata>;
-  recordId: string;
-  isNavigating: boolean;
-};
+import { OpenRecordIn } from 'twenty-shared/types';
 
 export const useOpenRecordTableCell = (recordTableId: string) => {
-  const { scopeInstanceId } = useRecordFieldsScopeContextOrThrow();
   const store = useStore();
 
   const setRecordTableCellEditModePosition = useSetAtomComponentState(
@@ -56,10 +44,10 @@ export const useOpenRecordTableCell = (recordTableId: string) => {
 
   const initDraftValue = useInitDraftValue();
 
-  const { setActiveDropdownFocusIdAndMemorizePrevious } =
-    useSetActiveDropdownFocusIdAndMemorizePrevious();
-
   const { openFieldInput } = useOpenFieldInputEditMode();
+
+  const { removeLastFocusItemFromFocusStackByComponentType } =
+    useRemoveLastFocusItemFromFocusStackByComponentType();
 
   const { activateRecordTableRow, deactivateRecordTableRow } =
     useActiveRecordTableRow(recordTableId);
@@ -74,6 +62,10 @@ export const useOpenRecordTableCell = (recordTableId: string) => {
   const { focusRecordTableCell } = useFocusRecordTableCell();
 
   const { openRecordFromIndexView } = useOpenRecordFromIndexView();
+
+  const { objectNameSingular } = useRecordIndexContextOrThrow();
+
+  const openRecordIn = useResolveOpenRecordIn(objectNameSingular);
 
   const openTableCell = useCallback(
     ({
@@ -108,9 +100,7 @@ export const useOpenRecordTableCell = (recordTableId: string) => {
       if ((isFirstColumnCell && !isEmpty) || isNavigating) {
         leaveTableFocus();
 
-        const openRecordIn = store.get(recordIndexOpenRecordInState.atom);
-
-        if (openRecordIn === ViewOpenRecordIn.SIDE_PANEL) {
+        if (openRecordIn === OpenRecordIn.SIDE_PANEL) {
           activateRecordTableRow(cellPosition.row);
           unfocusRecordTableRow();
         }
@@ -120,7 +110,6 @@ export const useOpenRecordTableCell = (recordTableId: string) => {
         return;
       }
 
-      // Block editing for read-only records, but allow navigation (handled above)
       if (isReadOnly) {
         return;
       }
@@ -137,6 +126,12 @@ export const useOpenRecordTableCell = (recordTableId: string) => {
         fieldDefinition,
         recordId,
         prefix: RECORD_TABLE_CELL_INPUT_ID_PREFIX,
+        onFileUploadClose: () => {
+          setRecordTableCellEditModePosition(null);
+          removeLastFocusItemFromFocusStackByComponentType({
+            componentType: FocusComponentType.OPENED_FIELD_INPUT,
+          });
+        },
       });
 
       setRecordTableCellEditModePosition(cellPosition);
@@ -153,15 +148,6 @@ export const useOpenRecordTableCell = (recordTableId: string) => {
       });
 
       toggleClickOutside(false);
-
-      setActiveDropdownFocusIdAndMemorizePrevious(
-        getDropdownFocusIdForRecordField({
-          recordId,
-          fieldMetadataId: fieldDefinition.fieldMetadataId,
-          componentType: 'table-cell',
-          instanceId: scopeInstanceId,
-        }),
-      );
     },
     [
       deactivateRecordTableRow,
@@ -170,12 +156,12 @@ export const useOpenRecordTableCell = (recordTableId: string) => {
       setDragSelectionStartEnabled,
       openFieldInput,
       setRecordTableCellEditModePosition,
+      removeLastFocusItemFromFocusStackByComponentType,
       initDraftValue,
       toggleClickOutside,
-      setActiveDropdownFocusIdAndMemorizePrevious,
-      scopeInstanceId,
       leaveTableFocus,
       openRecordFromIndexView,
+      openRecordIn,
       activateRecordTableRow,
       unfocusRecordTableRow,
       store,

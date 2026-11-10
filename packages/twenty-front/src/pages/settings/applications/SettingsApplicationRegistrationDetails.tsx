@@ -1,55 +1,58 @@
-import { SettingsPageContainer } from '@/settings/components/SettingsPageContainer';
-import { TabList } from '@/ui/layout/tab-list/components/TabList';
-import { activeTabIdComponentState } from '@/ui/layout/tab-list/states/activeTabIdComponentState';
-import { SubMenuTopBarContainer } from '@/ui/layout/page/components/SubMenuTopBarContainer';
-import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateValue';
+import { useRefetchOnApplicationRegistrationChange } from '@/applications/hooks/useRefetchOnApplicationRegistrationChange';
+import { SettingsPageLayout } from '@/settings/components/layout/SettingsPageLayout';
+import { SettingsTabBar } from '@/settings/components/layout/SettingsTabBar';
+import { SETTINGS_DEVELOPERS_TABS } from '@/settings/developers/constants/SettingsDevelopersTabs';
 import { useQuery } from '@apollo/client/react';
-import { useLingui } from '@lingui/react/macro';
 import { useParams } from 'react-router-dom';
 import { SettingsPath } from 'twenty-shared/types';
 import { getSettingsPath, isDefined } from 'twenty-shared/utils';
-import { IconInfoCircle, IconKey, IconWorld } from 'twenty-ui/display';
+import { FindOneApplicationRegistrationDocument } from '~/generated-metadata/graphql';
+import { useLingui } from '@lingui/react/macro';
+import { Avatar, Tag } from 'twenty-ui/primitives/data-display';
+import { SettingsPageContainer } from '@/settings/components/SettingsPageContainer';
 import {
-  FindApplicationRegistrationStatsDocument,
-  FindOneApplicationRegistrationDocument,
-} from '~/generated-metadata/graphql';
-import { type ApplicationRegistrationData } from '~/pages/settings/applications/tabs/types/ApplicationRegistrationData';
-import { SettingsApplicationRegistrationGeneralTab } from '~/pages/settings/applications/tabs/SettingsApplicationRegistrationGeneralTab';
+  IconInfoCircle,
+  IconKey,
+  IconSettings,
+  IconWorld,
+} from 'twenty-ui/icon';
+import { SettingsApplicationRegistrationConfigTab } from '~/pages/settings/applications/tabs/SettingsApplicationRegistrationConfigTab';
 import { SettingsApplicationRegistrationOAuthTab } from '~/pages/settings/applications/tabs/SettingsApplicationRegistrationOAuthTab';
 import { SettingsApplicationRegistrationDistributionTab } from '~/pages/settings/applications/tabs/SettingsApplicationRegistrationDistributionTab';
+import { SettingsApplicationRegistrationGeneralTab } from '~/pages/settings/applications/tabs/SettingsApplicationRegistrationGeneralTab';
+import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateValue';
+import { activeTabIdComponentState } from '@/ui/layout/tab-list/states/activeTabIdComponentState';
+import { getAbsoluteImageUrl } from '~/utils/image/getAbsoluteImageUrl';
 
 const REGISTRATION_DETAIL_TAB_LIST_ID =
   'application-registration-detail-tab-list';
 
 export const SettingsApplicationRegistrationDetails = () => {
   const { t } = useLingui();
-  const { applicationRegistrationId = '' } = useParams<{
-    applicationRegistrationId: string;
-  }>();
 
   const activeTabId = useAtomComponentStateValue(
     activeTabIdComponentState,
     REGISTRATION_DETAIL_TAB_LIST_ID,
   );
 
-  const { data, loading } = useQuery(FindOneApplicationRegistrationDocument, {
-    variables: { id: applicationRegistrationId },
-    skip: !applicationRegistrationId,
-  });
+  const { applicationRegistrationId = '' } = useParams<{
+    applicationRegistrationId: string;
+  }>();
 
-  const { data: statsData } = useQuery(
-    FindApplicationRegistrationStatsDocument,
+  const { data, loading, refetch } = useQuery(
+    FindOneApplicationRegistrationDocument,
     {
       variables: { id: applicationRegistrationId },
       skip: !applicationRegistrationId,
     },
   );
 
-  const registration = data?.findOneApplicationRegistration as
-    | ApplicationRegistrationData
-    | undefined;
-  const stats = statsData?.findApplicationRegistrationStats;
-  const hasActiveInstalls = (stats?.activeInstalls ?? 0) > 0;
+  useRefetchOnApplicationRegistrationChange({
+    applicationRegistrationId,
+    refetch,
+  });
+
+  const registration = data?.findOneApplicationRegistration;
 
   if (loading || !isDefined(registration)) {
     return null;
@@ -59,10 +62,17 @@ export const SettingsApplicationRegistrationDetails = () => {
     { id: 'general', title: t`General`, Icon: IconInfoCircle },
     { id: 'oauth', title: t`OAuth`, Icon: IconKey },
     { id: 'distribution', title: t`Distribution`, Icon: IconWorld },
+    { id: 'config', title: t`Config`, Icon: IconSettings },
   ];
 
   const renderActiveTabContent = () => {
     switch (activeTabId) {
+      case 'config':
+        return (
+          <SettingsApplicationRegistrationConfigTab
+            registration={registration}
+          />
+        );
       case 'oauth':
         return (
           <SettingsApplicationRegistrationOAuthTab
@@ -80,34 +90,50 @@ export const SettingsApplicationRegistrationDetails = () => {
         return (
           <SettingsApplicationRegistrationGeneralTab
             registration={registration}
-            hasActiveInstalls={hasActiveInstalls}
           />
         );
     }
   };
 
   return (
-    <SubMenuTopBarContainer
+    <SettingsPageLayout
       title={registration.name}
+      icon={
+        <Avatar
+          shape="square"
+          variant="outline"
+          size="md"
+          src={getAbsoluteImageUrl(registration.logoUrl ?? undefined)}
+          name={registration.name}
+          colorSeed={registration.name}
+        />
+      }
+      tag={<Tag color="gray">{t`Owner`}</Tag>}
       links={[
         {
           children: t`Workspace`,
-          href: getSettingsPath(SettingsPath.Workspace),
+          href: getSettingsPath(SettingsPath.General),
         },
         {
-          children: t`Applications`,
-          href: getSettingsPath(SettingsPath.Applications),
+          children: t`Developers`,
+          href: getSettingsPath(
+            SettingsPath.Developers,
+            undefined,
+            undefined,
+            SETTINGS_DEVELOPERS_TABS.TABS_IDS.APPS,
+          ),
         },
         { children: registration.name },
       ]}
-    >
-      <SettingsPageContainer>
-        <TabList
+      secondaryBar={
+        <SettingsTabBar
+          aria-label={t`Application registration`}
           tabs={tabs}
           componentInstanceId={REGISTRATION_DETAIL_TAB_LIST_ID}
         />
-        {renderActiveTabContent()}
-      </SettingsPageContainer>
-    </SubMenuTopBarContainer>
+      }
+    >
+      <SettingsPageContainer>{renderActiveTabContent()}</SettingsPageContainer>
+    </SettingsPageLayout>
   );
 };

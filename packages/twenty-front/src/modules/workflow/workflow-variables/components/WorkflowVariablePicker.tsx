@@ -1,11 +1,11 @@
-import { type VariablePickerComponent } from '@/object-record/record-field/ui/form-types/types/VariablePickerComponent';
+import { type VariablePickerComponent } from '@/ui/input/types/VariablePickerComponent';
 import { WorkflowVariablesDropdown } from '@/workflow/workflow-variables/components/WorkflowVariablesDropdown';
 import { styled } from '@linaria/react';
-import { themeCssVariables } from 'twenty-ui/theme-constants';
+import { themeCssVariables } from 'twenty-ui/theme';
 
 const StyledSearchVariablesDropdownContainer = styled.div<{
-  multiline?: boolean;
   isReadonly?: boolean;
+  multiline?: boolean;
 }>`
   align-items: center;
   background-color: ${({ multiline }) =>
@@ -21,19 +21,24 @@ const StyledSearchVariablesDropdownContainer = styled.div<{
       : `0 ${themeCssVariables.border.radius.sm} ${themeCssVariables.border.radius.sm} 0`};
 
   display: flex;
+  height: ${({ multiline }) =>
+    multiline ? themeCssVariables.spacing[7] : 'auto'};
 
   justify-content: center;
-
-  padding: ${({ multiline }) =>
-    multiline
-      ? `${themeCssVariables.spacing[0.5]} ${themeCssVariables.spacing[0]}`
-      : '0'};
+  margin: ${({ multiline }) =>
+    multiline ? `${themeCssVariables.spacing[1]}` : '0'};
 
   position: ${({ multiline }) => (multiline ? 'absolute' : 'static')};
   right: ${({ multiline }) =>
     multiline ? themeCssVariables.spacing[0] : 'auto'};
   top: ${({ multiline }) =>
     multiline ? themeCssVariables.spacing[0] : 'auto'};
+  width: ${({ multiline }) =>
+    multiline ? themeCssVariables.spacing[7] : 'auto'};
+
+  &:has([data-popup-open]) {
+    background-color: ${themeCssVariables.background.transparent.light};
+  }
 
   &:hover {
     background-color: ${({ isReadonly, multiline }) => {
@@ -45,6 +50,10 @@ const StyledSearchVariablesDropdownContainer = styled.div<{
       return themeCssVariables.background.transparent.light;
     }};
   }
+
+  &:has([data-popup-open]):hover {
+    background-color: ${themeCssVariables.background.transparent.medium};
+  }
 `;
 
 export const WorkflowVariablePicker: VariablePickerComponent = ({
@@ -54,11 +63,12 @@ export const WorkflowVariablePicker: VariablePickerComponent = ({
   onVariableSelect,
   shouldDisplayRecordObjects = false,
   shouldDisplayRecordFields = true,
+  objectNameSingularsToSelect,
 }) => {
   return (
     <StyledSearchVariablesDropdownContainer
-      multiline={multiline}
       isReadonly={disabled}
+      multiline={multiline}
     >
       <WorkflowVariablesDropdown
         instanceId={instanceId}
@@ -66,7 +76,7 @@ export const WorkflowVariablePicker: VariablePickerComponent = ({
         disabled={disabled}
         shouldDisplayRecordObjects={shouldDisplayRecordObjects}
         shouldDisplayRecordFields={shouldDisplayRecordFields}
-        multiline={multiline}
+        objectNameSingularsToSelect={objectNameSingularsToSelect}
       />
     </StyledSearchVariablesDropdownContainer>
   );

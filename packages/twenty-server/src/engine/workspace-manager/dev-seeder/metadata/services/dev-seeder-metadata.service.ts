@@ -3,7 +3,6 @@ import { Injectable } from '@nestjs/common';
 import { FieldMetadataType, RelationType } from 'twenty-shared/types';
 import { isDefined } from 'twenty-shared/utils';
 
-import { type DataSourceEntity } from 'src/engine/metadata-modules/data-source/data-source.entity';
 import { FieldMetadataService } from 'src/engine/metadata-modules/field-metadata/services/field-metadata.service';
 import { WorkspaceManyOrAllFlatEntityMapsCacheService } from 'src/engine/metadata-modules/flat-entity/services/workspace-many-or-all-flat-entity-maps-cache.service';
 import { type FlatEntityMaps } from 'src/engine/metadata-modules/flat-entity/types/flat-entity-maps.type';
@@ -82,7 +81,6 @@ export class DevSeederMetadataService {
           seed: SURVEY_RESULT_CUSTOM_OBJECT_SEED,
           fields: SURVEY_RESULT_CUSTOM_FIELD_SEEDS,
         },
-        // Junction objects (minimal pivots)
         { seed: EMPLOYMENT_HISTORY_CUSTOM_OBJECT_SEED },
         { seed: PET_CARE_AGREEMENT_CUSTOM_OBJECT_SEED },
       ],
@@ -101,7 +99,6 @@ export class DevSeederMetadataService {
         },
       ],
       junctionFields: [
-        // Employment History: Person <-> Company
         {
           sourceObjectName: 'person',
           name: 'previousCompanies',
@@ -120,7 +117,6 @@ export class DevSeederMetadataService {
           targetFieldLabel: 'Company',
           targetFieldIcon: 'IconBuildingSkyscraper',
         },
-        // Pet Care Agreement: Pet -> caretakers
         {
           sourceObjectName: PET_CUSTOM_OBJECT_SEED.nameSingular,
           name: 'caretakers',
@@ -132,7 +128,6 @@ export class DevSeederMetadataService {
         },
       ],
       junctionConfigs: [
-        // Employment History junction configs
         {
           objectName: 'person',
           fieldName: 'previousCompanies',
@@ -143,7 +138,6 @@ export class DevSeederMetadataService {
           fieldName: 'previousEmployees',
           junctionTargetFieldRef: `${EMPLOYMENT_HISTORY_CUSTOM_OBJECT_SEED.nameSingular}.person`,
         },
-        // Pet Care Agreement junction configs
         {
           objectName: PET_CUSTOM_OBJECT_SEED.nameSingular,
           fieldName: 'caretakers',
@@ -195,11 +189,9 @@ export class DevSeederMetadataService {
   }
 
   public async seed({
-    dataSourceMetadata,
     workspaceId,
     light = false,
   }: {
-    dataSourceMetadata: DataSourceEntity;
     workspaceId: string;
     light?: boolean;
   }) {
@@ -207,7 +199,6 @@ export class DevSeederMetadataService {
 
     for (const obj of config.objects) {
       await this.seedCustomObject({
-        dataSourceId: dataSourceMetadata.id,
         workspaceId,
         objectMetadataSeed: obj.seed,
       });
@@ -231,19 +222,15 @@ export class DevSeederMetadataService {
   }
 
   private async seedCustomObject({
-    dataSourceId,
     workspaceId,
     objectMetadataSeed,
   }: {
-    dataSourceId: string;
     workspaceId: string;
     objectMetadataSeed: ObjectMetadataSeed;
   }): Promise<void> {
     await this.objectMetadataService.createOneObject({
-      createObjectInput: {
-        ...objectMetadataSeed,
-        dataSourceId,
-      },
+      shouldDeferActions: false,
+      createObjectInput: objectMetadataSeed,
       workspaceId,
     });
   }
@@ -273,6 +260,7 @@ export class DevSeederMetadataService {
     }));
 
     await this.fieldMetadataService.createManyFields({
+      shouldDeferActions: false,
       createFieldInputs,
       workspaceId,
     });
@@ -369,6 +357,7 @@ export class DevSeederMetadataService {
     );
 
     await this.fieldMetadataService.updateOneField({
+      shouldDeferActions: false,
       workspaceId,
       updateFieldInput: {
         id: fieldId,
@@ -435,6 +424,7 @@ export class DevSeederMetadataService {
     }));
 
     await this.fieldMetadataService.createManyFields({
+      shouldDeferActions: false,
       createFieldInputs,
       workspaceId,
     });
@@ -460,6 +450,7 @@ export class DevSeederMetadataService {
     }
 
     await this.fieldMetadataService.createManyFields({
+      shouldDeferActions: false,
       createFieldInputs: [
         {
           type: FieldMetadataType.RELATION,

@@ -1,13 +1,15 @@
-import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import groupBy from 'lodash.groupby';
+import { Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
 
-import { FeatureFlagKey } from 'twenty-shared/types';
+import { POLLED_MESSAGE_CHANNEL_TYPES } from 'twenty-shared/constants';
 import { isDefined } from 'twenty-shared/utils';
 import { WorkspaceActivationStatus } from 'twenty-shared/workspace';
-import { DataSource, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 
+import { MessageChannelSyncStage } from 'twenty-shared/types';
 import { SentryCronMonitor } from 'src/engine/core-modules/cron/sentry-cron-monitor.decorator';
 import { ExceptionHandlerService } from 'src/engine/core-modules/exception-handler/exception-handler.service';
-import { FeatureFlagService } from 'src/engine/core-modules/feature-flag/services/feature-flag.service';
 import { InjectMessageQueue } from 'src/engine/core-modules/message-queue/decorators/message-queue.decorator';
 import { Process } from 'src/engine/core-modules/message-queue/decorators/process.decorator';
 import { Processor } from 'src/engine/core-modules/message-queue/decorators/processor.decorator';
@@ -15,29 +17,27 @@ import { MessageQueue } from 'src/engine/core-modules/message-queue/message-queu
 import { MessageQueueService } from 'src/engine/core-modules/message-queue/services/message-queue.service';
 import { WorkspaceEntity } from 'src/engine/core-modules/workspace/workspace.entity';
 import {
-  DataSourceException,
-  DataSourceExceptionCode,
-} from 'src/engine/metadata-modules/data-source/data-source.exception';
-import { getWorkspaceSchemaName } from 'src/engine/workspace-datasource/utils/get-workspace-schema-name.util';
-import { MessageChannelSyncStage } from 'src/modules/messaging/common/standard-objects/message-channel.workspace-entity';
-import {
   MessagingMessagesImportJob,
   type MessagingMessagesImportJobData,
 } from 'src/modules/messaging/message-import-manager/jobs/messaging-messages-import.job';
+import { isThrottled } from 'src/modules/connected-account/utils/is-throttled';
+import { MessageChannelEntity } from 'src/engine/metadata-modules/message-channel/entities/message-channel.entity';
+import { toIsoStringOrNull } from 'src/utils/date/toIsoStringOrNull';
 
 export const MESSAGING_MESSAGES_IMPORT_CRON_PATTERN = '*/1 * * * *';
 
 @Processor(MessageQueue.cronQueue)
 export class MessagingMessagesImportCronJob {
+  private readonly logger = new Logger(MessagingMessagesImportCronJob.name);
+
   constructor(
     @InjectRepository(WorkspaceEntity)
     private readonly workspaceRepository: Repository<WorkspaceEntity>,
     @InjectMessageQueue(MessageQueue.messagingQueue)
     private readonly messageQueueService: MessageQueueService,
     private readonly exceptionHandlerService: ExceptionHandlerService,
-    @InjectDataSource()
-    private readonly coreDataSource: DataSource,
-    private readonly featureFlagService: FeatureFlagService,
+    @InjectRepository(MessageChannelEntity)
+    private readonly messageChannelRepository: Repository<MessageChannelEntity>,
   ) {}
 
   @Process(MessagingMessagesImportCronJob.name)
@@ -46,68 +46,110 @@ export class MessagingMessagesImportCronJob {
     MESSAGING_MESSAGES_IMPORT_CRON_PATTERN,
   )
   async handle(): Promise<void> {
-    const activeWorkspaces = await this.workspaceRepository.find({
-      where: {
-        activationStatus: WorkspaceActivationStatus.ACTIVE,
-      },
-    });
+    const pendingMessageChannelsAcrossWorkspaces =
+      await this.messageChannelRepository.find({
+        where: {
+          isSyncEnabled: true,
+          syncStage: MessageChannelSyncStage.MESSAGES_IMPORT_PENDING,
+          type: In([...POLLED_MESSAGE_CHANNEL_TYPES]),
+          workspace: {
+            activationStatus: WorkspaceActivationStatus.ACTIVE,
+            deletedAt: IsNull(),
+          },
+        },
+      });
 
-    for (const activeWorkspace of activeWorkspaces) {
+    const pendingMessageChannelsByWorkspaceId = groupBy(
+      pendingMessageChannelsAcrossWorkspaces,
+      'workspaceId',
+    );
+
+    for (const [workspaceId, pendingMessageChannels] of Object.entries(
+      pendingMessageChannelsByWorkspaceId,
+    )) {
       try {
-        const now = new Date().toISOString();
-
-        // TODO: remove workspace schema branch once IS_CONNECTED_ACCOUNT_MIGRATED feature flag is removed
-        const isMigrated = await this.featureFlagService.isFeatureEnabled(
-          FeatureFlagKey.IS_CONNECTED_ACCOUNT_MIGRATED,
-          activeWorkspace.id,
+        const messageChannelsToSchedule = pendingMessageChannels.filter(
+          (messageChannel) =>
+            !isThrottled(
+              toIsoStringOrNull(messageChannel.syncStageStartedAt),
+              messageChannel.throttleFailureCount,
+              toIsoStringOrNull(messageChannel.throttleRetryAfter),
+            ),
         );
 
-        const [messageChannels] = isMigrated
-          ? await this.coreDataSource.query(
-              `UPDATE core."messageChannel" SET "syncStage" = '${MessageChannelSyncStage.MESSAGES_IMPORT_SCHEDULED}', "syncStageStartedAt" = COALESCE("syncStageStartedAt", '${now}')
-               WHERE "workspaceId" = '${activeWorkspace.id}' AND "isSyncEnabled" = true AND "syncStage" = '${MessageChannelSyncStage.MESSAGES_IMPORT_PENDING}' RETURNING *`,
-            )
-          : await this.coreDataSource.query(
-              `UPDATE ${getWorkspaceSchemaName(activeWorkspace.id)}."messageChannel" SET "syncStage" = '${MessageChannelSyncStage.MESSAGES_IMPORT_SCHEDULED}', "syncStageStartedAt" = COALESCE("syncStageStartedAt", '${now}')
-               WHERE "isSyncEnabled" = true AND "syncStage" = '${MessageChannelSyncStage.MESSAGES_IMPORT_PENDING}' RETURNING *`,
-            );
+        const throttledCount =
+          pendingMessageChannels.length - messageChannelsToSchedule.length;
 
-        for (const messageChannel of messageChannels) {
+        if (throttledCount > 0) {
+          this.logger.log(
+            `Skipped ${throttledCount} throttled message channels for workspace ${workspaceId}`,
+          );
+        }
+
+        if (messageChannelsToSchedule.length === 0) {
+          continue;
+        }
+
+        const messageChannelIdsToSchedule = messageChannelsToSchedule.map(
+          (messageChannel) => messageChannel.id,
+        );
+
+        const updateResult = await this.messageChannelRepository
+          .createQueryBuilder()
+          .update()
+          .set({
+            syncStage: MessageChannelSyncStage.MESSAGES_IMPORT_SCHEDULED,
+            syncStageStartedAt: new Date(),
+          })
+          .where({
+            id: In(messageChannelIdsToSchedule),
+            workspaceId,
+            isSyncEnabled: true,
+            syncStage: MessageChannelSyncStage.MESSAGES_IMPORT_PENDING,
+          })
+          .returning('id')
+          .execute();
+
+        const updatedIds = updateResult.raw.map(
+          (row: { id: string }) => row.id,
+        );
+
+        for (const messageChannelId of updatedIds) {
           await this.messageQueueService.add<MessagingMessagesImportJobData>(
             MessagingMessagesImportJob.name,
             {
-              workspaceId: activeWorkspace.id,
-              messageChannelId: messageChannel.id,
+              workspaceId,
+              messageChannelId,
+            },
+            {
+              workspaceId,
+              isWorkspaceJob: true,
             },
           );
         }
       } catch (error) {
-        // We had issues with the workspace schema not being found, due
-        // to users deleting their workspaces in the middle of the cron job
-        // We only throw an error when the workspace is found & schema not found
         if (
           error.code === '42P01' &&
           error.message.includes('messageChannel" does not exist')
         ) {
           const refetchedWorkspace = await this.workspaceRepository.findOneBy({
-            id: activeWorkspace.id,
+            id: workspaceId,
           });
 
           if (isDefined(refetchedWorkspace)) {
             this.exceptionHandlerService.captureExceptions([error], {
               workspace: {
-                id: activeWorkspace.id,
+                id: workspaceId,
               },
             });
-            throw new DataSourceException(
+            throw new Error(
               'Workspace schema not found while the workspace is still active',
-              DataSourceExceptionCode.DATA_SOURCE_NOT_FOUND,
             );
           }
         } else {
           this.exceptionHandlerService.captureExceptions([error], {
             workspace: {
-              id: activeWorkspace.id,
+              id: workspaceId,
             },
           });
         }

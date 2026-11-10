@@ -1,17 +1,17 @@
-import { t } from '@lingui/core/macro';
 import { useState } from 'react';
 
 import { currentWorkspaceMemberState } from '@/auth/states/currentWorkspaceMemberState';
-import { useAtomState } from '@/ui/utilities/state/jotai/hooks/useAtomState';
-import { CoreObjectNameSingular } from 'twenty-shared/types';
-import { useUpdateOneRecord } from '@/object-record/hooks/useUpdateOneRecord';
+import { useUploadWorkspaceMemberProfilePicture } from '@/settings/members/hooks/useUploadWorkspaceMemberProfilePicture';
 import { useCanEditProfileField } from '@/settings/profile/hooks/useCanEditProfileField';
-import { useSnackBar } from '@/ui/feedback/snack-bar-manager/hooks/useSnackBar';
-import { ImageInput } from '@/ui/input/components/ImageInput';
+import { useUpdateWorkspaceMemberSettings } from '@/workspace-member/hooks/useUpdateWorkspaceMemberSettings';
+import { SettingsImageInput } from '@/settings/components/SettingsImageInput';
+import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomStateValue';
+import { useSetAtomState } from '@/ui/utilities/state/jotai/hooks/useSetAtomState';
+import { FileFolder } from 'twenty-shared/types';
 import { isDefined } from 'twenty-shared/utils';
-import { useMutation } from '@apollo/client/react';
-import { UploadWorkspaceMemberProfilePictureDocument } from '~/generated-metadata/graphql';
-import { isUndefinedOrNull } from '~/utils/isUndefinedOrNull';
+import { useToast } from 'twenty-ui/components/feedback';
+import { REACT_APP_SERVER_BASE_URL } from '~/config';
+import { useLingui } from '@lingui/react/macro';
 
 type WorkspaceMemberPictureUploaderProps = {
   workspaceMemberId: string;
@@ -26,21 +26,23 @@ export const WorkspaceMemberPictureUploader = ({
   onAvatarUpdated,
   disabled = false,
 }: WorkspaceMemberPictureUploaderProps) => {
-  const { enqueueErrorSnackBar } = useSnackBar();
+  const { t } = useLingui();
+  const { enqueueToast } = useToast();
   const [isUploading, setIsUploading] = useState(false);
+  const [isRemoving, setIsRemoving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [uploadController, setUploadController] =
     useState<AbortController | null>(null);
 
-  const [currentWorkspaceMember, setCurrentWorkspaceMember] = useAtomState(
+  const currentWorkspaceMember = useAtomStateValue(currentWorkspaceMemberState);
+  const setCurrentWorkspaceMember = useSetAtomState(
     currentWorkspaceMemberState,
   );
 
-  const [uploadPicture] = useMutation(
-    UploadWorkspaceMemberProfilePictureDocument,
-  );
+  const { uploadWorkspaceMemberProfilePicture } =
+    useUploadWorkspaceMemberProfilePicture();
 
-  const { updateOneRecord } = useUpdateOneRecord();
+  const { updateWorkspaceMemberSettings } = useUpdateWorkspaceMemberSettings();
 
   const { canEdit: canEditProfilePicture } =
     useCanEditProfileField('profilePicture');
@@ -49,7 +51,7 @@ export const WorkspaceMemberPictureUploader = ({
   const canEdit = isEditingSelf ? canEditProfilePicture : !disabled;
 
   const handleUpload = async (file: File) => {
-    if (isUndefinedOrNull(file) || !canEdit) {
+    if (!isDefined(file) || !canEdit) {
       return;
     }
 
@@ -60,46 +62,39 @@ export const WorkspaceMemberPictureUploader = ({
 
     let newAvatarUrl: string | null = null;
     try {
-      const { data } = await uploadPicture({
-        variables: { file },
-        context: {
-          fetchOptions: {
-            signal: controller.signal,
-          },
-        },
+      const uploadedFile = await uploadWorkspaceMemberProfilePicture(file, {
+        signal: controller.signal,
       });
 
-      const signedFile = data?.uploadWorkspaceMemberProfilePicture;
-      if (!isDefined(signedFile)) {
-        throw new Error('Avatar upload failed');
-      }
-
-      await updateOneRecord({
-        objectNameSingular: CoreObjectNameSingular.WorkspaceMember,
-        idToUpdate: workspaceMemberId,
-        updateOneRecordInput: { avatarUrl: signedFile.url },
+      newAvatarUrl = `${REACT_APP_SERVER_BASE_URL}/file/${FileFolder.CorePicture}/${uploadedFile.id}`;
+      await updateWorkspaceMemberSettings({
+        workspaceMemberId,
+        update: { avatarUrl: newAvatarUrl },
       });
 
-      newAvatarUrl = signedFile.url;
+      const signedUrl = uploadedFile.url;
 
-      if (isEditingSelf && isDefined(currentWorkspaceMember)) {
-        setCurrentWorkspaceMember({
-          ...currentWorkspaceMember,
-          avatarUrl: newAvatarUrl,
-        });
+      if (isDefined(signedUrl) && isEditingSelf) {
+        setCurrentWorkspaceMember((previous) =>
+          previous ? { ...previous, avatarUrl: signedUrl } : previous,
+        );
       }
 
       if (isDefined(onAvatarUpdated)) {
-        onAvatarUpdated(newAvatarUrl);
+        onAvatarUpdated(signedUrl ?? newAvatarUrl);
       }
 
       setUploadController(null);
       setErrorMessage(null);
     } catch (error) {
+      if (controller.signal.aborted) {
+        return;
+      }
+
       const message =
         error instanceof Error ? error.message : t`Failed to upload picture`;
       setErrorMessage(t`An error occurred while uploading the picture.`);
-      enqueueErrorSnackBar({ message });
+      enqueueToast({ status: 'error', children: message });
     } finally {
       setIsUploading(false);
     }
@@ -110,22 +105,14 @@ export const WorkspaceMemberPictureUploader = ({
       return;
     }
 
-    setIsUploading(true);
+    setIsRemoving(true);
     setErrorMessage(null);
 
     try {
-      await updateOneRecord({
-        objectNameSingular: CoreObjectNameSingular.WorkspaceMember,
-        idToUpdate: workspaceMemberId,
-        updateOneRecordInput: { avatarUrl: '' },
+      await updateWorkspaceMemberSettings({
+        workspaceMemberId,
+        update: { avatarUrl: null },
       });
-
-      if (isEditingSelf && isDefined(currentWorkspaceMember)) {
-        setCurrentWorkspaceMember({
-          ...currentWorkspaceMember,
-          avatarUrl: null,
-        });
-      }
 
       if (isDefined(onAvatarUpdated)) {
         onAvatarUpdated(null);
@@ -136,9 +123,9 @@ export const WorkspaceMemberPictureUploader = ({
       const message =
         error instanceof Error ? error.message : t`Failed to remove picture`;
       setErrorMessage(t`An error occurred while removing the picture.`);
-      enqueueErrorSnackBar({ message });
+      enqueueToast({ status: 'error', children: message });
     } finally {
-      setIsUploading(false);
+      setIsRemoving(false);
     }
   };
 
@@ -158,12 +145,12 @@ export const WorkspaceMemberPictureUploader = ({
     avatarUrl ?? (isEditingSelf ? currentWorkspaceMember?.avatarUrl : null);
 
   return (
-    <ImageInput
+    <SettingsImageInput
       picture={displayAvatarUrl}
-      onUpload={handleUpload}
+      onFileSelect={handleUpload}
       onRemove={handleRemove}
-      onAbort={handleAbort}
-      isUploading={isUploading}
+      onAbort={isUploading ? handleAbort : undefined}
+      isUploading={isUploading || isRemoving}
       errorMessage={errorMessage}
       disabled={!canEdit}
     />

@@ -3,6 +3,7 @@ import { Field, Float, InputType } from '@nestjs/graphql';
 import {
   IsBoolean,
   IsEnum,
+  IsIn,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -11,7 +12,11 @@ import {
 } from 'class-validator';
 
 import { UUIDScalarType } from 'src/engine/api/graphql/workspace-schema-builder/graphql-types/scalars';
-import { CommandMenuItemAvailabilityType } from 'src/engine/metadata-modules/command-menu-item/enums/command-menu-item-availability-type.enum';
+import {
+  COMMAND_MENU_CORE_OBJECT_NAMES,
+  CommandMenuItemAvailabilityType,
+  type CommandMenuCoreObjectName,
+} from 'twenty-shared/types';
 import { EngineComponentKey } from 'src/engine/metadata-modules/command-menu-item/enums/engine-component-key.enum';
 
 @InputType()
@@ -56,6 +61,11 @@ export class UpdateCommandMenuItemInput {
   @Field(() => UUIDScalarType, { nullable: true })
   availabilityObjectMetadataId?: string;
 
+  @IsIn(COMMAND_MENU_CORE_OBJECT_NAMES)
+  @IsOptional()
+  @Field(() => String, { nullable: true })
+  availabilityCoreObjectName?: CommandMenuCoreObjectName | null;
+
   @IsEnum(EngineComponentKey)
   @IsOptional()
   @Field(() => EngineComponentKey, { nullable: true })
@@ -65,4 +75,9 @@ export class UpdateCommandMenuItemInput {
   @IsOptional()
   @Field(() => [String], { nullable: true })
   hotKeys?: string[];
+
+  @IsUUID()
+  @IsOptional()
+  @Field(() => UUIDScalarType, { nullable: true })
+  pageLayoutId?: string;
 }

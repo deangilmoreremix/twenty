@@ -1,32 +1,54 @@
 import { type FieldMetadataItem } from '@/object-metadata/types/FieldMetadataItem';
-import { isFieldMetadataReadOnlyByPermissions } from '@/object-record/read-only/utils/internal/isFieldMetadataReadOnlyByPermissions';
-import { type ObjectPermission } from '~/generated-metadata/graphql';
+import { type ObjectPermissionsByObjectMetadataId } from '@/object-metadata/types/ObjectPermissionsByObjectMetadataId';
+import { getFieldPermissions } from '@/object-metadata/utils/getFieldPermissions';
+import { getObjectPermissionsForObject } from '@/object-metadata/utils/getObjectPermissionsForObject';
+import { isOneToManyRelationFieldReadOnlyDueToTargetUpdatePermission } from '@/object-record/read-only/utils/isOneToManyRelationFieldReadOnlyDueToTargetUpdatePermission';
+import { type FieldDefinition } from '@/object-record/record-field/ui/types/FieldDefinition';
+import { type FieldMetadata } from '@/object-record/record-field/ui/types/FieldMetadata';
+import { canReachSomeRecords, isDefined } from 'twenty-shared/utils';
 
 type IsRecordFieldReadOnlyParams = {
   isRecordReadOnly: boolean;
-  isSystemObject?: boolean;
-  fieldMetadataItem: Pick<
-    FieldMetadataItem,
-    'id' | 'isUIReadOnly' | 'isCustom'
-  >;
-  objectPermissions: ObjectPermission;
+  objectMetadataId: string;
+  fieldMetadataItem: Pick<FieldMetadataItem, 'id' | 'isUIEditable'>;
+  objectPermissionsByObjectMetadataId: ObjectPermissionsByObjectMetadataId;
+  fieldDefinition?: FieldDefinition<FieldMetadata>;
 };
 
 export const isRecordFieldReadOnly = ({
-  objectPermissions,
   isRecordReadOnly,
-  isSystemObject,
+  objectMetadataId,
   fieldMetadataItem,
+  objectPermissionsByObjectMetadataId,
+  fieldDefinition,
 }: IsRecordFieldReadOnlyParams) => {
-  const fieldReadOnlyByPermissions = isFieldMetadataReadOnlyByPermissions({
-    objectPermissions,
-    fieldMetadataId: fieldMetadataItem.id,
-  });
+  if (isRecordReadOnly || !(fieldMetadataItem.isUIEditable ?? true)) {
+    return true;
+  }
+
+  const objectPermissions = getObjectPermissionsForObject(
+    objectPermissionsByObjectMetadataId,
+    objectMetadataId,
+  );
+
+  if (
+    !canReachSomeRecords({
+      objectRecordsPermissions: objectPermissions,
+      operationType: 'update',
+    }) ||
+    !getFieldPermissions({
+      objectPermissions,
+      fieldMetadataId: fieldMetadataItem.id,
+    }).canUpdateField
+  ) {
+    return true;
+  }
 
   return (
-    isRecordReadOnly ||
-    (isSystemObject === true && fieldMetadataItem.isCustom !== true) ||
-    fieldMetadataItem.isUIReadOnly ||
-    fieldReadOnlyByPermissions
+    isDefined(fieldDefinition) &&
+    isOneToManyRelationFieldReadOnlyDueToTargetUpdatePermission({
+      fieldDefinition,
+      objectPermissionsByObjectMetadataId,
+    })
   );
 };

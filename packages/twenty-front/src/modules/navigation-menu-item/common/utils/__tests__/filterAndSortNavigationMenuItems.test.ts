@@ -13,6 +13,7 @@ describe('filterAndSortNavigationMenuItems', () => {
     namePlural: 'people',
     labelPlural: 'People',
     icon: 'IconUser',
+    isActive: true,
   } as EnrichedObjectMetadataItem;
 
   const mockView: Pick<View, 'id' | 'objectMetadataId' | 'key'> = {
@@ -20,6 +21,108 @@ describe('filterAndSortNavigationMenuItems', () => {
     objectMetadataId: 'metadata-id',
     key: ViewKey.INDEX,
   };
+
+  const mockWorkflowObjectMetadataItem = {
+    id: 'workflow-metadata-id',
+    nameSingular: 'workflow',
+    namePlural: 'workflows',
+    labelPlural: 'Workflows',
+    icon: 'IconSettingsAutomation',
+    isActive: true,
+  } as EnrichedObjectMetadataItem;
+
+  const workflowRecordItem: NavigationMenuItem = {
+    id: 'workflow-favorite-id',
+    type: NavigationMenuItemType.RECORD,
+    position: 0,
+    targetRecordId: 'workflow-record-id',
+    createdAt: '2021-01-01',
+    updatedAt: '2021-01-01',
+    targetObjectMetadataId: 'workflow-metadata-id',
+    targetRecordIdentifier: {
+      id: 'workflow-record-id',
+      labelIdentifier: 'My workflow',
+    },
+  };
+
+  it('keeps native page items with a known key only', () => {
+    const workflowsNativePageItem = {
+      id: 'workflows-native-page-id',
+      type: NavigationMenuItemType.NATIVE_PAGE,
+      position: 0,
+      nativePageKey: 'workflows',
+    } as NavigationMenuItem;
+    const unknownNativePageItem = {
+      ...workflowsNativePageItem,
+      id: 'unknown-native-page-id',
+      nativePageKey: 'unknown',
+    } as NavigationMenuItem;
+
+    expect(
+      filterAndSortNavigationMenuItems(
+        [workflowsNativePageItem, unknownNativePageItem],
+        [],
+        [],
+      ),
+    ).toEqual([workflowsNativePageItem]);
+  });
+
+  it('hides workflow record items', () => {
+    expect(
+      filterAndSortNavigationMenuItems(
+        [workflowRecordItem],
+        [],
+        [mockWorkflowObjectMetadataItem],
+      ),
+    ).toEqual([]);
+  });
+
+  it('hides chat record items, which the chat menu lists', () => {
+    const chatObjectMetadataItem = {
+      id: 'chat-metadata-id',
+      nameSingular: 'agentChatThread',
+      isActive: true,
+    } as EnrichedObjectMetadataItem;
+    const chatRecordItem = {
+      ...workflowRecordItem,
+      id: 'chat-favorite-id',
+      targetRecordId: 'chat-record-id',
+      targetObjectMetadataId: 'chat-metadata-id',
+      targetRecordIdentifier: { id: 'chat-record-id', labelIdentifier: 'Chat' },
+    } as NavigationMenuItem;
+
+    expect(
+      filterAndSortNavigationMenuItems(
+        [chatRecordItem],
+        [],
+        [chatObjectMetadataItem],
+      ),
+    ).toEqual([]);
+  });
+
+  it('keeps other objects record items', () => {
+    const personRecordItem: NavigationMenuItem = {
+      id: 'person-favorite-id',
+      type: NavigationMenuItemType.RECORD,
+      position: 0,
+      targetRecordId: 'person-record-id',
+      createdAt: '2021-01-01',
+      updatedAt: '2021-01-01',
+      targetObjectMetadataId: 'metadata-id',
+      targetRecordIdentifier: {
+        id: 'person-record-id',
+        labelIdentifier: 'Jane',
+      },
+    };
+
+    expect(
+      filterAndSortNavigationMenuItems(
+        [personRecordItem],
+        [],
+        [mockObjectMetadataItem],
+      ),
+    ).toEqual([personRecordItem]);
+  });
 
   it('should return empty array when navigationMenuItems is empty', () => {
     const result = filterAndSortNavigationMenuItems([], [], []);
@@ -219,6 +322,57 @@ describe('filterAndSortNavigationMenuItems', () => {
       ],
       [],
       [mockObjectMetadataItem],
+    );
+    expect(result).toEqual([]);
+  });
+
+  it('should filter out items for deactivated objects', () => {
+    const inactiveObjectMetadataItem = {
+      ...mockObjectMetadataItem,
+      id: 'inactive-metadata-id',
+      isActive: false,
+    } as EnrichedObjectMetadataItem;
+
+    const result = filterAndSortNavigationMenuItems(
+      [
+        {
+          id: 'obj-1',
+          type: NavigationMenuItemType.OBJECT,
+          targetObjectMetadataId: 'inactive-metadata-id',
+          position: 1,
+        } as NavigationMenuItem,
+      ],
+      [],
+      [inactiveObjectMetadataItem],
+    );
+    expect(result).toEqual([]);
+  });
+
+  it('should filter out view items for deactivated objects', () => {
+    const inactiveObjectMetadataItem = {
+      ...mockObjectMetadataItem,
+      id: 'inactive-metadata-id',
+      isActive: false,
+    } as EnrichedObjectMetadataItem;
+
+    const viewForInactiveObject: Pick<View, 'id' | 'objectMetadataId' | 'key'> =
+      {
+        id: 'view-for-inactive',
+        objectMetadataId: 'inactive-metadata-id',
+        key: ViewKey.INDEX,
+      };
+
+    const result = filterAndSortNavigationMenuItems(
+      [
+        {
+          id: 'view-item-1',
+          type: NavigationMenuItemType.VIEW,
+          viewId: 'view-for-inactive',
+          position: 1,
+        } as NavigationMenuItem,
+      ],
+      [viewForInactiveObject],
+      [inactiveObjectMetadataItem],
     );
     expect(result).toEqual([]);
   });

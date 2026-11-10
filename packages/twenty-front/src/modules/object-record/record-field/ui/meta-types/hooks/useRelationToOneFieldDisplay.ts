@@ -11,9 +11,12 @@ import { generateDefaultRecordChipData } from '@/object-metadata/utils/generateD
 import { FieldContext } from '@/object-record/record-field/ui/contexts/FieldContext';
 import { assertFieldMetadata } from '@/object-record/record-field/ui/types/guards/assertFieldMetadata';
 import { isFieldRelation } from '@/object-record/record-field/ui/types/guards/isFieldRelation';
-import { getJoinColumnNameOrThrow } from '@/object-record/record-field/ui/utils/junction/getJoinColumnNameOrThrow';
 import { useRecordFieldValue } from '@/object-record/record-store/hooks/useRecordFieldValue';
-import { isDefined } from 'twenty-shared/utils';
+import {
+  computeRelationGqlFieldJoinColumnName,
+  isDefined,
+} from 'twenty-shared/utils';
+import { doNotTranslate } from 'twenty-shared/i18n';
 
 export const useRelationToOneFieldDisplay = () => {
   const { recordId, fieldDefinition, maxWidth } = useContext(FieldContext);
@@ -23,7 +26,9 @@ export const useRelationToOneFieldDisplay = () => {
   );
 
   if (!isDefined(chipGeneratorPerObjectPerField)) {
-    throw new Error('Chip generator per object per field is not defined');
+    throw new Error(
+      doNotTranslate('Chip generator per object per field is not defined'),
+    );
   }
 
   assertFieldMetadata(
@@ -42,9 +47,9 @@ export const useRelationToOneFieldDisplay = () => {
     fieldDefinition,
   );
 
-  const joinColumnName = getJoinColumnNameOrThrow(
-    fieldDefinition.metadata.settings,
-  );
+  const joinColumnName = computeRelationGqlFieldJoinColumnName({
+    name: fieldName,
+  });
 
   const foreignKeyFieldValue = useRecordFieldValue<string | null | undefined>(
     recordId,
@@ -61,7 +66,7 @@ export const useRelationToOneFieldDisplay = () => {
     !isDefined(fieldDefinition.metadata.objectMetadataNameSingular) ||
     !isNonEmptyString(fieldDefinition.metadata.objectMetadataNameSingular)
   ) {
-    throw new Error('Object metadata name singular is empty');
+    throw new Error(doNotTranslate('Object metadata name singular is empty'));
   }
 
   const fieldChipGenerator =

@@ -1,9 +1,9 @@
 /* @license Enterprise */
 
 import { styled } from '@linaria/react';
-import { t } from '@lingui/core/macro';
-import { H2Title, IconArrowUp, IconLock } from 'twenty-ui/display';
-import { Card, Section } from 'twenty-ui/layout';
+import { Section } from 'twenty-ui/components/layout';
+import { IconArrowUp, IconLock } from 'twenty-ui/icon';
+import { Card } from 'twenty-ui/primitives/surfaces';
 
 import { billingState } from '@/client-config/states/billingState';
 import { type EnrichedObjectMetadataItem } from '@/object-metadata/types/EnrichedObjectMetadataItem';
@@ -11,9 +11,11 @@ import { SettingsOptionCardContentButton } from '@/settings/components/SettingsO
 import { SettingsRolePermissionsObjectLevelRecordLevelPermissionFilterBuilder } from '@/settings/roles/role-permissions/object-level-permissions/record-level-permissions/components/SettingsRolePermissionsObjectLevelRecordLevelPermissionFilterBuilder';
 import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomStateValue';
 import { SettingsPath } from 'twenty-shared/types';
-import { Button } from 'twenty-ui/input';
-import { themeCssVariables } from 'twenty-ui/theme-constants';
+import { Button } from 'twenty-ui/primitives/input';
+import { themeCssVariables } from 'twenty-ui/theme';
 import { useNavigateSettings } from '~/hooks/useNavigateSettings';
+import { OrganizationAdornment } from '@/settings/enterprise/components/OrganizationAdornment';
+import { useLingui } from '@lingui/react/macro';
 
 const StyledContent = styled.div`
   padding-bottom: ${themeCssVariables.spacing[2]};
@@ -22,18 +24,6 @@ const StyledContent = styled.div`
 const StyledCardContainer = styled.div`
   margin-top: ${themeCssVariables.spacing[4]};
   overflow: hidden;
-`;
-
-const StyledPillContainer = styled.span`
-  align-items: center;
-  background: ${themeCssVariables.background.secondary};
-  border: 1px solid ${themeCssVariables.border.color.light};
-  border-radius: 40px;
-  color: ${themeCssVariables.font.color.tertiary};
-  display: inline-flex;
-  font-weight: ${themeCssVariables.font.weight.medium};
-  gap: ${themeCssVariables.spacing[1]};
-  padding: ${themeCssVariables.spacing[1]} ${themeCssVariables.spacing[2]};
 `;
 
 type SettingsRolePermissionsObjectLevelRecordLevelSectionProps = {
@@ -47,55 +37,50 @@ export const SettingsRolePermissionsObjectLevelRecordLevelSection = ({
   roleId,
   hasOrganizationPlan,
 }: SettingsRolePermissionsObjectLevelRecordLevelSectionProps) => {
+  const { t } = useLingui();
   const navigateSettings = useNavigateSettings();
   const billing = useAtomStateValue(billingState);
   const isBillingEnabled = billing?.isBillingEnabled ?? false;
 
   if (!hasOrganizationPlan) {
     return (
-      <Section>
-        <H2Title
+      <Section.Root>
+        <Section.Header
           title={t`Record-level`}
           description={t`Ability to filter the records a user can interact with`}
-          adornment={
-            <StyledPillContainer>
-              <IconLock size={12} />
-              {t`Organization`}
-            </StyledPillContainer>
-          }
+          actions={<OrganizationAdornment />}
         />
         <StyledCardContainer>
-          <Card rounded>
+          <Card.Root>
             <SettingsOptionCardContentButton
               Icon={IconLock}
               title={t`Upgrade to access`}
-              description={t`This feature is part of the Enterprise Plan`}
+              description={t`This feature is part of the Organization plan`}
               Button={
                 <Button
-                  title={t`Upgrade`}
-                  variant="primary"
-                  accent="blue"
-                  size="small"
-                  Icon={IconArrowUp}
+                  size="sm"
+                  startIcon={<IconArrowUp />}
                   onClick={() =>
                     navigateSettings(
                       isBillingEnabled
-                        ? SettingsPath.Billing
-                        : SettingsPath.AdminPanelEnterprise,
+                        ? SettingsPath.BillingPlans
+                        : SettingsPath.AdminPanelOrganization,
                     )
                   }
-                />
+                  variant="solid"
+                  color="accent"
+                >{t`Upgrade`}</Button>
               }
             />
-          </Card>
+          </Card.Root>
         </StyledCardContainer>
-      </Section>
+      </Section.Root>
     );
   }
 
   return (
-    <Section>
-      <H2Title
+    <Section.Root>
+      <Section.Header
         title={t`Record-level`}
         description={t`Ability to filter the records a user can interact with.`}
       />
@@ -105,6 +90,6 @@ export const SettingsRolePermissionsObjectLevelRecordLevelSection = ({
           objectMetadataItem={objectMetadataItem}
         />
       </StyledContent>
-    </Section>
+    </Section.Root>
   );
 };

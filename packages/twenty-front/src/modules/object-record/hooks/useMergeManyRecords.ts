@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 
+import { dispatchObjectRecordOperationBrowserEvent } from '@/browser-event/utils/dispatchObjectRecordOperationBrowserEvent';
 import { useApolloCoreClient } from '@/object-metadata/hooks/useApolloCoreClient';
 import { useObjectMetadataItem } from '@/object-metadata/hooks/useObjectMetadataItem';
 import { useGenerateDepthRecordGqlFieldsFromObject } from '@/object-record/graphql/record-gql-fields/hooks/useGenerateDepthRecordGqlFieldsFromObject';
@@ -8,10 +9,9 @@ import { useFindOneRecordQuery } from '@/object-record/hooks/useFindOneRecordQue
 import { useMergeManyRecordsMutation } from '@/object-record/hooks/useMergeManyRecordsMutation';
 import { useRefetchAggregateQueries } from '@/object-record/hooks/useRefetchAggregateQueries';
 import { type ObjectRecord } from '@/object-record/types/ObjectRecord';
-import { dispatchObjectRecordOperationBrowserEvent } from '@/browser-event/utils/dispatchObjectRecordOperationBrowserEvent';
 import { getMergeManyRecordsMutationResponseField } from '@/object-record/utils/getMergeManyRecordsMutationResponseField';
+import { type RecordGqlFields } from 'twenty-shared/types';
 import { getOperationName } from '~/utils/getOperationName';
-import { type RecordGqlOperationGqlRecordFields } from 'twenty-shared/types';
 
 export type MergeManySettings = {
   conflictPriorityIndex: number;
@@ -19,7 +19,7 @@ export type MergeManySettings = {
 
 export type UseMergeManyRecordsProps = {
   objectNameSingular: string;
-  recordGqlFields?: RecordGqlOperationGqlRecordFields;
+  recordGqlFields?: RecordGqlFields;
 };
 
 export const useMergeManyRecords = <
@@ -88,12 +88,13 @@ export const useMergeManyRecords = <
           // Prevent cache updates during dry run to avoid overwriting original record data
           ...(preview && {
             fetchPolicy: 'no-cache',
-            errorPolicy: 'ignore',
           }),
-          refetchQueries: [
-            getOperationName(findOneRecordQuery) ?? '',
-            getOperationName(findDuplicateRecordsQuery) ?? '',
-          ].filter(Boolean),
+          refetchQueries: preview
+            ? []
+            : [
+                getOperationName(findOneRecordQuery) ?? '',
+                getOperationName(findDuplicateRecordsQuery) ?? '',
+              ].filter(Boolean),
         });
 
         setLoading(false);

@@ -1,35 +1,55 @@
-import { useMutation } from '@apollo/client/react';
+import { useApolloClient, useMutation } from '@apollo/client/react';
 import {
   type UpdateOneObjectInput,
+  FindManyCommandMenuItemsDocument,
   UpdateOneObjectMetadataItemDocument,
 } from '~/generated-metadata/graphql';
 
 import { useMetadataErrorHandler } from '@/metadata-error-handler/hooks/useMetadataErrorHandler';
 import { useUpdateMetadataStoreDraft } from '@/metadata-store/hooks/useUpdateMetadataStoreDraft';
 import { type FlatObjectMetadataItem } from '@/metadata-store/types/FlatObjectMetadataItem';
-import { type MetadataRequestResult } from '@/object-metadata/types/MetadataRequestResult.type';
-import { useSnackBar } from '@/ui/feedback/snack-bar-manager/hooks/useSnackBar';
+import { type MetadataRequestResult } from '@/object-metadata/types/MetadataRequestResult';
 import { CombinedGraphQLErrors } from '@apollo/client/errors';
-import { t } from '@lingui/core/macro';
-import { isDefined } from 'twenty-shared/utils';
 import { CrudOperationType } from 'twenty-shared/types';
+import { isDefined } from 'twenty-shared/utils';
+import { useToast } from 'twenty-ui/components/feedback';
+import { useLingui } from '@lingui/react/macro';
 
 // TODO: Slice the Apollo store synchronously in the update function instead of subscribing, so we can use update after read in the same function call
 export const useUpdateOneObjectMetadataItem = () => {
+  const { t } = useLingui();
   const [updateOneObjectMetadataItemMutation, { loading }] = useMutation(
     UpdateOneObjectMetadataItemDocument,
   );
 
+  const client = useApolloClient();
   const { handleMetadataError } = useMetadataErrorHandler();
-  const { enqueueErrorSnackBar } = useSnackBar();
-  const { updateInDraft, applyChanges } = useUpdateMetadataStoreDraft();
+  const { enqueueToast } = useToast();
+  const { updateInDraft, replaceDraft, applyChanges } =
+    useUpdateMetadataStoreDraft();
+
+  const refetchCommandMenuItems = async () => {
+    const commandMenuItemsResult = await client.query({
+      query: FindManyCommandMenuItemsDocument,
+      fetchPolicy: 'network-only',
+    });
+
+    replaceDraft(
+      'commandMenuItems',
+      commandMenuItemsResult.data?.commandMenuItems ?? [],
+    );
+    applyChanges();
+  };
 
   const updateOneObjectMetadataItem = async ({
     idToUpdate,
     updatePayload,
+    shouldRefetchCommandMenuItems = true,
   }: {
     idToUpdate: UpdateOneObjectInput['id'];
     updatePayload: UpdateOneObjectInput['update'];
+    // Callers updating several objects at once refetch once at the end instead.
+    shouldRefetchCommandMenuItems?: boolean;
   }): Promise<
     MetadataRequestResult<
       Awaited<ReturnType<typeof updateOneObjectMetadataItemMutation>>
@@ -52,6 +72,10 @@ export const useUpdateOneObjectMetadataItem = () => {
           objectData as FlatObjectMetadataItem,
         ]);
         applyChanges();
+
+        if (shouldRefetchCommandMenuItems) {
+          await refetchCommandMenuItems();
+        }
       }
 
       return {
@@ -65,7 +89,7 @@ export const useUpdateOneObjectMetadataItem = () => {
           operationType: CrudOperationType.UPDATE,
         });
       } else {
-        enqueueErrorSnackBar({ message: t`An error occurred.` });
+        enqueueToast({ status: 'error', children: t`An error occurred.` });
       }
 
       return {
@@ -77,6 +101,7 @@ export const useUpdateOneObjectMetadataItem = () => {
 
   return {
     updateOneObjectMetadataItem,
+    refetchCommandMenuItems,
     loading,
   };
 };

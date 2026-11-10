@@ -1,8 +1,9 @@
-// Error codes matching backend AgentExceptionCode and BillingExceptionCode
-export const AIChatErrorCode = {
-  BILLING_CREDITS_EXHAUSTED: 'BILLING_CREDITS_EXHAUSTED',
+export const AiChatErrorCode = {
+  CREDITS_EXHAUSTED: 'CREDITS_EXHAUSTED',
+  CONTEXT_WINDOW_EXCEEDED: 'CONTEXT_WINDOW_EXCEEDED',
   API_KEY_NOT_CONFIGURED: 'API_KEY_NOT_CONFIGURED',
+  CONNECTION_LOST: 'CONNECTION_LOST',
+  TOOL_CALL_NOT_PENDING: 'TOOL_CALL_NOT_PENDING',
+  QUOTA_EXHAUSTED: 'QUOTA_EXHAUSTED',
+  USER_CREDITS_EXHAUSTED: 'USER_CREDITS_EXHAUSTED',
 } as const;
-
-export type AIChatErrorCodeType =
-  (typeof AIChatErrorCode)[keyof typeof AIChatErrorCode];

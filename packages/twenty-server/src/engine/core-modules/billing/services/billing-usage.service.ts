@@ -1,178 +1,285 @@
 /* @license Enterprise */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
 
 import { isDefined } from 'twenty-shared/utils';
-import { type Repository } from 'typeorm';
+import { WorkspaceActivationStatus } from 'twenty-shared/workspace';
 
+import { ClickHouseService } from 'src/database/clickhouse/clickhouse.service';
+import { formatDateTimeForClickHouse } from 'src/database/clickhouse/utils/format-date-time-for-clickhouse.util';
+import { CoreEntityCacheService } from 'src/engine/core-entity-cache/services/core-entity-cache.service';
 import {
   BillingException,
   BillingExceptionCode,
 } from 'src/engine/core-modules/billing/billing.exception';
-import { type BillingMeteredProductUsageDTO } from 'src/engine/core-modules/billing/dtos/billing-metered-product-usage.dto';
-import { BillingCustomerEntity } from 'src/engine/core-modules/billing/entities/billing-customer.entity';
+import { NO_BILLING_SUBSCRIPTION } from 'src/engine/core-modules/billing/constants/no-billing-subscription.constant';
+import { type BillingResourceCreditUsageDTO } from 'src/engine/core-modules/billing/dtos/billing-resource-credit-usage.dto';
 import { BillingSubscriptionEntity } from 'src/engine/core-modules/billing/entities/billing-subscription.entity';
 import { SubscriptionStatus } from 'src/engine/core-modules/billing/enums/billing-subscription-status.enum';
+import { BillingCreditGrantService } from 'src/engine/core-modules/billing/services/billing-credit-grant.service';
 import { BillingSubscriptionItemService } from 'src/engine/core-modules/billing/services/billing-subscription-item.service';
 import { BillingSubscriptionService } from 'src/engine/core-modules/billing/services/billing-subscription.service';
-import { StripeBillingMeterEventService } from 'src/engine/core-modules/billing/stripe/services/stripe-billing-meter-event.service';
-import { StripeCreditGrantService } from 'src/engine/core-modules/billing/stripe/services/stripe-credit-grant.service';
-import { type UsageEvent } from 'src/engine/core-modules/usage/types/usage-event.type';
+import { BillingWorkspaceCreditAllowanceService } from 'src/engine/core-modules/billing/services/billing-workspace-credit-allowance.service';
+import {
+  type CurrentBillingSubscription,
+  type FlatBillingSubscription,
+} from 'src/engine/core-modules/billing/types/flat-billing-subscription.type';
+import { type SubscriptionInactiveReason } from 'src/engine/core-modules/billing/types/subscription-inactive-reason.type';
+import { computePlanWorkspaceCreditsMicro } from 'src/engine/core-modules/billing/utils/compute-plan-workspace-credits-micro.util';
+import { findActiveWorkspaceCreditAllowanceMicro } from 'src/engine/core-modules/billing/utils/find-active-workspace-credit-allowance-micro.util';
+import { getBillingSubscriptionPeriod } from 'src/engine/core-modules/billing/utils/get-billing-subscription-period.util';
+import { getCurrentPeriodMaxSeats } from 'src/engine/core-modules/billing/utils/get-current-period-max-seats.util';
 import { TwentyConfigService } from 'src/engine/core-modules/twenty-config/twenty-config.service';
+import { UsageAnalyticsService } from 'src/engine/core-modules/usage/services/usage-analytics.service';
 import { type WorkspaceEntity } from 'src/engine/core-modules/workspace/workspace.entity';
+import { WorkspaceCacheService } from 'src/engine/workspace-cache/services/workspace-cache.service';
+
+type UsageSumRow = {
+  total: string | number | null;
+};
 
 @Injectable()
 export class BillingUsageService {
   protected readonly logger = new Logger(BillingUsageService.name);
   constructor(
-    @InjectRepository(BillingCustomerEntity)
-    private readonly billingCustomerRepository: Repository<BillingCustomerEntity>,
+    private readonly billingCreditGrantService: BillingCreditGrantService,
     private readonly billingSubscriptionService: BillingSubscriptionService,
-    private readonly stripeBillingMeterEventService: StripeBillingMeterEventService,
     private readonly twentyConfigService: TwentyConfigService,
     private readonly billingSubscriptionItemService: BillingSubscriptionItemService,
-    private readonly stripeCreditGrantService: StripeCreditGrantService,
+    private readonly workspaceCacheService: WorkspaceCacheService,
+    private readonly clickHouseService: ClickHouseService,
+    private readonly coreEntityCacheService: CoreEntityCacheService,
+    private readonly usageAnalyticsService: UsageAnalyticsService,
+    private readonly billingWorkspaceCreditAllowanceService: BillingWorkspaceCreditAllowanceService,
   ) {}
 
-  async canFeatureBeUsed(workspaceId: string): Promise<boolean> {
+  async getSubscriptionInactiveReason(
+    workspaceId: string,
+  ): Promise<SubscriptionInactiveReason | null> {
     if (!this.twentyConfigService.get('IS_BILLING_ENABLED')) {
-      return true;
+      return null;
     }
 
-    const billingSubscription =
-      await this.billingSubscriptionService.getCurrentBillingSubscription({
-        workspaceId,
-      });
+    const workspace = await this.coreEntityCacheService.get(
+      'workspaceEntity',
+      workspaceId,
+    );
 
-    return !!billingSubscription;
+    if (
+      isDefined(workspace) &&
+      workspace.activationStatus === WorkspaceActivationStatus.SUSPENDED
+    ) {
+      return 'WORKSPACE_SUSPENDED';
+    }
+
+    const currentBillingSubscription =
+      await this.getCachedCurrentBillingSubscription(workspaceId);
+
+    if (currentBillingSubscription === NO_BILLING_SUBSCRIPTION) {
+      return 'NO_SUBSCRIPTION';
+    }
+
+    return null;
   }
 
-  async billUsage({
-    workspaceId,
-    usageEvents,
-  }: {
-    workspaceId: string;
-    usageEvents: UsageEvent[];
-  }) {
-    const workspaceStripeCustomer =
-      await this.billingCustomerRepository.findOne({
-        where: {
-          workspaceId,
-        },
-      });
-
-    if (!workspaceStripeCustomer) {
-      throw new BillingException(
-        'Stripe customer not found',
-        BillingExceptionCode.BILLING_CUSTOMER_NOT_FOUND,
-      );
-    }
-
-    try {
-      await Promise.all(
-        usageEvents.map((usageEvent) =>
-          this.stripeBillingMeterEventService.sendBillingMeterEvent({
-            usageEvent,
-            stripeCustomerId: workspaceStripeCustomer.stripeCustomerId,
-          }),
-        ),
-      );
-    } catch (error) {
-      throw new BillingException(
-        `Failed to send billing meter events to Stripe: ${error}`,
-        BillingExceptionCode.BILLING_METER_EVENT_FAILED,
-      );
-    }
-  }
-
-  async getMeteredProductsUsage(
+  async getResourceCreditProductUsage(
     workspace: WorkspaceEntity,
-  ): Promise<BillingMeteredProductUsageDTO[]> {
+  ): Promise<BillingResourceCreditUsageDTO[]> {
     const subscription =
       await this.billingSubscriptionService.getCurrentBillingSubscriptionOrThrow(
         { workspaceId: workspace.id },
       );
 
-    const meteredSubscriptionItemDetails =
-      await this.billingSubscriptionItemService.getMeteredSubscriptionItemDetails(
-        subscription.id,
+    const resourceCreditItemDetail =
+      await this.billingSubscriptionItemService.getResourceCreditSubscriptionItemDetails(
+        subscription,
       );
 
-    const { periodStart, periodEnd } = this.getSubscriptionPeriod(subscription);
-
-    return Promise.all(
-      meteredSubscriptionItemDetails.map((item) =>
-        this.buildMeteredProductUsage(
-          subscription,
-          item,
-          periodStart,
-          periodEnd,
-        ),
-      ),
-    );
-  }
-
-  private getSubscriptionPeriod(subscription: BillingSubscriptionEntity): {
-    periodStart: Date;
-    periodEnd: Date;
-  } {
-    const isTrialing =
-      subscription.status === SubscriptionStatus.Trialing &&
-      isDefined(subscription.trialStart) &&
-      isDefined(subscription.trialEnd);
-
-    if (isTrialing) {
-      return {
-        periodStart: subscription.trialStart!,
-        periodEnd: subscription.trialEnd!,
-      };
+    if (!isDefined(resourceCreditItemDetail)) {
+      throw new BillingException(
+        `Resource credit item not found for workspace ${workspace.id}`,
+        BillingExceptionCode.BILLING_SUBSCRIPTION_ITEM_NOT_FOUND,
+      );
     }
 
-    return {
-      periodStart: subscription.currentPeriodStart,
-      periodEnd: subscription.currentPeriodEnd,
-    };
-  }
+    const { periodStart, periodEnd } =
+      getBillingSubscriptionPeriod(subscription);
 
-  private async buildMeteredProductUsage(
-    subscription: BillingSubscriptionEntity,
-    item: Awaited<
-      ReturnType<
-        typeof this.billingSubscriptionItemService.getMeteredSubscriptionItemDetails
-      >
-    >[number],
-    periodStart: Date,
-    periodEnd: Date,
-  ): Promise<BillingMeteredProductUsageDTO> {
-    const meterEventsSum =
-      await this.stripeBillingMeterEventService.sumMeterEvents(
-        item.stripeMeterId,
-        subscription.stripeCustomerId,
+    return [
+      await this.buildResourceCreditUsage(
+        workspace.id,
+        subscription,
+        resourceCreditItemDetail,
         periodStart,
         periodEnd,
-      );
+      ),
+    ];
+  }
 
-    const grantedCredits =
-      subscription.status === SubscriptionStatus.Trialing
-        ? item.freeTrialQuantity
-        : item.tierQuantity;
+  private async buildResourceCreditUsage(
+    workspaceId: string,
+    subscription: BillingSubscriptionEntity,
+    item: NonNullable<
+      Awaited<
+        ReturnType<
+          typeof this.billingSubscriptionItemService.getResourceCreditSubscriptionItemDetails
+        >
+      >
+    >,
+    periodStart: Date,
+    periodEnd: Date,
+  ): Promise<BillingResourceCreditUsageDTO> {
+    const isTrialing = subscription.status === SubscriptionStatus.Trialing;
 
-    const rolloverCredits =
-      await this.stripeCreditGrantService.getCustomerCreditBalance(
-        subscription.stripeCustomerId,
-        item.unitPriceCents,
-      );
+    const [
+      creditsUsed,
+      workspaceCreditsExtraGranted,
+      workspaceCreditAllowances,
+    ] = await Promise.all([
+      // Fails open: an unreadable usage total must never block a paying workspace
+      this.usageAnalyticsService
+        .getCreditsUsedMicroForBillingPeriod({ workspaceId, periodStart })
+        .catch((error) => {
+          this.logger.error(
+            `Could not read credits used for workspace ${workspaceId}`,
+            error,
+          );
+
+          return { workspaceCreditsUsedMicro: 0, userCreditsUsedMicro: 0 };
+        }),
+      this.billingCreditGrantService.getActiveCreditsMicro(workspaceId),
+      this.billingWorkspaceCreditAllowanceService.findUnexpiredWorkspaceCreditAllowances(
+        workspaceId,
+      ),
+    ]);
+
+    const nowMs = Date.now();
+
+    const workspaceCreditAllowanceMicro =
+      findActiveWorkspaceCreditAllowanceMicro({
+        workspaceCreditAllowances,
+        nowMs,
+        interval: subscription.interval,
+        isTrialing: false,
+      });
+
+    const workspaceCreditsSeats = getCurrentPeriodMaxSeats(subscription);
+
+    const workspaceCreditsGrantedForSeats =
+      workspaceCreditAllowanceMicro ??
+      computePlanWorkspaceCreditsMicro({
+        billingSubscriptionItems: subscription.billingSubscriptionItems,
+        interval: subscription.interval,
+        seats: workspaceCreditsSeats,
+      })?.workspaceCreditsForSeatsMicro ??
+      0;
+
+    const workspaceCreditsGranted = isTrialing
+      ? (findActiveWorkspaceCreditAllowanceMicro({
+          workspaceCreditAllowances,
+          nowMs,
+          interval: subscription.interval,
+          isTrialing: true,
+        }) ?? item.freeTrialQuantity)
+      : item.creditAmount + workspaceCreditsGrantedForSeats;
 
     return {
       productKey: item.productKey,
       periodStart,
       periodEnd,
-      usedCredits: meterEventsSum,
-      grantedCredits,
-      rolloverCredits,
-      totalGrantedCredits: grantedCredits + rolloverCredits,
+      workspaceCreditsUsed: creditsUsed.workspaceCreditsUsedMicro,
+      userCreditsUsed: creditsUsed.userCreditsUsedMicro,
+      workspaceCreditsGranted,
+      workspaceCreditsGrantedForSeats,
+      workspaceCreditsSeats,
+      workspaceCreditsExtraGranted,
+      workspaceCreditsTotalGranted:
+        workspaceCreditsGranted + workspaceCreditsExtraGranted,
       unitPriceCents: item.unitPriceCents,
     };
+  }
+
+  getTrialResourceUsageCap(subscription: BillingSubscriptionEntity): number {
+    return this.billingSubscriptionService.getTrialPeriodFreeWorkflowCredits(
+      subscription,
+    );
+  }
+
+  getPlanAllowance(
+    subscription: BillingSubscriptionEntity,
+  ): Pick<
+    FlatBillingSubscription,
+    'planAllowanceMicro' | 'workspaceCreditsForPackMicro'
+  > {
+    const isInFreeTrial = subscription.status === SubscriptionStatus.Trialing;
+
+    if (isInFreeTrial) {
+      return {
+        planAllowanceMicro: this.getTrialResourceUsageCap(subscription),
+        workspaceCreditsForPackMicro: 0,
+      };
+    }
+
+    const planWorkspaceCredits = computePlanWorkspaceCreditsMicro({
+      billingSubscriptionItems: subscription.billingSubscriptionItems,
+      interval: subscription.interval,
+      seats: getCurrentPeriodMaxSeats(subscription),
+    });
+
+    if (!isDefined(planWorkspaceCredits)) {
+      return { planAllowanceMicro: null, workspaceCreditsForPackMicro: 0 };
+    }
+
+    return {
+      planAllowanceMicro:
+        planWorkspaceCredits.workspaceCreditsForPackMicro +
+        planWorkspaceCredits.workspaceCreditsForSeatsMicro,
+      workspaceCreditsForPackMicro:
+        planWorkspaceCredits.workspaceCreditsForPackMicro,
+    };
+  }
+
+  // By event timestamp: at a transition currentPeriodStart has moved on, so periodStart would read the new period
+  // Null on a failed read: select swallows errors into [], while sum() always yields one row
+  async getWorkspaceCreditsUsedMicroBetweenOrNull({
+    workspaceId,
+    from,
+    to,
+  }: {
+    workspaceId: string;
+    from: Date;
+    to: Date;
+  }): Promise<number | null> {
+    const rows = await this.clickHouseService.select<UsageSumRow>(
+      `SELECT sum(creditsUsedMicro) - sum(userCreditsUsedMicro) AS total
+       FROM usageEvent
+       WHERE workspaceId = {workspaceId:String}
+         AND timestamp >= {from:DateTime64(3)} AND timestamp < {to:DateTime64(3)}`,
+      {
+        workspaceId,
+        from: formatDateTimeForClickHouse(from),
+        to: formatDateTimeForClickHouse(to),
+      },
+    );
+
+    if (rows.length === 0) {
+      return null;
+    }
+
+    const rawTotal = rows[0]?.total ?? 0;
+    const total = typeof rawTotal === 'string' ? Number(rawTotal) : rawTotal;
+
+    return Number.isFinite(total) ? total : 0;
+  }
+
+  async getCachedCurrentBillingSubscription(
+    workspaceId: string,
+  ): Promise<CurrentBillingSubscription> {
+    const { currentBillingSubscription } =
+      await this.workspaceCacheService.getOrRecompute(workspaceId, [
+        'currentBillingSubscription',
+      ]);
+
+    return currentBillingSubscription;
   }
 }

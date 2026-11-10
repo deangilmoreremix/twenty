@@ -14,7 +14,7 @@ import {
   CommonQueryRunnerException,
   CommonQueryRunnerExceptionCode,
 } from 'src/engine/api/common/common-query-runners/errors/common-query-runner.exception';
-import { STANDARD_ERROR_MESSAGE } from 'src/engine/api/common/common-query-runners/errors/standard-error-message.constant';
+import { STANDARD_ERROR_MESSAGE } from 'src/engine/constants/standard-error-message.constant';
 import { CommonBaseQueryRunnerContext } from 'src/engine/api/common/types/common-base-query-runner-context.type';
 import { CommonExtendedQueryRunnerContext } from 'src/engine/api/common/types/common-extended-query-runner-context.type';
 import {
@@ -25,7 +25,7 @@ import {
 } from 'src/engine/api/common/types/common-query-args.type';
 import { buildColumnsToSelect } from 'src/engine/api/graphql/graphql-query-runner/utils/build-columns-to-select';
 import { FlatEntityMaps } from 'src/engine/metadata-modules/flat-entity/types/flat-entity-maps.type';
-import { FlatFieldMetadata } from 'src/engine/metadata-modules/flat-field-metadata/types/flat-field-metadata.type';
+import { type OrmFlatFieldMetadata } from 'src/engine/metadata-modules/flat-field-metadata/types/orm-flat-field-metadata.type';
 import { FlatObjectMetadata } from 'src/engine/metadata-modules/flat-object-metadata/types/flat-object-metadata.type';
 
 @Injectable()
@@ -40,17 +40,16 @@ export class CommonFindOneQueryRunnerService extends CommonBaseQueryRunnerServic
     queryRunnerContext: CommonExtendedQueryRunnerContext,
   ): Promise<ObjectRecord> {
     const {
-      repository,
       authContext,
-      rolePermissionConfig,
-      workspaceDataSource,
       flatObjectMetadataMaps,
       flatFieldMetadataMaps,
       flatObjectMetadata,
       commonQueryParser,
     } = queryRunnerContext;
 
-    const queryBuilder = repository.createQueryBuilder(
+    const readRepository = this.getReadRepository(queryRunnerContext);
+
+    const queryBuilder = readRepository.createQueryBuilder(
       flatObjectMetadata.nameSingular,
     );
 
@@ -103,9 +102,8 @@ export class CommonFindOneQueryRunnerService extends CommonBaseQueryRunnerServic
         >,
         limit: QUERY_MAX_RECORDS_FROM_RELATION,
         authContext,
-        workspaceDataSource,
-        rolePermissionConfig,
         selectedFields: args.selectedFieldsResult.select,
+        ...this.getNestedRelationsReadPathOptions(),
       });
     }
 
@@ -116,13 +114,18 @@ export class CommonFindOneQueryRunnerService extends CommonBaseQueryRunnerServic
     args: CommonInput<FindOneQueryArgs>,
     queryRunnerContext: CommonBaseQueryRunnerContext,
   ): Promise<CommonInput<FindOneQueryArgs>> {
-    const { flatObjectMetadata, flatFieldMetadataMaps } = queryRunnerContext;
+    const {
+      flatObjectMetadata,
+      flatObjectMetadataMaps,
+      flatFieldMetadataMaps,
+    } = queryRunnerContext;
 
     return {
       ...args,
       filter: this.filterArgProcessor.process({
         filter: args.filter,
         flatObjectMetadata,
+        flatObjectMetadataMaps,
         flatFieldMetadataMaps,
       }),
     };
@@ -132,7 +135,7 @@ export class CommonFindOneQueryRunnerService extends CommonBaseQueryRunnerServic
     queryResult: ObjectRecord,
     flatObjectMetadata: FlatObjectMetadata,
     flatObjectMetadataMaps: FlatEntityMaps<FlatObjectMetadata>,
-    flatFieldMetadataMaps: FlatEntityMaps<FlatFieldMetadata>,
+    flatFieldMetadataMaps: FlatEntityMaps<OrmFlatFieldMetadata>,
     authContext: WorkspaceAuthContext,
   ): Promise<ObjectRecord> {
     return this.commonResultGettersService.processRecord(

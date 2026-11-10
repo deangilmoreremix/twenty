@@ -1,15 +1,18 @@
-import { createHash } from 'crypto';
+import { type OnModuleDestroy } from '@nestjs/common';
 
-import { ConfigVariables } from 'src/engine/core-modules/twenty-config/config-variables';
-import { type ConfigVariablesGroup } from 'src/engine/core-modules/twenty-config/enums/config-variables-group.enum';
+import { isDefined } from 'twenty-shared/utils';
+
+import { type ConfigGroupHashService } from 'src/engine/core-modules/twenty-config/services/config-group-hash.service';
 import { type TwentyConfigService } from 'src/engine/core-modules/twenty-config/twenty-config.service';
-import { TypedReflect } from 'src/utils/typed-reflect';
 
-export abstract class DriverFactoryBase<TDriver> {
+export abstract class DriverFactoryBase<TDriver> implements OnModuleDestroy {
   private currentDriver: TDriver | null = null;
   private currentConfigKey: string | null = null;
 
-  constructor(protected readonly twentyConfigService: TwentyConfigService) {}
+  constructor(
+    protected readonly twentyConfigService: TwentyConfigService,
+    protected readonly configGroupHashService: ConfigGroupHashService,
+  ) {}
 
   getCurrentDriver(): TDriver {
     let configKey: string;
@@ -23,14 +26,19 @@ export abstract class DriverFactoryBase<TDriver> {
     }
 
     if (this.currentConfigKey !== configKey) {
+      let newDriver: TDriver;
+
       try {
-        this.currentDriver = this.createDriver();
+        newDriver = this.createDriver();
       } catch (error) {
         throw new Error(
           `Failed to create driver for ${this.constructor.name} with config key: ${configKey}. Original error: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
 
+      this.releaseCurrentDriver();
+
+      this.currentDriver = newDriver;
       this.currentConfigKey = configKey;
     }
 
@@ -43,31 +51,22 @@ export abstract class DriverFactoryBase<TDriver> {
     return this.currentDriver;
   }
 
-  protected getConfigGroupHash(group: ConfigVariablesGroup): string {
-    const groupVariables = this.getConfigVariablesByGroup(group);
+  onModuleDestroy(): void {
+    this.releaseCurrentDriver();
 
-    const configValues = groupVariables
-      .map((key) => `${key}=${this.twentyConfigService.get(key)}`)
-      .sort()
-      .join('|');
-
-    return createHash('sha256')
-      .update(configValues)
-      .digest('hex')
-      .substring(0, 16);
+    this.currentConfigKey = null;
   }
 
-  private getConfigVariablesByGroup(
-    group: ConfigVariablesGroup,
-  ): Array<keyof ConfigVariables> {
-    const metadata =
-      TypedReflect.getMetadata('config-variables', ConfigVariables) ?? {};
+  private releaseCurrentDriver(): void {
+    if (!isDefined(this.currentDriver)) {
+      return;
+    }
 
-    return Object.keys(metadata)
-      .filter((key) => metadata[key]?.group === group)
-      .map((key) => key as keyof ConfigVariables);
+    this.disposeDriver?.(this.currentDriver);
+    this.currentDriver = null;
   }
 
   protected abstract buildConfigKey(): string;
   protected abstract createDriver(): TDriver;
+  protected disposeDriver?(driver: TDriver): void;
 }

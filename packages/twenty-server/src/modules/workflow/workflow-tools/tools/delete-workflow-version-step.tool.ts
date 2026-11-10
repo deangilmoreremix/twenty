@@ -6,10 +6,11 @@ import {
 } from 'src/modules/workflow/workflow-tools/types/workflow-tool-dependencies.type';
 
 const deleteWorkflowVersionStepSchema = z.object({
-  workflowVersionId: z
+  coreWorkflowVersionId: z
     .string()
-    .describe('The ID of the workflow version containing the step'),
-  stepId: z.string().describe('The ID of the step to delete'),
+    .uuid()
+    .describe('The core workflow version UUID containing the step'),
+  stepId: z.string().uuid().describe('The UUID of the step to delete'),
 });
 
 type DeleteWorkflowVersionStepInput = z.infer<
@@ -17,7 +18,7 @@ type DeleteWorkflowVersionStepInput = z.infer<
 >;
 
 export const createDeleteWorkflowVersionStepTool = (
-  deps: Pick<WorkflowToolDependencies, 'workflowVersionStepService'>,
+  deps: Pick<WorkflowToolDependencies, 'coreWorkflowVersionMutationService'>,
   context: WorkflowToolContext,
 ) => ({
   name: 'delete_workflow_version_step' as const,
@@ -26,9 +27,10 @@ export const createDeleteWorkflowVersionStepTool = (
   inputSchema: deleteWorkflowVersionStepSchema,
   execute: async (parameters: DeleteWorkflowVersionStepInput) => {
     try {
-      return await deps.workflowVersionStepService.deleteWorkflowVersionStep({
+      return await deps.coreWorkflowVersionMutationService.deleteStep({
         workspaceId: context.workspaceId,
-        workflowVersionId: parameters.workflowVersionId,
+        userWorkspaceId: context.userWorkspaceId,
+        coreWorkflowVersionId: parameters.coreWorkflowVersionId,
         stepIdToDelete: parameters.stepId,
       });
     } catch (error) {

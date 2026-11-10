@@ -11,6 +11,7 @@ export const APPLICATION_FRAGMENT = gql`
     id
     name
     description
+    logoUrl
     version
     universalIdentifier
     applicationRegistrationId
@@ -18,20 +19,69 @@ export const APPLICATION_FRAGMENT = gql`
       id
       latestAvailableVersion
       sourceType
+      logoUrl
     }
     canBeUninstalled
+    autoUpgrade
+    createdAt
     defaultRoleId
     settingsCustomTabFrontComponentId
+    healthCheckLogicFunctionId
     availablePackages
     applicationVariables {
       id
       key
       value
       description
+      label
       isSecret
+      isDeprecated
+      isRequired
+      type
+      options
+      scope
     }
     agents {
       ...AgentFields
+    }
+    frontComponents {
+      id
+      name
+      description
+      applicationId
+      componentName
+      builtComponentChecksum
+      universalIdentifier
+      isHeadless
+      usesSdkClient
+      frontComponentSharedDependenciesChecksum
+      createdAt
+      updatedAt
+    }
+    commandMenuItems {
+      id
+      label
+      shortLabel
+      icon
+      isPinned
+      availabilityType
+      conditionalAvailabilityExpression
+      frontComponentId
+      universalIdentifier
+      applicationId
+      createdAt
+      updatedAt
+    }
+    settingsMenuItems {
+      id
+      universalIdentifier
+      applicationId
+      frontComponentId
+      title
+      icon
+      position
+      scope
+      slug
     }
     objects {
       ...ObjectMetadataFields

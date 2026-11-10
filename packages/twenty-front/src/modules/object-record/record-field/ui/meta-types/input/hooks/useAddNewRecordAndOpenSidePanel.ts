@@ -5,16 +5,22 @@ import { useOpenRecordInSidePanel } from '@/side-panel/hooks/useOpenRecordInSide
 import { useApolloCoreClient } from '@/object-metadata/hooks/useApolloCoreClient';
 import { type FieldMetadataItem } from '@/object-metadata/types/FieldMetadataItem';
 import { type EnrichedObjectMetadataItem } from '@/object-metadata/types/EnrichedObjectMetadataItem';
+import { useBuildRecordInputFromRLSPredicates } from '@/object-record/hooks/useBuildRecordInputFromRLSPredicates';
 import { useCreateOneRecord } from '@/object-record/hooks/useCreateOneRecord';
+import { useObjectPermissionsForObject } from '@/object-record/hooks/useObjectPermissionsForObject';
+import { buildSourceRecordLink } from '@/object-record/record-field/ui/meta-types/input/utils/buildSourceRecordLink';
+import { createRecordWithAttachmentHandler } from '@/object-record/record-field/ui/meta-types/input/utils/createRecordWithAttachmentHandler';
+import { useRecordCreationForm } from '@/object-record/record-form/hooks/useRecordCreationForm';
+import { canCreateRecordsForObjectMetadataItem } from '@/object-record/utils/canCreateRecordsForObjectMetadataItem';
 
 import { useUpdateOneRecord } from '@/object-record/hooks/useUpdateOneRecord';
-import { viewableRecordIdState } from '@/object-record/record-side-panel/states/viewableRecordIdState';
-import { viewableRecordNameSingularState } from '@/object-record/record-side-panel/states/viewableRecordNameSingularState';
-import { useSetAtomState } from '@/ui/utilities/state/jotai/hooks/useSetAtomState';
 import { buildRecordLabelPayload } from '@/object-record/utils/buildRecordLabelPayload';
 import { getOperationName } from '~/utils/getOperationName';
-import { computeMorphRelationFieldName, isDefined } from 'twenty-shared/utils';
-import { FieldMetadataType, RelationType } from '~/generated-metadata/graphql';
+import {
+  computeRelationGqlFieldJoinColumnName,
+  isDefined,
+} from 'twenty-shared/utils';
+import { RelationType } from '~/generated-metadata/graphql';
 
 type useAddNewRecordAndOpenSidePanelProps = {
   fieldMetadataItem: FieldMetadataItem;
@@ -33,23 +39,31 @@ export const useAddNewRecordAndOpenSidePanel = ({
   relationFieldMetadataItem,
   recordId,
 }: useAddNewRecordAndOpenSidePanelProps) => {
-  const setViewableRecordId = useSetAtomState(viewableRecordIdState);
-  const setViewableRecordNameSingular = useSetAtomState(
-    viewableRecordNameSingularState,
-  );
-
   const { createOneRecord } = useCreateOneRecord({
     objectNameSingular: relationObjectMetadataNameSingular,
   });
 
   const { updateOneRecord } = useUpdateOneRecord();
 
+  const { buildRecordInputFromRLSPredicates } =
+    useBuildRecordInputFromRLSPredicates({
+      objectMetadataItem: relationObjectMetadataItem,
+    });
+
   const { openRecordInSidePanel } = useOpenRecordInSidePanel();
+  const { requestRecordCreation } = useRecordCreationForm();
 
   const apolloCoreClient = useApolloCoreClient();
 
+  const relationObjectPermissions = useObjectPermissionsForObject(
+    relationObjectMetadataItem.id,
+  );
+
   if (
-    relationObjectMetadataNameSingular === 'workspaceMember' ||
+    !canCreateRecordsForObjectMetadataItem({
+      objectPermissions: relationObjectPermissions,
+      objectMetadataItem: relationObjectMetadataItem,
+    }) ||
     !isDefined(objectMetadataItem.nameSingular)
   ) {
     return {
@@ -58,58 +72,73 @@ export const useAddNewRecordAndOpenSidePanel = ({
   }
   const relationFieldMetadataItemRelationType =
     relationFieldMetadataItem.settings?.relationType;
+  const shouldAttachToSourceRecord =
+    relationFieldMetadataItemRelationType === RelationType.ONE_TO_MANY;
 
   return {
     createNewRecordAndOpenSidePanel: async (searchInput?: string) => {
-      const newRecordId = v4();
-
-      const createRecordPayload = buildRecordLabelPayload({
-        id: newRecordId,
-        searchInput,
-        objectMetadataItem: relationObjectMetadataItem,
-      });
-
-      if (relationFieldMetadataItemRelationType === RelationType.MANY_TO_ONE) {
-        const gqlField =
-          relationFieldMetadataItem.type === FieldMetadataType.RELATION
-            ? relationFieldMetadataItem.name
-            : computeMorphRelationFieldName({
-                fieldName: relationFieldMetadataItem.name,
-                relationType: relationFieldMetadataItemRelationType,
-                targetObjectMetadataNameSingular:
-                  objectMetadataItem.nameSingular,
-                targetObjectMetadataNamePlural: objectMetadataItem.namePlural,
-              });
-
-        createRecordPayload[`${gqlField}Id`] = recordId;
-      }
-
-      await createOneRecord(createRecordPayload);
-
-      if (relationFieldMetadataItemRelationType === RelationType.ONE_TO_MANY) {
+      const attachRecord = async (targetRecordId: string) => {
         await updateOneRecord({
-          objectNameSingular:
-            objectMetadataItem.nameSingular ?? 'workspaceMember',
+          objectNameSingular: objectMetadataItem.nameSingular,
           idToUpdate: recordId,
           updateOneRecordInput: {
-            [`${fieldMetadataItem.name}Id`]: newRecordId,
+            [computeRelationGqlFieldJoinColumnName({
+              name: fieldMetadataItem.name,
+            })]: targetRecordId,
           },
         });
-      }
+      };
 
-      setViewableRecordId(newRecordId);
-      setViewableRecordNameSingular(relationObjectMetadataNameSingular);
-
-      apolloCoreClient.refetchQueries({
-        include: [getOperationName(SEARCH_QUERY) ?? ''],
+      const saveRecordWithAttachment = createRecordWithAttachmentHandler({
+        fieldMetadataItems: relationObjectMetadataItem.fields,
+        createRecord: (recordInput) =>
+          createOneRecord({ ...recordInput, id: v4() }),
+        updateRecord: async ({ recordId: targetRecordId, recordInput }) => {
+          await updateOneRecord({
+            objectNameSingular: relationObjectMetadataNameSingular,
+            idToUpdate: targetRecordId,
+            updateOneRecordInput: recordInput,
+          });
+        },
+        attachRecord: shouldAttachToSourceRecord ? attachRecord : undefined,
       });
 
+      const createdRecord = await requestRecordCreation({
+        objectMetadataItem: relationObjectMetadataItem,
+        initialDraftRecord: {
+          ...buildRecordInputFromRLSPredicates(),
+          ...buildRecordLabelPayload({
+            searchInput,
+            objectMetadataItem: relationObjectMetadataItem,
+          }),
+          ...buildSourceRecordLink({
+            relationFieldMetadataItem,
+            sourceObjectMetadataId: objectMetadataItem.id,
+            sourceRecordId: recordId,
+          }),
+        },
+        canCreateAnother: !shouldAttachToSourceRecord,
+        createRecord: async (draftRecord) => {
+          const createdRecord = await saveRecordWithAttachment(draftRecord);
+
+          apolloCoreClient.refetchQueries({
+            include: [getOperationName(SEARCH_QUERY) ?? ''],
+          });
+
+          return createdRecord;
+        },
+      });
+
+      if (!isDefined(createdRecord)) {
+        return undefined;
+      }
+
       openRecordInSidePanel({
-        recordId: newRecordId,
+        recordId: createdRecord.id,
         objectNameSingular: relationObjectMetadataNameSingular,
       });
 
-      return newRecordId;
+      return createdRecord.id;
     },
   };
 };

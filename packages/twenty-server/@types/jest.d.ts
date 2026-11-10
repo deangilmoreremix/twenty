@@ -1,9 +1,9 @@
+import { type createWorkflowTestServices } from '../test/integration/utils/create-workflow-test-services';
 import { type INestApplication } from '@nestjs/common';
 
 import 'jest';
 import { type DataSource } from 'typeorm';
 
-import { type DataSeedWorkspaceCommand } from 'src/database/commands/data-seed-dev-workspace.command';
 import { type DataSourceService } from 'src/engine/metadata-modules/data-source/data-source.service';
 
 declare module '@jest/types' {
@@ -32,11 +32,11 @@ declare global {
   const API_KEY_ACCESS_TOKEN: string;
   const APPLE_SARAH_IMPERSONATE_TIM_INVALID_ACCESS_TOKEN: string;
 
-  // Additional global properties set during test setup
   var testDataSource: DataSource;
+  var workflowTestServices: ReturnType<typeof createWorkflowTestServices>;
   var app: INestApplication;
   var dataSourceService: DataSourceService;
-  var dataSeedWorkspaceCommand: DataSeedWorkspaceCommand;
+  var jobDrainState: { lastStalledFingerprint: string | null };
 }
 
 export {};

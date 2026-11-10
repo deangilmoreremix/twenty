@@ -1,7 +1,21 @@
-import { type LanguageModel, NoSuchToolError, Output, generateText } from 'ai';
+import { Logger } from '@nestjs/common';
+
+import {
+  type LanguageModel,
+  type LanguageModelUsage,
+  NoSuchToolError,
+  Output,
+  generateText,
+} from 'ai';
+import { isDefined } from 'twenty-shared/utils';
 import { type z } from 'zod';
 
-import { AI_TELEMETRY_CONFIG } from 'src/engine/metadata-modules/ai/ai-models/constants/ai-telemetry.const';
+import { UsageOperationType } from 'src/engine/core-modules/usage/enums/usage-operation-type.enum';
+import { type UsageSpenders } from 'src/engine/core-modules/usage/types/usage-spenders.type';
+import { AiBillingService } from 'src/engine/metadata-modules/ai/ai-billing/services/ai-billing.service';
+import { buildAiTelemetry } from 'src/engine/metadata-modules/ai/ai-models/utils/build-ai-telemetry.util';
+
+const logger = new Logger('repairToolCall');
 
 type ToolCall = {
   type: 'tool-call';
@@ -10,20 +24,30 @@ type ToolCall = {
   input: string;
 };
 
+type RepairToolCallBillingContext = {
+  aiBillingService: AiBillingService;
+  isContentRecordingAllowed: boolean;
+  modelId: string;
+  workspaceId: string;
+  spenders: UsageSpenders;
+  operationType: UsageOperationType;
+};
+
 export const repairToolCall = async ({
   toolCall,
   tools,
   inputSchema,
   error,
   model,
+  billingContext,
 }: {
   toolCall: ToolCall;
   tools: Record<string, unknown>;
   inputSchema: (toolCall: { toolName: string }) => unknown;
   error: Error;
   model: LanguageModel;
+  billingContext: RepairToolCallBillingContext;
 }): Promise<ToolCall | null> => {
-  // Don't attempt to fix invalid tool names
   if (NoSuchToolError.isInstance(error)) {
     return null;
   }
@@ -40,8 +64,10 @@ export const repairToolCall = async ({
     return null;
   }
 
+  let usage: LanguageModelUsage | undefined;
+
   try {
-    const { output: repairedInput } = await generateText({
+    const result = await generateText({
       model,
       output: Output.object({ schema: schema as z.ZodTypeAny }),
       prompt: [
@@ -59,8 +85,17 @@ export const repairToolCall = async ({
         `- Object structures must match the schema shape`,
         `- Array items must follow the specified format`,
       ].join('\n'),
-      experimental_telemetry: AI_TELEMETRY_CONFIG,
+      ...buildAiTelemetry({
+        functionId: 'repair-tool-call',
+        isContentRecordingAllowed: billingContext.isContentRecordingAllowed,
+        workspaceId: billingContext.workspaceId,
+        userWorkspaceId: billingContext.spenders.userWorkspaceId,
+      }),
     });
+
+    usage = result.usage;
+
+    const repairedInput = result.output;
 
     if (repairedInput == null) {
       return null;
@@ -73,7 +108,23 @@ export const repairToolCall = async ({
       input: JSON.stringify(repairedInput),
     };
   } catch {
-    // If repair fails, return null to let the error propagate
     return null;
+  } finally {
+    if (isDefined(usage)) {
+      void billingContext.aiBillingService
+        .calculateAndBillUsage({
+          modelId: billingContext.modelId,
+          billingInput: { usage },
+          workspaceId: billingContext.workspaceId,
+          operationType: billingContext.operationType,
+          spenders: billingContext.spenders,
+        })
+        .catch((error: unknown) =>
+          logger.error(
+            `Could not bill the repair of tool call ${toolCall.toolCallId} in workspace ${billingContext.workspaceId}`,
+            error instanceof Error ? error.stack : error,
+          ),
+        );
+    }
   }
 };

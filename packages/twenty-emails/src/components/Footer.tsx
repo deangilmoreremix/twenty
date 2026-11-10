@@ -1,5 +1,5 @@
 import { type I18n } from '@lingui/core';
-import { Column, Container, Row } from '@react-email/components';
+import { Column, Container, Row } from 'react-email';
 import { Link } from 'src/components/Link';
 import { ShadowText } from 'src/components/ShadowText';
 
@@ -36,7 +36,7 @@ export const Footer = ({ i18n }: FooterProps) => {
         <Column>
           <ShadowText>
             <Link
-              href="https://docs.twenty.com/user-guide/introduction"
+              href="https://docs.twenty.com/getting-started/introduction"
               value={i18n._('User guide')}
               aria-label={i18n._("Read Twenty's user guide")}
             />

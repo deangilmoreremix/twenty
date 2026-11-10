@@ -6,7 +6,10 @@ import {
   GraphQLInputObjectType,
 } from 'graphql';
 import { CompositeType } from 'twenty-shared/types';
-import { pascalCase } from 'twenty-shared/utils';
+import {
+  pascalCase,
+  isCompositePropertySupportedInGroupBy,
+} from 'twenty-shared/utils';
 
 import { GqlInputTypeDefinitionKind } from 'src/engine/api/graphql/workspace-schema-builder/enums/gql-input-type-definition-kind.enum';
 import { TypeMapperService } from 'src/engine/api/graphql/workspace-schema-builder/services/type-mapper.service';
@@ -44,7 +47,6 @@ export class CompositeFieldMetadataGroupByGqlInputTypeGenerator {
     const fields: GraphQLInputFieldConfigMap = {};
 
     for (const property of compositeType.properties) {
-      // Relation fields are not supported in composite types
       if (isMorphOrRelationFieldMetadataType(property.type)) {
         this.logger.error(
           'Relation fields are not supported in composite types',
@@ -54,8 +56,7 @@ export class CompositeFieldMetadataGroupByGqlInputTypeGenerator {
         throw new Error('Relation fields are not supported in composite types');
       }
 
-      // Skip hidden fields
-      if (property.hidden === true) {
+      if (!isCompositePropertySupportedInGroupBy(property)) {
         continue;
       }
 

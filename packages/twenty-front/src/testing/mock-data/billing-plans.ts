@@ -5,7 +5,11 @@ export const mockBillingPlans = {
     {
       __typename: 'BillingPlan',
       planKey: 'PRO',
-      licensedProducts: [
+      isSellable: true,
+      isCheckoutDefault: true,
+      upgradePlanKeys: ['ENTERPRISE'],
+      downgradePlanKeys: [],
+      baseProducts: [
         {
           __typename: 'BillingLicensedProduct',
           name: 'Pro Plan',
@@ -13,6 +17,7 @@ export const mockBillingPlans = {
           images: [],
           metadata: {
             __typename: 'BillingProductMetadata',
+            isLegacy: null,
             productKey: 'BASE_PRODUCT',
             planKey: 'PRO',
             priceUsageBased: 'LICENSED',
@@ -24,6 +29,8 @@ export const mockBillingPlans = {
               unitAmount: 1200,
               recurringInterval: 'Month',
               priceUsageType: 'LICENSED',
+              creditAmount: null,
+              isSellable: true,
             },
             {
               __typename: 'BillingPriceLicensed',
@@ -31,10 +38,13 @@ export const mockBillingPlans = {
               unitAmount: 10800,
               recurringInterval: 'Year',
               priceUsageType: 'LICENSED',
+              creditAmount: null,
+              isSellable: true,
             },
           ],
         },
       ],
+      resourceCreditProducts: [],
       meteredProducts: [
         {
           __typename: 'BillingMeteredProduct',
@@ -43,7 +53,8 @@ export const mockBillingPlans = {
           images: [],
           metadata: {
             __typename: 'BillingProductMetadata',
-            productKey: 'WORKFLOW_NODE_EXECUTION',
+            isLegacy: null,
+            productKey: 'RESOURCE_CREDIT',
             planKey: 'PRO',
             priceUsageBased: 'METERED',
           },
@@ -295,7 +306,11 @@ export const mockBillingPlans = {
     {
       __typename: 'BillingPlan',
       planKey: 'ENTERPRISE',
-      licensedProducts: [
+      isSellable: true,
+      isCheckoutDefault: false,
+      upgradePlanKeys: [],
+      downgradePlanKeys: ['PRO'],
+      baseProducts: [
         {
           __typename: 'BillingLicensedProduct',
           name: 'Organization Plan',
@@ -303,6 +318,7 @@ export const mockBillingPlans = {
           images: [],
           metadata: {
             __typename: 'BillingProductMetadata',
+            isLegacy: null,
             productKey: 'BASE_PRODUCT',
             planKey: 'ENTERPRISE',
             priceUsageBased: 'LICENSED',
@@ -314,6 +330,8 @@ export const mockBillingPlans = {
               unitAmount: 2500,
               recurringInterval: 'Month',
               priceUsageType: 'LICENSED',
+              creditAmount: null,
+              isSellable: true,
             },
             {
               __typename: 'BillingPriceLicensed',
@@ -321,10 +339,13 @@ export const mockBillingPlans = {
               unitAmount: 22800,
               recurringInterval: 'Year',
               priceUsageType: 'LICENSED',
+              creditAmount: null,
+              isSellable: true,
             },
           ],
         },
       ],
+      resourceCreditProducts: [],
       meteredProducts: [
         {
           __typename: 'BillingMeteredProduct',
@@ -333,7 +354,8 @@ export const mockBillingPlans = {
           images: [],
           metadata: {
             __typename: 'BillingProductMetadata',
-            productKey: 'WORKFLOW_NODE_EXECUTION',
+            isLegacy: null,
+            productKey: 'RESOURCE_CREDIT',
             planKey: 'ENTERPRISE',
             priceUsageBased: 'METERED',
           },
@@ -581,6 +603,28 @@ export const mockBillingPlans = {
           ],
         },
       ],
+    },
+    {
+      __typename: 'BillingPlan',
+      planKey: 'PRO_V2',
+      isSellable: false,
+      isCheckoutDefault: false,
+      upgradePlanKeys: [],
+      downgradePlanKeys: [],
+      baseProducts: [],
+      resourceCreditProducts: [],
+      meteredProducts: [],
+    },
+    {
+      __typename: 'BillingPlan',
+      planKey: 'ORGANIZATION_V2',
+      isSellable: false,
+      isCheckoutDefault: false,
+      upgradePlanKeys: [],
+      downgradePlanKeys: [],
+      baseProducts: [],
+      resourceCreditProducts: [],
+      meteredProducts: [],
     },
   ],
 } as ListPlansQuery;

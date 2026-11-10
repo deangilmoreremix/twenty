@@ -1,21 +1,24 @@
 import { type PageLayoutTab } from '@/page-layout/types/PageLayoutTab';
 import { type PageLayoutWidget } from '@/page-layout/types/PageLayoutWidget';
+import { isViewportFillingWidget } from '@/page-layout/widgets/utils/isViewportFillingWidget';
 import { GRAPH_TYPE_INFORMATION } from '@/side-panel/pages/page-layout/constants/GraphTypeInformation';
 import { getCurrentGraphTypeFromConfig } from '@/side-panel/pages/page-layout/utils/getCurrentGraphTypeFromConfig';
 import { isWidgetConfigurationOfTypeGraph } from '@/side-panel/pages/page-layout/utils/isWidgetConfigurationOfTypeGraph';
-import { t } from '@lingui/core/macro';
-import { useContext } from 'react';
+import { isNonEmptyString } from '@sniptt/guards';
 import { SidePanelPages } from 'twenty-shared/types';
 import { isDefined } from 'twenty-shared/utils';
 import {
-  IconAppWindow,
   IconFrame,
-  IconList,
+  IconLayoutDashboard,
+  IconListDetails,
+  IconPerspective,
   IconPlus,
   IconTable,
   type IconComponent,
-} from 'twenty-ui/display';
-import { ThemeContext } from 'twenty-ui/theme-constants';
+} from 'twenty-ui/icon';
+import { useIcons } from 'twenty-ui/icon/provider';
+import { useTheme } from 'twenty-ui/theme';
+import { useLingui } from '@lingui/react/macro';
 
 type PageLayoutHeaderInfo = {
   headerIcon: IconComponent | undefined;
@@ -25,6 +28,8 @@ type PageLayoutHeaderInfo = {
   isReadonly: boolean;
   tab: PageLayoutTab | undefined;
   widgetInEditMode: PageLayoutWidget | undefined;
+  isIconEditable: boolean;
+  selectedIconKey: string | null;
 };
 
 type UsePageLayoutHeaderInfoParams = {
@@ -37,6 +42,36 @@ type UsePageLayoutHeaderInfoParams = {
   editedTitle: string | null | undefined;
 };
 
+type GetPageLayoutWidgetHeaderInfoParams = {
+  editedTitle: string | null | undefined;
+  headerIcon: IconComponent | undefined;
+  headerIconColor: string;
+  headerType: string;
+  widgetInEditMode: PageLayoutWidget;
+};
+
+const getPageLayoutWidgetHeaderInfo = ({
+  editedTitle,
+  headerIcon,
+  headerIconColor,
+  headerType,
+  widgetInEditMode,
+}: GetPageLayoutWidgetHeaderInfoParams): PageLayoutHeaderInfo => ({
+  headerIcon,
+  headerIconColor,
+  headerType,
+  title: isDefined(editedTitle)
+    ? editedTitle
+    : isNonEmptyString(widgetInEditMode.title)
+      ? widgetInEditMode.title
+      : '',
+  isReadonly: false,
+  tab: undefined,
+  widgetInEditMode,
+  isIconEditable: false,
+  selectedIconKey: null,
+});
+
 export const usePageLayoutHeaderInfo = ({
   sidePanelPage,
   draftPageLayout,
@@ -44,8 +79,16 @@ export const usePageLayoutHeaderInfo = ({
   openTabId,
   editedTitle,
 }: UsePageLayoutHeaderInfoParams): PageLayoutHeaderInfo | null => {
-  const { theme } = useContext(ThemeContext);
+  const { t } = useLingui();
+  const theme = useTheme();
+  const { getIcon } = useIcons();
   const iconColor = theme.font.color.tertiary;
+
+  const widgetInEditMode = isDefined(pageLayoutEditingWidgetId)
+    ? draftPageLayout.tabs
+        .flatMap((tab) => tab.widgets)
+        .find((widget) => widget.id === pageLayoutEditingWidgetId)
+    : undefined;
 
   switch (sidePanelPage) {
     case SidePanelPages.PageLayoutTabSettings: {
@@ -65,56 +108,54 @@ export const usePageLayoutHeaderInfo = ({
           ? tab.title
           : '';
 
+      const resolvedTabIcon = isDefined(tab.icon)
+        ? getIcon(tab.icon)
+        : IconPerspective;
+
       return {
-        headerIcon: IconAppWindow,
+        headerIcon: resolvedTabIcon ?? IconPerspective,
         headerIconColor: iconColor,
         headerType: t`Tab`,
         title,
         isReadonly: false,
         tab,
         widgetInEditMode: undefined,
+        isIconEditable: true,
+        selectedIconKey: tab.icon ?? null,
       };
     }
 
-    case SidePanelPages.PageLayoutIframeSettings: {
-      if (!isDefined(pageLayoutEditingWidgetId)) {
-        return null;
-      }
-
-      const widgetInEditMode = draftPageLayout.tabs
-        .flatMap((tab) => tab.widgets)
-        .find((widget) => widget.id === pageLayoutEditingWidgetId);
-
+    case SidePanelPages.PageLayoutWidgetSettings: {
       if (!isDefined(widgetInEditMode)) {
         return null;
       }
 
-      const title = isDefined(editedTitle)
-        ? editedTitle
-        : isDefined(widgetInEditMode.title) && widgetInEditMode.title !== ''
-          ? widgetInEditMode.title
-          : '';
-
-      return {
-        headerIcon: IconFrame,
+      return getPageLayoutWidgetHeaderInfo({
+        editedTitle,
+        headerIcon: IconLayoutDashboard,
         headerIconColor: iconColor,
-        headerType: t`iFrame Widget`,
-        title,
-        isReadonly: false,
-        tab: undefined,
+        headerType: isViewportFillingWidget(widgetInEditMode)
+          ? t`Full-height Widget`
+          : t`Widget`,
         widgetInEditMode,
-      };
+      });
     }
 
-    case SidePanelPages.PageLayoutGraphTypeSelect: {
-      if (!isDefined(pageLayoutEditingWidgetId)) {
+    case SidePanelPages.DashboardIframeSettings: {
+      if (!isDefined(widgetInEditMode)) {
         return null;
       }
 
-      const widgetInEditMode = draftPageLayout.tabs
-        .flatMap((tab) => tab.widgets)
-        .find((widget) => widget.id === pageLayoutEditingWidgetId);
+      return getPageLayoutWidgetHeaderInfo({
+        editedTitle,
+        headerIcon: IconFrame,
+        headerIconColor: iconColor,
+        headerType: t`iFrame Widget`,
+        widgetInEditMode,
+      });
+    }
 
+    case SidePanelPages.DashboardChartSettings: {
       if (!isDefined(widgetInEditMode)) {
         return null;
       }
@@ -128,84 +169,58 @@ export const usePageLayoutHeaderInfo = ({
       );
       const graphTypeInfo = GRAPH_TYPE_INFORMATION[currentGraphType];
 
-      const title = isDefined(editedTitle)
-        ? editedTitle
-        : isDefined(widgetInEditMode.title) && widgetInEditMode.title !== ''
-          ? widgetInEditMode.title
-          : '';
-
-      return {
+      return getPageLayoutWidgetHeaderInfo({
+        editedTitle,
         headerIcon: graphTypeInfo.icon,
         headerIconColor: iconColor,
         headerType: t`Chart`,
-        title,
-        isReadonly: false,
-        tab: undefined,
         widgetInEditMode,
-      };
+      });
     }
 
-    case SidePanelPages.PageLayoutFieldsSettings: {
-      if (!isDefined(pageLayoutEditingWidgetId)) {
-        return null;
-      }
-
-      const widgetInEditMode = draftPageLayout.tabs
-        .flatMap((tab) => tab.widgets)
-        .find((widget) => widget.id === pageLayoutEditingWidgetId);
-
+    case SidePanelPages.RecordPageFieldsSettings: {
       if (!isDefined(widgetInEditMode)) {
         return null;
       }
 
-      const title = isDefined(editedTitle)
-        ? editedTitle
-        : isDefined(widgetInEditMode.title) && widgetInEditMode.title !== ''
-          ? widgetInEditMode.title
-          : '';
-
-      return {
-        headerIcon: IconList,
+      return getPageLayoutWidgetHeaderInfo({
+        editedTitle,
+        headerIcon: IconListDetails,
         headerIconColor: iconColor,
         headerType: t`Fields Widget`,
-        title,
-        isReadonly: false,
-        tab: undefined,
         widgetInEditMode,
-      };
+      });
     }
 
-    case SidePanelPages.PageLayoutRecordTableSettings: {
-      if (!isDefined(pageLayoutEditingWidgetId)) {
-        return null;
-      }
-
-      const widgetInEditMode = draftPageLayout.tabs
-        .flatMap((tab) => tab.widgets)
-        .find((widget) => widget.id === pageLayoutEditingWidgetId);
-
+    case SidePanelPages.RecordPageFieldSettings: {
       if (!isDefined(widgetInEditMode)) {
         return null;
       }
 
-      const title = isDefined(editedTitle)
-        ? editedTitle
-        : isDefined(widgetInEditMode.title) && widgetInEditMode.title !== ''
-          ? widgetInEditMode.title
-          : '';
-
-      return {
-        headerIcon: IconTable,
+      return getPageLayoutWidgetHeaderInfo({
+        editedTitle,
+        headerIcon: IconListDetails,
         headerIconColor: iconColor,
-        headerType: t`Record Table`,
-        title,
-        isReadonly: false,
-        tab: undefined,
+        headerType: t`Field Widget`,
         widgetInEditMode,
-      };
+      });
     }
 
-    case SidePanelPages.PageLayoutWidgetTypeSelect: {
+    case SidePanelPages.DashboardRecordTableSettings: {
+      if (!isDefined(widgetInEditMode)) {
+        return null;
+      }
+
+      return getPageLayoutWidgetHeaderInfo({
+        editedTitle,
+        headerIcon: IconTable,
+        headerIconColor: iconColor,
+        headerType: t`View`,
+        widgetInEditMode,
+      });
+    }
+
+    case SidePanelPages.PageLayoutDashboardWidgetTypeSelect: {
       return {
         headerIcon: IconPlus,
         headerIconColor: iconColor,
@@ -214,6 +229,22 @@ export const usePageLayoutHeaderInfo = ({
         isReadonly: true,
         tab: undefined,
         widgetInEditMode: undefined,
+        isIconEditable: false,
+        selectedIconKey: null,
+      };
+    }
+
+    case SidePanelPages.PageLayoutRecordPageWidgetTypeSelect: {
+      return {
+        headerIcon: IconPlus,
+        headerIconColor: iconColor,
+        headerType: '',
+        title: t`New widget`,
+        isReadonly: true,
+        tab: undefined,
+        widgetInEditMode: undefined,
+        isIconEditable: false,
+        selectedIconKey: null,
       };
     }
     default:

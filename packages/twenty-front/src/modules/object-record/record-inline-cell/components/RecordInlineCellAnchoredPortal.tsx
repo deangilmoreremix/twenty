@@ -1,7 +1,8 @@
 import { useObjectMetadataItems } from '@/object-metadata/hooks/useObjectMetadataItems';
-import { type FieldMetadataItem } from '@/object-metadata/types/FieldMetadataItem';
 import { type EnrichedObjectMetadataItem } from '@/object-metadata/types/EnrichedObjectMetadataItem';
+import { type FieldMetadataItem } from '@/object-metadata/types/FieldMetadataItem';
 import { formatFieldMetadataItemAsColumnDefinition } from '@/object-metadata/utils/formatFieldMetadataItemAsColumnDefinition';
+import { useRecordRestrictedFieldNames } from '@/object-record/record-store/hooks/useRecordRestrictedFieldNames';
 import { useObjectPermissions } from '@/object-record/hooks/useObjectPermissions';
 import { useUpdateOneRecord } from '@/object-record/hooks/useUpdateOneRecord';
 import { useIsRecordFieldReadOnly } from '@/object-record/read-only/hooks/useIsRecordFieldReadOnly';
@@ -10,7 +11,7 @@ import {
   type RecordUpdateHook,
   type RecordUpdateHookParams,
 } from '@/object-record/record-field/ui/contexts/FieldContext';
-import { FieldFocusContextProvider } from '@/object-record/record-field/ui/contexts/FieldFocusContextProvider';
+import { FieldFocusStaticFocusedProvider } from '@/object-record/record-field/ui/contexts/FieldFocusContextProvider';
 import { RecordFieldComponentInstanceContext } from '@/object-record/record-field/ui/states/contexts/RecordFieldComponentInstanceContext';
 import { isJunctionRelationForbidden } from '@/object-record/record-field/ui/utils/junction/isJunctionRelationForbidden';
 import { RecordInlineCellAnchoredPortalContext } from '@/object-record/record-inline-cell/components/RecordInlineCellAnchoredPortalContext';
@@ -53,9 +54,7 @@ export const RecordInlineCellAnchoredPortal = ({
     prefix: instanceIdPrefix,
   });
 
-  const anchorElement = document.body.querySelector<HTMLAnchorElement>(
-    `#${fieldInstanceId}`,
-  );
+  const anchorElement = document.getElementById(fieldInstanceId);
 
   const isRecordFieldReadOnly = useIsRecordFieldReadOnly({
     fieldMetadataId: fieldMetadataItem.id,
@@ -66,12 +65,20 @@ export const RecordInlineCellAnchoredPortal = ({
   const { objectPermissionsByObjectMetadataId } = useObjectPermissions();
   const { objectMetadataItems } = useObjectMetadataItems();
 
-  const isForbidden = isJunctionRelationForbidden({
-    fieldMetadataItem,
-    sourceObjectMetadataId: objectMetadataItem.id,
-    objectMetadataItems,
-    objectPermissionsByObjectMetadataId,
-  });
+  const restrictedFieldNames = useRecordRestrictedFieldNames(recordId ?? '');
+
+  const isFieldRestricted = restrictedFieldNames.includes(
+    fieldMetadataItem.name,
+  );
+
+  const isForbidden =
+    isFieldRestricted ||
+    isJunctionRelationForbidden({
+      fieldMetadataItem,
+      sourceObjectMetadataId: objectMetadataItem.id,
+      objectMetadataItems,
+      objectPermissionsByObjectMetadataId,
+    });
 
   const { updateOneRecord } = useUpdateOneRecord();
 
@@ -92,7 +99,7 @@ export const RecordInlineCellAnchoredPortal = ({
   }
 
   return (
-    <FieldFocusContextProvider isFocused={true}>
+    <FieldFocusStaticFocusedProvider>
       <FieldContext.Provider
         key={recordId + fieldMetadataItem.id}
         value={{
@@ -130,6 +137,6 @@ export const RecordInlineCellAnchoredPortal = ({
           )}
         </>
       </FieldContext.Provider>
-    </FieldFocusContextProvider>
+    </FieldFocusStaticFocusedProvider>
   );
 };

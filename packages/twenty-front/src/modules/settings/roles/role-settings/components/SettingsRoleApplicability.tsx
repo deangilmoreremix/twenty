@@ -1,13 +1,9 @@
-import { useIsFeatureEnabled } from '@/workspace/hooks/useIsFeatureEnabled';
 import { styled } from '@linaria/react';
-import { t } from '@lingui/core/macro';
-
-import { H2Title, IconKey, IconRobot, IconUsers } from 'twenty-ui/display';
-import { Checkbox } from 'twenty-ui/input';
-import { Section } from 'twenty-ui/layout';
-import { useContext } from 'react';
-import { ThemeContext, themeCssVariables } from 'twenty-ui/theme-constants';
-import { FeatureFlagKey } from '~/generated-metadata/graphql';
+import { Section } from 'twenty-ui/components/layout';
+import { IconKey, IconLego, IconUsers } from 'twenty-ui/icon';
+import { Checkbox } from 'twenty-ui/primitives/input';
+import { useTheme, themeCssVariables } from 'twenty-ui/theme';
+import { useLingui } from '@lingui/react/macro';
 
 const StyledCheckboxContainer = styled.div<{ disabled: boolean }>`
   align-items: center;
@@ -50,8 +46,8 @@ export const SettingsRoleApplicability = ({
   onApplicabilityChange,
   isEditable,
 }: SettingsRoleApplicabilityProps) => {
-  const { theme } = useContext(ThemeContext);
-  const isAiEnabled = useIsFeatureEnabled(FeatureFlagKey.IS_AI_ENABLED);
+  const { t } = useLingui();
+  const theme = useTheme();
 
   const options = [
     {
@@ -62,21 +58,17 @@ export const SettingsRoleApplicability = ({
     {
       key: 'canBeAssignedToAgents' as const,
       label: t`Assignable to Agents`,
-      Icon: IconRobot,
+      Icon: IconLego,
     },
-    ...(isAiEnabled
-      ? [
-          {
-            key: 'canBeAssignedToApiKeys' as const,
-            label: t`Assignable to API Keys`,
-            Icon: IconKey,
-          },
-        ]
-      : []),
+    {
+      key: 'canBeAssignedToApiKeys' as const,
+      label: t`Assignable to API Keys`,
+      Icon: IconKey,
+    },
   ];
   return (
-    <Section>
-      <H2Title
+    <Section.Root>
+      <Section.Header
         title={t`Applicability`}
         description={t`Control which types of entities this role can be assigned to`}
       />
@@ -95,16 +87,17 @@ export const SettingsRoleApplicability = ({
               <span>{option.label}</span>
             </StyledCheckboxLabel>
             <Checkbox
+              aria-label={option.label}
               checked={values[option.key]}
-              onChange={(event) => {
-                event.stopPropagation();
-                onApplicabilityChange(option.key, event.target.checked);
+              onCheckedChange={(isChecked) => {
+                onApplicabilityChange(option.key, isChecked);
               }}
               disabled={!isEditable}
+              onClick={(event) => event.stopPropagation()}
             />
           </StyledCheckboxContainer>
         ))}
       </div>
-    </Section>
+    </Section.Root>
   );
 };

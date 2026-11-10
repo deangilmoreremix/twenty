@@ -1,75 +1,57 @@
+import { getLinkNavigationMenuItemComputedLink } from '@/navigation-menu-item/common/utils/getLinkNavigationMenuItemComputedLink';
+import { getAutomationNavigationMenuItemComputedLink } from '@/navigation-menu-item/display/automation/utils/getAutomationNavigationMenuItemComputedLink';
+import { getObjectNavigationMenuItemComputedLink } from '@/navigation-menu-item/display/object/utils/getObjectNavigationMenuItemComputedLink';
+import { getPageLayoutNavigationMenuItemComputedLink } from '@/navigation-menu-item/display/page-layout/utils/getPageLayoutNavigationMenuItemComputedLink';
+import { getRecordNavigationMenuItemComputedLink } from '@/navigation-menu-item/display/record/utils/getRecordNavigationMenuItemComputedLink';
+import { getNativePageNavigationMenuItemConfig } from '@/navigation-menu-item/display/native-page/utils/getNativePageNavigationMenuItemConfig';
+import { getViewNavigationMenuItemComputedLink } from '@/navigation-menu-item/display/view/utils/getViewNavigationMenuItemComputedLink';
 import { type EnrichedObjectMetadataItem } from '@/object-metadata/types/EnrichedObjectMetadataItem';
-import { recordIdentifierToObjectRecordIdentifier } from '@/navigation-menu-item/common/utils/recordIdentifierToObjectRecordIdentifier';
 import { type View } from '@/views/types/View';
-import { ViewKey } from '@/views/types/ViewKey';
-import { AppPath, NavigationMenuItemType } from 'twenty-shared/types';
-import { getAppPath, isDefined } from 'twenty-shared/utils';
+import { NavigationMenuItemType } from 'twenty-shared/types';
+import { isDefined } from 'twenty-shared/utils';
 import { type NavigationMenuItem } from '~/generated-metadata/graphql';
 
-export const getNavigationMenuItemComputedLink = (
-  item: NavigationMenuItem,
-  objectMetadataItems: EnrichedObjectMetadataItem[],
-  views: Pick<View, 'id' | 'objectMetadataId' | 'key'>[],
-): string => {
+export const getNavigationMenuItemComputedLink = ({
+  item,
+  objectMetadataItems,
+  views,
+  lastVisitedViewPerObjectMetadataItem,
+}: {
+  item: NavigationMenuItem;
+  objectMetadataItems: EnrichedObjectMetadataItem[];
+  views: Pick<View, 'id' | 'objectMetadataId' | 'key' | 'type' | 'position'>[];
+  lastVisitedViewPerObjectMetadataItem?: Record<string, string> | null;
+}): string => {
   switch (item.type) {
     case NavigationMenuItemType.OBJECT: {
-      const objectMetadataItem = objectMetadataItems.find(
-        (meta) => meta.id === item.targetObjectMetadataId,
-      );
-      if (!isDefined(objectMetadataItem)) {
-        return '';
-      }
-      const indexView = views.find(
-        (view) =>
-          view.objectMetadataId === objectMetadataItem.id &&
-          view.key === ViewKey.INDEX,
-      );
-      return getAppPath(
-        AppPath.RecordIndexPage,
-        { objectNamePlural: objectMetadataItem.namePlural },
-        indexView ? { viewId: indexView.id } : {},
-      );
-    }
-    case NavigationMenuItemType.VIEW: {
-      const view = views.find((view) => view.id === item.viewId);
-      if (!isDefined(view)) {
-        return '';
-      }
-      const objectMetadataItem = objectMetadataItems.find(
-        (meta) => meta.id === view.objectMetadataId,
-      );
-      if (!isDefined(objectMetadataItem)) {
-        return '';
-      }
-      return getAppPath(
-        AppPath.RecordIndexPage,
-        { objectNamePlural: objectMetadataItem.namePlural },
-        { viewId: item.viewId! },
-      );
-    }
-    case NavigationMenuItemType.LINK: {
-      const linkUrl = (item.link ?? '').trim();
-      if (linkUrl.startsWith('http://') || linkUrl.startsWith('https://')) {
-        return linkUrl;
-      }
-      return linkUrl ? `https://${linkUrl}` : '';
-    }
-    case NavigationMenuItemType.RECORD: {
-      const objectMetadataItem = objectMetadataItems.find(
-        (meta) => meta.id === item.targetObjectMetadataId,
-      );
-      if (
-        !isDefined(objectMetadataItem) ||
-        !isDefined(item.targetRecordIdentifier)
-      ) {
-        return '';
-      }
-      const objectRecordIdentifier = recordIdentifierToObjectRecordIdentifier({
-        recordIdentifier: item.targetRecordIdentifier,
-        objectMetadataItem,
+      const lastVisitedViewId = isDefined(item.targetObjectMetadataId)
+        ? lastVisitedViewPerObjectMetadataItem?.[item.targetObjectMetadataId]
+        : undefined;
+
+      return getObjectNavigationMenuItemComputedLink({
+        item,
+        objectMetadataItems,
+        views,
+        lastVisitedViewId,
       });
-      return objectRecordIdentifier.linkToShowPage ?? '';
     }
+    case NavigationMenuItemType.VIEW:
+      return getViewNavigationMenuItemComputedLink(
+        item,
+        objectMetadataItems,
+        views,
+      );
+    case NavigationMenuItemType.LINK:
+      return getLinkNavigationMenuItemComputedLink(item);
+    case NavigationMenuItemType.RECORD:
+      return getRecordNavigationMenuItemComputedLink(item, objectMetadataItems);
+    case NavigationMenuItemType.PAGE_LAYOUT:
+      return getPageLayoutNavigationMenuItemComputedLink(item);
+    case NavigationMenuItemType.WORKFLOW:
+    case NavigationMenuItemType.AGENT:
+      return getAutomationNavigationMenuItemComputedLink(item);
+    case NavigationMenuItemType.NATIVE_PAGE:
+      return getNativePageNavigationMenuItemConfig(item)?.path ?? '';
     default:
       return '';
   }

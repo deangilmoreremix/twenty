@@ -1,9 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 
-import { generateText } from 'ai';
+import { type LanguageModelUsage, generateText } from 'ai';
 
-import { AI_TELEMETRY_CONFIG } from 'src/engine/metadata-modules/ai/ai-models/constants/ai-telemetry.const';
+import { UsageOperationType } from 'src/engine/core-modules/usage/enums/usage-operation-type.enum';
+import { AiBillingService } from 'src/engine/metadata-modules/ai/ai-billing/services/ai-billing.service';
+import { buildAiTelemetry } from 'src/engine/metadata-modules/ai/ai-models/utils/build-ai-telemetry.util';
 import { AiModelRegistryService } from 'src/engine/metadata-modules/ai/ai-models/services/ai-model-registry.service';
+import { WorkspaceAiDataPolicyService } from 'src/engine/metadata-modules/ai/ai-models/services/workspace-ai-data-policy.service';
+import { buildReasoningProviderOptions } from 'src/engine/metadata-modules/ai/ai-models/utils/build-reasoning-provider-options.util';
 
 @Injectable()
 export class AgentTitleGenerationService {
@@ -11,29 +15,74 @@ export class AgentTitleGenerationService {
 
   constructor(
     private readonly aiModelRegistryService: AiModelRegistryService,
+    private readonly aiBillingService: AiBillingService,
+    private readonly workspaceAiDataPolicyService: WorkspaceAiDataPolicyService,
   ) {}
 
-  async generateThreadTitle(messageContent: string): Promise<string> {
+  async generateThreadTitle(
+    messageContent: string,
+    workspaceId: string,
+    userWorkspaceId: string | null,
+  ): Promise<string> {
+    await this.aiBillingService.assertAiExecutionAllowed({
+      workspaceId,
+      operationType: UsageOperationType.AI_CHAT_TOKEN,
+      spenders: { userWorkspaceId },
+    });
+
+    const aiDataPolicy =
+      await this.workspaceAiDataPolicyService.getAiDataPolicyOrThrow(
+        workspaceId,
+      );
+
+    const isContentRecordingAllowed =
+      await this.workspaceAiDataPolicyService.isContentRecordingAllowedOrThrow(
+        workspaceId,
+      );
+
+    const defaultModel = this.aiModelRegistryService.findDefaultModelForTier({
+      tier: 'fast',
+      aiDataPolicy,
+    });
+
+    if (!defaultModel) {
+      this.logger.warn('No default AI model available for title generation');
+
+      return this.generateFallbackTitle(messageContent);
+    }
+
+    let usage: LanguageModelUsage | undefined;
+
     try {
-      const defaultModel = this.aiModelRegistryService.getDefaultSpeedModel();
-
-      if (!defaultModel) {
-        this.logger.warn('No default AI model available for title generation');
-
-        return this.generateFallbackTitle(messageContent);
-      }
-
       const result = await generateText({
         model: defaultModel.model,
+        providerOptions: buildReasoningProviderOptions(defaultModel),
         prompt: `Generate a concise, descriptive title (maximum 60 characters) for a chat thread based on the following message. The title should capture the main topic or purpose of the conversation. Return only the title, nothing else. Message: "${messageContent}"`,
-        experimental_telemetry: AI_TELEMETRY_CONFIG,
+        ...buildAiTelemetry({
+          functionId: 'agent-title-generation',
+          isContentRecordingAllowed,
+          workspaceId,
+          userWorkspaceId,
+        }),
       });
+
+      usage = result.usage;
 
       return this.cleanTitle(result.text);
     } catch (error) {
       this.logger.error('Failed to generate title with AI:', error);
 
       return this.generateFallbackTitle(messageContent);
+    } finally {
+      if (usage) {
+        void this.aiBillingService.calculateAndBillUsage({
+          modelId: defaultModel.modelId,
+          billingInput: { usage },
+          workspaceId,
+          operationType: UsageOperationType.AI_CHAT_TOKEN,
+          spenders: { userWorkspaceId },
+        });
+      }
     }
   }
 

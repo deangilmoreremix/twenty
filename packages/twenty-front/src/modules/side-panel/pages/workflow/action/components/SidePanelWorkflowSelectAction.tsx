@@ -1,6 +1,15 @@
+import { aiEvaluationModelsState } from '@/client-config/states/aiEvaluationModelsState';
+import { isWorkspaceCustomApplication } from '@/applications/utils/isWorkspaceCustomApplication';
+import { currentWorkspaceState } from '@/auth/states/currentWorkspaceState';
+import { logicFunctionsSelector } from '@/logic-functions/states/logicFunctionsSelector';
+import { AgentMenuItem } from '@/side-panel/pages/workflow/action/components/AgentMenuItem';
+import { ToolMenuItem } from '@/side-panel/pages/workflow/action/components/ToolMenuItem';
 import { WorkflowActionMenuItems } from '@/side-panel/pages/workflow/action/components/WorkflowActionMenuItems';
-import { logicFunctionsState } from '@/settings/logic-functions/states/logicFunctionsState';
+import { sortWorkflowActionLogicFunctions } from '@/side-panel/pages/workflow/action/utils/sortWorkflowActionLogicFunctions';
+import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomStateValue';
+import { useWorkspaceFeatureFlagsMap } from '@/workspace/hooks/useWorkspaceFeatureFlagsMap';
 import { type WorkflowActionType } from '@/workflow/types/Workflow';
+import { JEV_MODEL_ID } from 'twenty-shared/ai';
 import { SidePanelStepListContainer } from '@/workflow/workflow-steps/components/SidePanelWorkflowSelectStepContainer';
 import { SidePanelWorkflowSelectStepTitle } from '@/workflow/workflow-steps/components/SidePanelWorkflowSelectStepTitle';
 import { AI_ACTIONS } from '@/workflow/workflow-steps/workflow-actions/constants/AiActions';
@@ -8,13 +17,17 @@ import { CORE_ACTIONS } from '@/workflow/workflow-steps/workflow-actions/constan
 import { FLOW_ACTIONS } from '@/workflow/workflow-steps/workflow-actions/constants/FlowActions';
 import { HUMAN_INPUT_ACTIONS } from '@/workflow/workflow-steps/workflow-actions/constants/HumanInputActions';
 import { RECORD_ACTIONS } from '@/workflow/workflow-steps/workflow-actions/constants/RecordActions';
-import { getActionIconColorOrThrow } from '@/workflow/workflow-steps/workflow-actions/utils/getActionIconColorOrThrow';
-import { useIsFeatureEnabled } from '@/workspace/hooks/useIsFeatureEnabled';
-import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomStateValue';
+import { useQuery } from '@apollo/client/react';
 import { useLingui } from '@lingui/react/macro';
-import { IconFunction } from 'twenty-ui/display';
-import { MenuItem } from 'twenty-ui/navigation';
-import { FeatureFlagKey } from '~/generated-metadata/graphql';
+import { isDefined } from 'twenty-shared/utils';
+import {
+  isAgentRunnableAsWorkflowStep,
+  WORKFLOW_ACTION_FEATURE_FLAGS,
+} from 'twenty-shared/workflow';
+import {
+  FeatureFlagKey,
+  FindManyAgentsDocument,
+} from '~/generated-metadata/graphql';
 
 export type WorkflowActionSelection = {
   type: WorkflowActionType;
@@ -26,23 +39,69 @@ export const SidePanelWorkflowSelectAction = ({
 }: {
   onActionSelected: (selection: WorkflowActionSelection) => void;
 }) => {
-  const isAiEnabled = useIsFeatureEnabled(FeatureFlagKey.IS_AI_ENABLED);
-  const isDraftEmailEnabled = useIsFeatureEnabled(
-    FeatureFlagKey.IS_DRAFT_EMAIL_ENABLED,
-  );
-
   const { t } = useLingui();
 
-  const logicFunctions = useAtomStateValue(logicFunctionsState);
+  const aiEvaluationModels = useAtomStateValue(aiEvaluationModelsState);
+  const isJevAvailable = aiEvaluationModels.some(
+    (model) => model.modelId === JEV_MODEL_ID && model.isAvailable,
+  );
 
-  const toolFunctions = logicFunctions.filter((fn) => fn.isTool === true);
+  const aiActions = AI_ACTIONS.map((action) =>
+    action.type === 'CLASSIFY' && !isJevAvailable
+      ? {
+          ...action,
+          disabled: true,
+          contextualText: t`TypeSafe AI API key missing`,
+        }
+      : action,
+  );
 
-  const coreActions = isDraftEmailEnabled
-    ? CORE_ACTIONS
-    : CORE_ACTIONS.filter((action) => action.type !== 'DRAFT_EMAIL');
+  const featureFlagsMap = useWorkspaceFeatureFlagsMap();
+
+  const isActionEnabled = ({ type }: { type: WorkflowActionType }) => {
+    // Hidden from the picker only, so the AI workflow tools can still add it
+    if (type === 'WAIT_FOR_EVENT') {
+      return featureFlagsMap[FeatureFlagKey.IS_AI_CHAT_INBOX_ENABLED] === true;
+    }
+
+    const featureFlag = WORKFLOW_ACTION_FEATURE_FLAGS[type];
+
+    return !isDefined(featureFlag) || featureFlagsMap[featureFlag] === true;
+  };
+
+  const logicFunctions = useAtomStateValue(logicFunctionsSelector);
+  const currentWorkspace = useAtomStateValue(currentWorkspaceState);
+
+  const toolFunctions = sortWorkflowActionLogicFunctions({
+    logicFunctions: logicFunctions.filter(
+      (fn) =>
+        isDefined(fn.workflowActionTriggerSettings) &&
+        isDefined(fn.applicationId) &&
+        !isWorkspaceCustomApplication(
+          { id: fn.applicationId },
+          currentWorkspace,
+        ),
+    ),
+    installedApplications: currentWorkspace?.installedApplications ?? [],
+  });
+
+  const { data: agentsData } = useQuery(FindManyAgentsDocument, {
+    fetchPolicy: 'cache-and-network',
+  });
+
+  const stepAgents = (agentsData?.findManyAgents ?? []).filter(
+    isAgentRunnableAsWorkflowStep,
+  );
 
   const handleActionClick = (actionType: WorkflowActionType) => {
     onActionSelected({ type: actionType });
+  };
+
+  const handleAgentClick = (agentId: string) => {
+    onActionSelected({
+      type: 'AI_AGENT',
+      defaultSettings: { input: { agentId } },
+    });
   };
 
   const handleFunctionClick = (logicFunctionId: string) => {
@@ -60,19 +119,30 @@ export const SidePanelWorkflowSelectAction = ({
         {t`Data`}
       </SidePanelWorkflowSelectStepTitle>
       <WorkflowActionMenuItems
-        actions={RECORD_ACTIONS}
+        actions={RECORD_ACTIONS.filter(isActionEnabled)}
         onClick={handleActionClick}
       />
 
-      {isAiEnabled && (
+      <SidePanelWorkflowSelectStepTitle>
+        {t`AI`}
+      </SidePanelWorkflowSelectStepTitle>
+      <WorkflowActionMenuItems
+        actions={aiActions.filter(isActionEnabled)}
+        onClick={handleActionClick}
+      />
+
+      {stepAgents.length > 0 && (
         <>
           <SidePanelWorkflowSelectStepTitle>
-            {t`AI`}
+            {t`Agents`}
           </SidePanelWorkflowSelectStepTitle>
-          <WorkflowActionMenuItems
-            actions={AI_ACTIONS}
-            onClick={handleActionClick}
-          />
+          {stepAgents.map((agent) => (
+            <AgentMenuItem
+              key={agent.id}
+              agent={agent}
+              onClick={() => handleAgentClick(agent.id)}
+            />
+          ))}
         </>
       )}
 
@@ -80,7 +150,7 @@ export const SidePanelWorkflowSelectAction = ({
         {t`Flow`}
       </SidePanelWorkflowSelectStepTitle>
       <WorkflowActionMenuItems
-        actions={FLOW_ACTIONS}
+        actions={FLOW_ACTIONS.filter(isActionEnabled)}
         onClick={handleActionClick}
       />
 
@@ -88,7 +158,7 @@ export const SidePanelWorkflowSelectAction = ({
         {t`Core`}
       </SidePanelWorkflowSelectStepTitle>
       <WorkflowActionMenuItems
-        actions={coreActions}
+        actions={CORE_ACTIONS.filter(isActionEnabled)}
         onClick={handleActionClick}
       />
 
@@ -96,26 +166,19 @@ export const SidePanelWorkflowSelectAction = ({
         {t`Human Input`}
       </SidePanelWorkflowSelectStepTitle>
       <WorkflowActionMenuItems
-        actions={HUMAN_INPUT_ACTIONS}
+        actions={HUMAN_INPUT_ACTIONS.filter(isActionEnabled)}
         onClick={handleActionClick}
       />
 
       {toolFunctions.length > 0 && (
         <>
           <SidePanelWorkflowSelectStepTitle>
-            {t`Applications`}
+            {t`Other`}
           </SidePanelWorkflowSelectStepTitle>
           {toolFunctions.map((fn) => (
-            <MenuItem
+            <ToolMenuItem
               key={fn.id}
-              withIconContainer={true}
-              LeftIcon={() => (
-                <IconFunction
-                  color={getActionIconColorOrThrow('LOGIC_FUNCTION')}
-                  size={16}
-                />
-              )}
-              text={fn.name}
+              logicFunction={fn}
               onClick={() => handleFunctionClick(fn.id)}
             />
           ))}

@@ -1,16 +1,22 @@
+import { type RecordGqlFields } from 'twenty-shared/types';
 import { isNull, isUndefined } from '@sniptt/guards';
 
 import { type EnrichedObjectMetadataItem } from '@/object-metadata/types/EnrichedObjectMetadataItem';
 import { computePossibleMorphGqlFieldForFieldName } from '@/object-record/cache/utils/computePossibleMorphGqlFieldForFieldName';
 import { getFieldMetadataFromGqlField } from '@/object-record/cache/utils/getFieldMetadataFromGqlField';
 import { getMorphRelationFromFieldMetadataAndGqlField } from '@/object-record/cache/utils/getMorphRelationFromFieldMetadataAndGqlField';
-import { getNodeTypename } from '@/object-record/cache/utils/getNodeTypename';
 import { getObjectTypename } from '@/object-record/cache/utils/getObjectTypename';
 import { getRecordConnectionFromRecords } from '@/object-record/cache/utils/getRecordConnectionFromRecords';
 import { getRefName } from '@/object-record/cache/utils/getRefName';
 import { type RecordGqlNode } from '@/object-record/graphql/types/RecordGqlNode';
 import { type ObjectRecord } from '@/object-record/types/ObjectRecord';
-import { isDefined, pascalCase } from 'twenty-shared/utils';
+import {
+  computeRelationGqlFieldJoinColumnName,
+  getNodeTypename,
+  isDefined,
+  pascalCase,
+} from 'twenty-shared/utils';
+import { doNotTranslate } from 'twenty-shared/i18n';
 import { FieldMetadataType, RelationType } from '~/generated-metadata/graphql';
 
 export const getRecordNodeFromRecord = <T extends ObjectRecord>({
@@ -26,7 +32,7 @@ export const getRecordNodeFromRecord = <T extends ObjectRecord>({
     EnrichedObjectMetadataItem,
     'fields' | 'namePlural' | 'nameSingular'
   >;
-  recordGqlFields?: Record<string, any>;
+  recordGqlFields?: RecordGqlFields;
   computeReferences?: boolean;
   isRootLevel?: boolean;
   record: T | null;
@@ -46,7 +52,10 @@ export const getRecordNodeFromRecord = <T extends ObjectRecord>({
   const nestedRecord = Object.fromEntries(
     Object.entries(record)
       .map(([gqlField, value]) => {
-        if (isDefined(recordGqlFields) && !recordGqlFields[gqlField]) {
+        if (
+          isDefined(recordGqlFields) &&
+          !isDefined(recordGqlFields[gqlField])
+        ) {
           return undefined;
         }
 
@@ -63,6 +72,10 @@ export const getRecordNodeFromRecord = <T extends ObjectRecord>({
           field.type === FieldMetadataType.RELATION &&
           field.relation?.type === RelationType.ONE_TO_MANY
         ) {
+          if (!Array.isArray(value)) {
+            return undefined;
+          }
+
           const oneToManyObjectMetadataItem = objectMetadataItems.find(
             (item) =>
               item.namePlural ===
@@ -95,6 +108,10 @@ export const getRecordNodeFromRecord = <T extends ObjectRecord>({
           field.type === FieldMetadataType.MORPH_RELATION &&
           field.settings?.relationType === RelationType.ONE_TO_MANY
         ) {
+          if (!Array.isArray(value)) {
+            return undefined;
+          }
+
           if (field.morphRelations?.length === 0) {
             return undefined;
           }
@@ -133,7 +150,9 @@ export const getRecordNodeFromRecord = <T extends ObjectRecord>({
 
         switch (field.type) {
           case FieldMetadataType.RELATION: {
-            const isJoinColumn = field.settings?.joinColumnName === gqlField;
+            const isJoinColumn =
+              computeRelationGqlFieldJoinColumnName({ name: field.name }) ===
+              gqlField;
             if (isJoinColumn) {
               return [gqlField, value];
             }
@@ -180,8 +199,8 @@ export const getRecordNodeFromRecord = <T extends ObjectRecord>({
                   morphRelations: field.morphRelations ?? [],
                   fieldName: field.name,
                 },
-              }).map(
-                (possibleMorphRelationName) => `${possibleMorphRelationName}Id`,
+              }).map((possibleMorphRelationName) =>
+                doNotTranslate(`${possibleMorphRelationName}Id`),
               );
 
             const isJoinColumn =
@@ -206,7 +225,7 @@ export const getRecordNodeFromRecord = <T extends ObjectRecord>({
               return undefined;
             }
 
-            const typeName = getObjectTypename(
+            const typeName = getNodeTypename(
               morphRelation?.targetObjectMetadata?.nameSingular,
             );
 
@@ -230,7 +249,23 @@ export const getRecordNodeFromRecord = <T extends ObjectRecord>({
               },
             ];
           }
-          case FieldMetadataType.LINKS:
+          case FieldMetadataType.LINKS: {
+            return [
+              gqlField,
+              {
+                ...value,
+                ...(Array.isArray(value?.secondaryLinks) && {
+                  secondaryLinks: value.secondaryLinks.map(
+                    (secondaryLink: object) => ({
+                      ...secondaryLink,
+                      __typename: 'SecondaryLink',
+                    }),
+                  ),
+                }),
+                __typename: pascalCase(field.type),
+              },
+            ];
+          }
           case FieldMetadataType.ADDRESS:
           case FieldMetadataType.FULL_NAME:
           case FieldMetadataType.CURRENCY: {

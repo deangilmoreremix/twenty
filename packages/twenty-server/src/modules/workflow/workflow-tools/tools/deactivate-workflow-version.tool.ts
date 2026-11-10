@@ -6,9 +6,10 @@ import {
 } from 'src/modules/workflow/workflow-tools/types/workflow-tool-dependencies.type';
 
 const deactivateWorkflowVersionSchema = z.object({
-  workflowVersionId: z
+  coreWorkflowVersionId: z
     .string()
-    .describe('The ID of the workflow version to deactivate'),
+    .uuid()
+    .describe('The core workflow version UUID to deactivate'),
 });
 
 type DeactivateWorkflowVersionInput = z.infer<
@@ -16,7 +17,7 @@ type DeactivateWorkflowVersionInput = z.infer<
 >;
 
 export const createDeactivateWorkflowVersionTool = (
-  deps: Pick<WorkflowToolDependencies, 'workflowTriggerService'>,
+  deps: Pick<WorkflowToolDependencies, 'coreWorkflowLifecycleService'>,
   context: WorkflowToolContext,
 ) => ({
   name: 'deactivate_workflow_version' as const,
@@ -25,9 +26,12 @@ export const createDeactivateWorkflowVersionTool = (
   inputSchema: deactivateWorkflowVersionSchema,
   execute: async (parameters: DeactivateWorkflowVersionInput) => {
     try {
-      return await deps.workflowTriggerService.deactivateWorkflowVersion(
-        parameters.workflowVersionId,
-        context.workspaceId,
+      return await deps.coreWorkflowLifecycleService.deactivateCoreWorkflowVersion(
+        {
+          workspaceId: context.workspaceId,
+          userWorkspaceId: context.userWorkspaceId,
+          coreWorkflowVersionId: parameters.coreWorkflowVersionId,
+        },
       );
     } catch (error) {
       return {

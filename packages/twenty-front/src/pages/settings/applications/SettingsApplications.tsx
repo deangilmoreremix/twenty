@@ -1,109 +1,102 @@
-import { useHasPermissionFlag } from '@/settings/roles/hooks/useHasPermissionFlag';
+import { SettingsDiscoveryHeroCard } from '@/settings/components/SettingsDiscoveryHeroCard';
 import { SettingsPageContainer } from '@/settings/components/SettingsPageContainer';
-import { SubMenuTopBarContainer } from '@/ui/layout/page/components/SubMenuTopBarContainer';
-import { TabList } from '@/ui/layout/tab-list/components/TabList';
-import { activeTabIdComponentState } from '@/ui/layout/tab-list/states/activeTabIdComponentState';
-import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateValue';
-import { useIsFeatureEnabled } from '@/workspace/hooks/useIsFeatureEnabled';
+import { SETTINGS_DEVELOPERS_TABS } from '@/settings/developers/constants/SettingsDevelopersTabs';
+import { SettingsPageLayout } from '@/settings/components/layout/SettingsPageLayout';
+import { SettingsTabBar } from '@/settings/components/layout/SettingsTabBar';
+import { useSettingsActiveTabId } from '@/settings/components/layout/useSettingsActiveTabId';
 import { useLingui } from '@lingui/react/macro';
+import { Navigate, useLocation } from 'react-router-dom';
 import { SettingsPath } from 'twenty-shared/types';
 import { getSettingsPath } from 'twenty-shared/utils';
-import { IconApps, IconCode, IconDownload } from 'twenty-ui/display';
-import { useQuery } from '@apollo/client/react';
-import {
-  type FeatureFlagKey,
-  PermissionFlagType,
-  FindManyApplicationsDocument,
-} from '~/generated-metadata/graphql';
-import { SettingsApplicationsTable } from '~/pages/settings/applications/components/SettingsApplicationsTable';
+import { Section } from 'twenty-ui/components/layout';
+import { IconApps, IconShoppingBag, IconSparkle2 } from 'twenty-ui/icon';
+import coverDark from '~/pages/settings/applications/assets/cover-dark.png';
+import coverLight from '~/pages/settings/applications/assets/cover-light.png';
 import { SettingsApplicationsAvailableTab } from '~/pages/settings/applications/tabs/SettingsApplicationsAvailableTab';
-import { SettingsApplicationsDeveloperTab } from '~/pages/settings/applications/tabs/SettingsApplicationsDeveloperTab';
-import { SettingsApplicationsInstalledTab } from '~/pages/settings/applications/tabs/SettingsApplicationsInstalledTab';
+import { SettingsApplicationsInstalledAppsSection } from '@/settings/applications/components/SettingsApplicationsInstalledAppsSection';
 
 const APPLICATIONS_TAB_LIST_ID = 'applications-tab-list';
+const APPLICATIONS_HERO_INSTANCE_ID_PREFIX = 'settings-applications-hero';
+// Docs and older links still point to the developer tab that moved to the Developers page
+const LEGACY_DEVELOPER_TAB_HASH = '#developer';
 
 export const SettingsApplications = () => {
   const { t } = useLingui();
-
-  const hasDeveloperAccess = useHasPermissionFlag(
-    PermissionFlagType.API_KEYS_AND_WEBHOOKS,
-  );
-
-  const isMarketplaceEnabled = useIsFeatureEnabled(
-    'IS_MARKETPLACE_ENABLED' as FeatureFlagKey,
-  );
-
-  const activeTabId = useAtomComponentStateValue(
-    activeTabIdComponentState,
-    APPLICATIONS_TAB_LIST_ID,
-  );
-
-  const { data } = useQuery(FindManyApplicationsDocument);
-
-  const applications = data?.findManyApplications ?? [];
-
-  if (!isMarketplaceEnabled) {
-    return (
-      <SubMenuTopBarContainer
-        title={t`Applications`}
-        links={[
-          {
-            children: t`Workspace`,
-            href: getSettingsPath(SettingsPath.Workspace),
-          },
-          { children: t`Applications` },
-        ]}
-      >
-        <SettingsPageContainer>
-          {applications.length > 0 && (
-            <SettingsApplicationsTable applications={applications} />
-          )}
-          {hasDeveloperAccess && <SettingsApplicationsDeveloperTab />}
-        </SettingsPageContainer>
-      </SubMenuTopBarContainer>
-    );
-  }
+  const location = useLocation();
 
   const tabs = [
-    { id: 'marketplace', title: t`Marketplace`, Icon: IconDownload },
+    {
+      id: 'marketplace',
+      title: t`Marketplace`,
+      Icon: IconShoppingBag,
+      pill: t`Beta`,
+    },
     { id: 'installed', title: t`Installed`, Icon: IconApps },
-    ...(hasDeveloperAccess
-      ? [{ id: 'developer', title: t`Developer`, Icon: IconCode }]
-      : []),
   ];
+
+  const activeTabId = useSettingsActiveTabId(
+    APPLICATIONS_TAB_LIST_ID,
+    tabs.map((tab) => tab.id),
+  );
 
   const renderActiveTabContent = () => {
     switch (activeTabId) {
       case 'marketplace':
         return <SettingsApplicationsAvailableTab />;
       case 'installed':
-        return <SettingsApplicationsInstalledTab />;
-      case 'developer':
-        return <SettingsApplicationsDeveloperTab />;
+        return <SettingsApplicationsInstalledAppsSection />;
       default:
         return <SettingsApplicationsAvailableTab />;
     }
   };
 
+  if (location.hash === LEGACY_DEVELOPER_TAB_HASH) {
+    return (
+      <Navigate
+        to={`${getSettingsPath(SettingsPath.Developers)}${location.search}#${SETTINGS_DEVELOPERS_TABS.TABS_IDS.APPS}`}
+        replace
+      />
+    );
+  }
+
   return (
-    <SubMenuTopBarContainer
+    <SettingsPageLayout
       title={t`Applications`}
+      secondaryBar={
+        <SettingsTabBar
+          aria-label={t`Applications`}
+          tabs={tabs}
+          componentInstanceId={APPLICATIONS_TAB_LIST_ID}
+        />
+      }
       links={[
         {
           children: t`Workspace`,
-          href: getSettingsPath(SettingsPath.Workspace),
+          href: getSettingsPath(SettingsPath.General),
         },
         { children: t`Applications` },
       ]}
     >
       <SettingsPageContainer>
-        <TabList
-          tabs={tabs}
-          componentInstanceId={APPLICATIONS_TAB_LIST_ID}
-          behaveAsLinks={false}
-        />
+        <Section.Root>
+          <SettingsDiscoveryHeroCard
+            lightSrc={coverLight}
+            darkSrc={coverDark}
+            instanceIdPrefix={APPLICATIONS_HERO_INSTANCE_ID_PREFIX}
+            tabs={[
+              {
+                id: 'app_marketplace_walkthrough',
+                title: t`Walkthrough`,
+                Icon: IconSparkle2,
+                vimeoId: '1217964666',
+                hasSound: true,
+              },
+            ]}
+            playButtonAriaLabel={t`Watch apps demo`}
+          />
+        </Section.Root>
         {renderActiveTabContent()}
       </SettingsPageContainer>
-    </SubMenuTopBarContainer>
+    </SettingsPageLayout>
   );
 };

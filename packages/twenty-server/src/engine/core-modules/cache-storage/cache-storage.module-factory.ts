@@ -1,13 +1,21 @@
+import { Logger } from '@nestjs/common';
+
 import { type CacheModuleOptions } from '@nestjs/cache-manager';
 
-import { redisStore } from 'cache-manager-redis-yet';
+import KeyvRedis from '@keyv/redis';
+import { Keyv } from 'keyv';
+import { createClient } from 'redis';
 
 import { CacheStorageType } from 'src/engine/core-modules/cache-storage/types/cache-storage-type.enum';
 import { type TwentyConfigService } from 'src/engine/core-modules/twenty-config/twenty-config.service';
 
-export const cacheStorageModuleFactory = (
+const cacheStorageLogger = new Logger('CacheStorage');
+
+const REDIS_PING_INTERVAL_MS = 60_000;
+
+export const cacheStorageModuleFactory = async (
   twentyConfigService: TwentyConfigService,
-): CacheModuleOptions => {
+): Promise<CacheModuleOptions> => {
   const cacheStorageType = CacheStorageType.Redis;
   const cacheStorageTtl = twentyConfigService.get('CACHE_STORAGE_TTL');
   const cacheModuleOptions: CacheModuleOptions = {
@@ -16,9 +24,6 @@ export const cacheStorageModuleFactory = (
   };
 
   switch (cacheStorageType) {
-    /* case CacheStorageType.Memory: {
-      return cacheModuleOptions;
-    }*/
     case CacheStorageType.Redis: {
       const redisUrl = twentyConfigService.get('REDIS_URL');
 
@@ -28,10 +33,31 @@ export const cacheStorageModuleFactory = (
         );
       }
 
+      const redisClient = createClient({
+        url: redisUrl,
+        pingInterval: REDIS_PING_INTERVAL_MS,
+      });
+
+      redisClient.on('error', (error) => {
+        cacheStorageLogger.error('Redis cache-storage client error', error);
+      });
+
+      await redisClient.connect();
+
       return {
         ...cacheModuleOptions,
-        store: redisStore,
-        url: redisUrl,
+        // CacheStorageService also reads these keys raw, so no Keyv prefix or wrapping
+        stores: [
+          new Keyv({
+            store: new KeyvRedis(
+              redisClient as ConstructorParameters<typeof KeyvRedis>[0],
+            ),
+            namespace: undefined,
+            useKeyPrefix: false,
+            serialize: ({ value }) => JSON.stringify(value),
+            deserialize: (data) => ({ value: JSON.parse(data) }),
+          }),
+        ],
       };
     }
     default:

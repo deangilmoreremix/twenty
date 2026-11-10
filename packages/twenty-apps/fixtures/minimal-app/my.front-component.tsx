@@ -1,4 +1,6 @@
-import { defineFrontComponent } from 'twenty-sdk';
+import { defineFrontComponent } from 'twenty-sdk/define';
+
+import 'twenty-ui/style.css';
 
 export const MyComponent = () => {
   return (

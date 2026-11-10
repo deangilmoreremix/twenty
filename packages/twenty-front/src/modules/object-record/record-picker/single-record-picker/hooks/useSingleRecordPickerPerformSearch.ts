@@ -1,15 +1,23 @@
+import { type ErrorLike } from '@apollo/client';
 import { useEffect, useMemo } from 'react';
 import { useStore } from 'jotai';
 
 import { useObjectMetadataItems } from '@/object-metadata/hooks/useObjectMetadataItems';
 import { DEFAULT_SEARCH_REQUEST_LIMIT } from '@/object-record/constants/DefaultSearchRequestLimit';
+import { useObjectPermissions } from '@/object-record/hooks/useObjectPermissions';
 import { useObjectRecordSearchRecords } from '@/object-record/hooks/useObjectRecordSearchRecords';
 import { searchRecordStoreFamilyState } from '@/object-record/record-picker/multiple-record-picker/states/searchRecordStoreComponentFamilyState';
 import { SingleRecordPickerComponentInstanceContext } from '@/object-record/record-picker/single-record-picker/states/contexts/SingleRecordPickerComponentInstanceContext';
 import { singleRecordPickerSearchableObjectMetadataItemsComponentState } from '@/object-record/record-picker/single-record-picker/states/singleRecordPickerSearchableObjectMetadataItemsComponentState';
 import { type RecordPickerPickableMorphItem } from '@/object-record/record-picker/types/RecordPickerPickableMorphItem';
+import { getObjectPermissionsForObject } from '@/object-metadata/utils/getObjectPermissionsForObject';
 import { useAvailableComponentInstanceIdOrThrow } from '@/ui/utilities/state/component-state/hooks/useAvailableComponentInstanceIdOrThrow';
-import { CustomError, isDefined } from 'twenty-shared/utils';
+import {
+  canReachSomeRecords,
+  CustomError,
+  isDefined,
+} from 'twenty-shared/utils';
+import { doNotTranslate } from 'twenty-shared/i18n';
 
 export const useSingleRecordPickerPerformSearch = ({
   selectedIds,
@@ -26,6 +34,9 @@ export const useSingleRecordPickerPerformSearch = ({
 }): {
   pickableMorphItems: RecordPickerPickableMorphItem[];
   loading: boolean;
+  selectedRecordsError: ErrorLike | undefined;
+  filteredSelectedRecordsError: ErrorLike | undefined;
+  recordsToSelectError: ErrorLike | undefined;
 } => {
   const store = useStore();
   const singleRecordPickerInstanceId = useAvailableComponentInstanceIdOrThrow(
@@ -33,25 +44,50 @@ export const useSingleRecordPickerPerformSearch = ({
   );
 
   const { objectMetadataItems } = useObjectMetadataItems();
+  const { objectPermissionsByObjectMetadataId } = useObjectPermissions();
+
+  const readableObjectNameSingulars = objectNameSingulars.filter(
+    (objectNameSingular) => {
+      const objectMetadataItem = objectMetadataItems.find(
+        (item) => item.nameSingular === objectNameSingular,
+      );
+
+      if (!isDefined(objectMetadataItem)) {
+        return false;
+      }
+
+      return canReachSomeRecords({
+        objectRecordsPermissions: getObjectPermissionsForObject(
+          objectPermissionsByObjectMetadataId,
+          objectMetadataItem.id,
+        ),
+        operationType: 'read',
+      });
+    },
+  );
 
   const hasSelectedIds = selectedIds.length > 0;
   const selectedIdsFilter = hasSelectedIds
     ? { id: { in: selectedIds } }
     : undefined;
 
-  const { loading: selectedRecordsLoading, searchRecords: selectedRecords } =
-    useObjectRecordSearchRecords({
-      objectNameSingulars,
-      filter: selectedIdsFilter,
-      skip: !hasSelectedIds,
-      searchInput: '',
-    });
+  const {
+    loading: selectedRecordsLoading,
+    searchRecords: selectedRecords,
+    error: selectedRecordsError,
+  } = useObjectRecordSearchRecords({
+    objectNameSingulars: readableObjectNameSingulars,
+    filter: selectedIdsFilter,
+    skip: !hasSelectedIds,
+    searchInput: '',
+  });
 
   const {
     loading: filteredSelectedRecordsLoading,
     searchRecords: filteredSelectedRecords,
+    error: filteredSelectedRecordsError,
   } = useObjectRecordSearchRecords({
-    objectNameSingulars,
+    objectNameSingulars: readableObjectNameSingulars,
     filter: selectedIdsFilter,
     skip: !hasSelectedIds,
     searchInput: searchFilter,
@@ -61,14 +97,17 @@ export const useSingleRecordPickerPerformSearch = ({
   const notFilter = notFilterIds.length
     ? { not: { id: { in: notFilterIds } } }
     : undefined;
-  const { loading: recordsToSelectLoading, searchRecords: recordsToSelect } =
-    useObjectRecordSearchRecords({
-      objectNameSingulars,
-      filter: notFilter,
-      limit: limit ?? DEFAULT_SEARCH_REQUEST_LIMIT,
-      searchInput: searchFilter,
-      fetchPolicy: 'cache-and-network',
-    });
+  const {
+    loading: recordsToSelectLoading,
+    searchRecords: recordsToSelect,
+    error: recordsToSelectError,
+  } = useObjectRecordSearchRecords({
+    objectNameSingulars: readableObjectNameSingulars,
+    filter: notFilter,
+    limit: limit ?? DEFAULT_SEARCH_REQUEST_LIMIT,
+    searchInput: searchFilter,
+    fetchPolicy: 'cache-and-network',
+  });
 
   const allSearchRecords = useMemo(
     () => [...selectedRecords, ...filteredSelectedRecords, ...recordsToSelect],
@@ -92,14 +131,14 @@ export const useSingleRecordPickerPerformSearch = ({
         instanceId: singleRecordPickerInstanceId,
       }),
       objectMetadataItems.filter((objectMetadataItem) =>
-        objectNameSingulars.includes(objectMetadataItem.nameSingular),
+        readableObjectNameSingulars.includes(objectMetadataItem.nameSingular),
       ),
     );
   }, [
     allSearchRecords,
     store,
     objectMetadataItems,
-    objectNameSingulars,
+    readableObjectNameSingulars,
     singleRecordPickerInstanceId,
   ]);
 
@@ -113,8 +152,9 @@ export const useSingleRecordPickerPerformSearch = ({
 
       if (!isDefined(objectMetadataItem)) {
         throw new CustomError(
-          'Object metadata item not found for object name singular: ' +
-            record.objectNameSingular,
+          doNotTranslate(
+            'Object metadata item not found for object name singular: ',
+          ) + record.objectNameSingular,
           'OBJECT_METADATA_ITEM_NOT_FOUND',
         );
       }
@@ -138,6 +178,9 @@ export const useSingleRecordPickerPerformSearch = ({
     });
 
   return {
+    selectedRecordsError,
+    filteredSelectedRecordsError,
+    recordsToSelectError,
     pickableMorphItems,
     loading:
       recordsToSelectLoading ||

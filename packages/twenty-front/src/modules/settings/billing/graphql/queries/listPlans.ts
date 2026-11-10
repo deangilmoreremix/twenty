@@ -6,7 +6,11 @@ export const LIST_PLANS = gql`
   query listPlans {
     listPlans {
       planKey
-      licensedProducts {
+      isSellable
+      isCheckoutDefault
+      upgradePlanKeys
+      downgradePlanKeys
+      baseProducts {
         name
         description
         images
@@ -14,6 +18,23 @@ export const LIST_PLANS = gql`
           productKey
           planKey
           priceUsageBased
+          isLegacy
+        }
+        ... on BillingLicensedProduct {
+          prices {
+            ...BillingPriceLicensedFragment
+          }
+        }
+      }
+      resourceCreditProducts {
+        name
+        description
+        images
+        metadata {
+          productKey
+          planKey
+          priceUsageBased
+          isLegacy
         }
         ... on BillingLicensedProduct {
           prices {
@@ -29,6 +50,7 @@ export const LIST_PLANS = gql`
           productKey
           planKey
           priceUsageBased
+          isLegacy
         }
         ... on BillingMeteredProduct {
           prices {

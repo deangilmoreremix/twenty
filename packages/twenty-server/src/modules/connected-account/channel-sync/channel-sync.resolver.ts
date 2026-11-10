@@ -8,26 +8,51 @@ import { MetadataResolver } from 'src/engine/api/graphql/graphql-config/decorato
 import { AuthGraphqlApiExceptionFilter } from 'src/engine/core-modules/auth/filters/auth-graphql-api-exception.filter';
 import { ResolverValidationPipe } from 'src/engine/core-modules/graphql/pipes/resolver-validation.pipe';
 import { WorkspaceEntity } from 'src/engine/core-modules/workspace/workspace.entity';
+import { AuthUserWorkspaceId } from 'src/engine/decorators/auth/auth-user-workspace-id.decorator';
 import { AuthWorkspace } from 'src/engine/decorators/auth/auth-workspace.decorator';
-import { SettingsPermissionGuard } from 'src/engine/guards/settings-permission.guard';
-import { WorkspaceAuthGuard } from 'src/engine/guards/workspace-auth.guard';
+import { ConnectedAccountMetadataService } from 'src/engine/metadata-modules/connected-account/connected-account-metadata.service';
 import { ChannelSyncSuccessDTO } from 'src/modules/connected-account/channel-sync/dtos/channel-sync-success.dto';
 import { ChannelSyncService } from 'src/modules/connected-account/channel-sync/services/channel-sync.service';
+import { AccessPolicyGuard } from 'src/engine/guards/access-policy.guard';
 
 @MetadataResolver()
 @UsePipes(ResolverValidationPipe)
 @UseFilters(AuthGraphqlApiExceptionFilter)
-@UseGuards(WorkspaceAuthGuard)
+@UseGuards(
+  AccessPolicyGuard({
+    authPrincipals: {
+      userSession: {
+        standard: true,
+        impersonated: true,
+        playground: true,
+        workspaceAgnostic: false,
+      },
+      apiKey: true,
+      oauthClient: true,
+      application: true,
+    },
+    requiredPermissionFlags: [PermissionFlagType.CONNECTED_ACCOUNTS],
+  }),
+)
 export class ChannelSyncResolver {
-  constructor(private readonly channelSyncService: ChannelSyncService) {}
+  constructor(
+    private readonly channelSyncService: ChannelSyncService,
+    private readonly connectedAccountMetadataService: ConnectedAccountMetadataService,
+  ) {}
 
   @Mutation(() => ChannelSyncSuccessDTO)
-  @UseGuards(SettingsPermissionGuard(PermissionFlagType.CONNECTED_ACCOUNTS))
   async startChannelSync(
     @Args('connectedAccountId', { type: () => UUIDScalarType })
     connectedAccountId: string,
     @AuthWorkspace() workspace: WorkspaceEntity,
+    @AuthUserWorkspaceId() userWorkspaceId: string,
   ): Promise<ChannelSyncSuccessDTO> {
+    await this.connectedAccountMetadataService.verifyUsableByCaller({
+      id: connectedAccountId,
+      userWorkspaceId,
+      workspaceId: workspace.id,
+    });
+
     await this.channelSyncService.startChannelSync({
       connectedAccountId,
       workspaceId: workspace.id,

@@ -5,7 +5,7 @@ import { type FlatObjectMetadata } from 'src/engine/metadata-modules/flat-object
 import { type ExtractUniversalForeignKeyAggregatorForMetadataName } from 'src/engine/workspace-manager/workspace-migration/universal-flat-entity/constants/all-universal-flat-entity-foreign-key-aggregator-properties.constant';
 import { type UniversalFlatObjectMetadata } from 'src/engine/workspace-manager/workspace-migration/universal-flat-entity/types/universal-flat-object-metadata.type';
 import { getUniversalFlatEntityEmptyForeignKeyAggregators } from 'src/engine/workspace-manager/workspace-migration/universal-flat-entity/utils/reset-universal-flat-entity-foreign-key-aggregators.util';
-import { type AllUniversalWorkspaceMigrationAction } from 'src/engine/workspace-manager/workspace-migration/workspace-migration-builder/types/workspace-migration-action-common';
+import { type AllUniversalWorkspaceMigrationAction } from 'src/engine/workspace-manager/workspace-migration/workspace-migration-builder/types/workspace-migration-action-common.type';
 import { type WorkspaceMigrationActionRunnerArgs } from 'src/engine/workspace-manager/workspace-migration/workspace-migration-runner/types/workspace-migration-action-runner-args.type';
 
 export type FromUniversalFlatObjectMetadataToFlatObjectMetadataArgs = {
@@ -20,7 +20,6 @@ export type FromUniversalFlatObjectMetadataToFlatObjectMetadataArgs = {
     WorkspaceMigrationActionRunnerArgs<AllUniversalWorkspaceMigrationAction>,
     'workspaceId' | 'flatApplication'
   >;
-  dataSourceId: string;
 };
 
 const findFieldMetadataIdInCreateObjectContext = ({
@@ -49,7 +48,6 @@ const findFieldMetadataIdInCreateObjectContext = ({
 
 export const fromUniversalFlatObjectMetadataToFlatObjectMetadata = ({
   universalFlatObjectMetadata,
-  dataSourceId,
   generatedId,
   allFlatEntityMaps,
   allFieldIdToBeCreatedInActionByUniversalIdentifierMap,
@@ -57,9 +55,7 @@ export const fromUniversalFlatObjectMetadataToFlatObjectMetadata = ({
     flatApplication: { id: applicationId },
     workspaceId,
   },
-}: FromUniversalFlatObjectMetadataToFlatObjectMetadataArgs): FlatObjectMetadata & {
-  dataSourceId: string;
-} => {
+}: FromUniversalFlatObjectMetadataToFlatObjectMetadataArgs): FlatObjectMetadata => {
   const {
     universalIdentifier,
     applicationUniversalIdentifier,
@@ -107,7 +103,6 @@ export const fromUniversalFlatObjectMetadataToFlatObjectMetadata = ({
 
   return {
     ...restProperties,
-    dataSourceId,
     id: generatedId,
     workspaceId,
     applicationId,
@@ -118,11 +113,16 @@ export const fromUniversalFlatObjectMetadataToFlatObjectMetadata = ({
     targetTableName: 'DEPRECATED',
     imageIdentifierFieldMetadataId,
     imageIdentifierFieldMetadataUniversalIdentifier,
-    // Empty aggregator arrays for newly created entities
     fieldIds: [],
     viewIds: [],
     indexMetadataIds: [],
+    searchFieldMetadataIds: [],
+    navigationMenuItemIds: [],
+    commandMenuItemIds: [],
     objectPermissionIds: [],
+    fieldPermissionIds: [],
+    rowLevelPermissionRuleIds: [],
+    pageLayoutIds: [],
     ...emptyUniversalForeignKeyAggregators,
   };
 };

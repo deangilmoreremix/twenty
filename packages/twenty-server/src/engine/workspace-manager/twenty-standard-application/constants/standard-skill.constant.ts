@@ -11,9 +11,6 @@ export const STANDARD_SKILL = {
   'metadata-building': {
     universalIdentifier: '20202020-7b80-4a14-8fb9-d1512b89c078',
   },
-  research: {
-    universalIdentifier: '20202020-6b44-417e-a31f-5560b59d300a',
-  },
   'code-interpreter': {
     universalIdentifier: '20202020-a97a-4069-8e44-fc18faea7b97',
   },
@@ -31,6 +28,24 @@ export const STANDARD_SKILL = {
   },
   'workspace-demo-seeding': {
     universalIdentifier: '20202020-c81b-4af8-9255-4c34bd0eac9c',
+  },
+  'view-building': {
+    universalIdentifier: '20202020-e4a2-4b3f-9c71-d8f6a2b51e3a',
+  },
+  roles: {
+    universalIdentifier: '20202020-3f7c-4d21-9e58-a4b6c8d05e17',
+  },
+  'meeting-prep': {
+    universalIdentifier: '20202020-5e21-4b07-9c3a-1d4f6e8a0b52',
+  },
+  'deal-review': {
+    universalIdentifier: '20202020-7c44-4f19-8a6d-3b9e2c5f7d81',
+  },
+  'crm-hygiene': {
+    universalIdentifier: '20202020-9a63-4d82-b5e7-6f1c8d3a4e20',
+  },
+  enrich: {
+    universalIdentifier: '20202020-2f85-4a6c-91b3-8e7d0c2b5f49',
   },
 } as const satisfies Record<
   string,

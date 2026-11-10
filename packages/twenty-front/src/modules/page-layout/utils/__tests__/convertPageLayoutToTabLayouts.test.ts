@@ -1,9 +1,11 @@
+import { DEFAULT_WIDGET_SIZE } from 'twenty-shared/constants';
 import { WIDGET_SIZES } from '@/page-layout/constants/WidgetSizes';
 import { type PageLayout } from '@/page-layout/types/PageLayout';
 import { convertPageLayoutToTabLayouts } from '@/page-layout/utils/convertPageLayoutToTabLayouts';
 import {
   AggregateOperations,
   GraphOrderBy,
+  PageLayoutTabLayoutMode,
   PageLayoutType,
   WidgetConfigurationType,
   WidgetType,
@@ -13,20 +15,31 @@ describe('convertPageLayoutToTabLayouts', () => {
   it('should convert page layout to tab layouts', () => {
     const pageLayout: PageLayout = {
       id: 'page-layout-1',
+      applicationId: 'application-id-mock',
       name: 'Page Layout 1',
       type: PageLayoutType.RECORD_PAGE,
+      isFirstTabPinned: true,
+      isSystemSideEffect: true,
       objectMetadataId: 'object-metadata-1',
+      universalIdentifier: '20202020-0000-0000-0000-000000000001',
       tabs: [
         {
+          isSystemSideEffect: false,
+          universalIdentifier: 'universal-identifier-mock',
           id: 'tab-1',
           applicationId: '',
+          isActive: true,
           title: 'Tab 1',
           position: 0,
           pageLayoutId: 'page-layout-1',
           widgets: [
             {
+              isSystemSideEffect: false,
+              universalIdentifier: 'universal-identifier-mock',
               __typename: 'PageLayoutWidget',
               id: 'widget-1',
+              applicationId: '',
+              isActive: true,
               pageLayoutTabId: 'tab-1',
               title: 'Widget 1',
               type: WidgetType.GRAPH,
@@ -36,16 +49,32 @@ describe('convertPageLayoutToTabLayouts', () => {
                 aggregateFieldMetadataId: 'id',
                 displayDataLabel: false,
               },
-              gridPosition: { row: 0, column: 0, rowSpan: 2, columnSpan: 2 },
+              gridPosition: {
+                row: 9,
+                column: 9,
+                rowSpan: 9,
+                columnSpan: 9,
+              },
+              position: {
+                __typename: 'PageLayoutWidgetGridPosition' as const,
+                layoutMode: PageLayoutTabLayoutMode.GRID,
+                row: 0,
+                column: 0,
+                rowSpan: 2,
+                columnSpan: 2,
+              },
               objectMetadataId: 'object-metadata-1',
-              isOverridden: false,
               createdAt: '2025-01-01T00:00:00.000Z',
               updatedAt: '2025-01-01T00:00:00.000Z',
               deletedAt: null,
             },
             {
+              isSystemSideEffect: false,
+              universalIdentifier: 'universal-identifier-mock',
               __typename: 'PageLayoutWidget',
               id: 'widget-2',
+              applicationId: '',
+              isActive: true,
               pageLayoutTabId: 'tab-1',
               title: 'Widget 2',
               type: WidgetType.GRAPH,
@@ -57,15 +86,19 @@ describe('convertPageLayoutToTabLayouts', () => {
                 orderBy: GraphOrderBy.VALUE_DESC,
                 displayDataLabel: false,
               },
-              gridPosition: { row: 2, column: 0, rowSpan: 2, columnSpan: 2 },
+              gridPosition: {
+                row: 2,
+                column: 0,
+                rowSpan: 2,
+                columnSpan: 2,
+              },
+              position: null,
               objectMetadataId: 'object-metadata-1',
-              isOverridden: false,
               createdAt: '2025-01-01T00:00:00.000Z',
               updatedAt: '2025-01-01T00:00:00.000Z',
               deletedAt: null,
             },
           ],
-          isOverridden: false,
           createdAt: '2025-01-01T00:00:00.000Z',
           updatedAt: '2025-01-01T00:00:00.000Z',
           deletedAt: null,
@@ -92,39 +125,121 @@ describe('convertPageLayoutToTabLayouts', () => {
     });
   });
 
-  it('should apply STANDALONE_RICH_TEXT minimum size constraints', () => {
+  it('should use default widget size when position is undefined', () => {
     const pageLayout: PageLayout = {
       id: 'page-layout-1',
+      applicationId: 'application-id-mock',
       name: 'Page Layout 1',
       type: PageLayoutType.RECORD_PAGE,
+      isFirstTabPinned: true,
+      isSystemSideEffect: true,
       objectMetadataId: 'object-metadata-1',
+      universalIdentifier: '20202020-0000-0000-0000-000000000001',
       tabs: [
         {
+          isSystemSideEffect: false,
+          universalIdentifier: 'universal-identifier-mock',
           id: 'tab-1',
           applicationId: '',
+          isActive: true,
           title: 'Tab 1',
           position: 0,
           pageLayoutId: 'page-layout-1',
           widgets: [
             {
+              isSystemSideEffect: false,
+              universalIdentifier: 'universal-identifier-mock',
               __typename: 'PageLayoutWidget',
-              id: 'rich-text-widget',
+              id: 'widget-no-grid-pos',
+              applicationId: '',
+              isActive: true,
               pageLayoutTabId: 'tab-1',
-              title: 'Rich Text',
-              type: WidgetType.STANDALONE_RICH_TEXT,
+              title: 'No Grid Position',
+              type: WidgetType.FRONT_COMPONENT,
               configuration: {
-                configurationType: WidgetConfigurationType.STANDALONE_RICH_TEXT,
-                body: { blocknote: '[]' },
+                configurationType: WidgetConfigurationType.FRONT_COMPONENT,
+                frontComponentId: 'my-component',
               },
-              gridPosition: { row: 0, column: 0, rowSpan: 4, columnSpan: 4 },
+              position: {
+                __typename: 'PageLayoutWidgetCanvasPosition' as const,
+                layoutMode: PageLayoutTabLayoutMode.CANVAS,
+              },
               objectMetadataId: null,
-              isOverridden: false,
               createdAt: '2025-01-01T00:00:00.000Z',
               updatedAt: '2025-01-01T00:00:00.000Z',
               deletedAt: null,
             },
           ],
-          isOverridden: false,
+          createdAt: '2025-01-01T00:00:00.000Z',
+          updatedAt: '2025-01-01T00:00:00.000Z',
+          deletedAt: null,
+        },
+      ],
+      createdAt: '2025-01-01T00:00:00.000Z',
+      updatedAt: '2025-01-01T00:00:00.000Z',
+      deletedAt: null,
+    };
+
+    const result = convertPageLayoutToTabLayouts(pageLayout);
+
+    expect(result['tab-1'].desktop![0]).toMatchObject({
+      i: 'widget-no-grid-pos',
+      x: 0,
+      y: 0,
+      w: DEFAULT_WIDGET_SIZE.default.w,
+      h: DEFAULT_WIDGET_SIZE.default.h,
+    });
+  });
+
+  it('should apply STANDALONE_RICH_TEXT minimum size constraints', () => {
+    const pageLayout: PageLayout = {
+      id: 'page-layout-1',
+      applicationId: 'application-id-mock',
+      name: 'Page Layout 1',
+      type: PageLayoutType.RECORD_PAGE,
+      isFirstTabPinned: true,
+      isSystemSideEffect: true,
+      objectMetadataId: 'object-metadata-1',
+      universalIdentifier: '20202020-0000-0000-0000-000000000001',
+      tabs: [
+        {
+          isSystemSideEffect: false,
+          universalIdentifier: 'universal-identifier-mock',
+          id: 'tab-1',
+          applicationId: '',
+          isActive: true,
+          title: 'Tab 1',
+          position: 0,
+          pageLayoutId: 'page-layout-1',
+          widgets: [
+            {
+              isSystemSideEffect: false,
+              universalIdentifier: 'universal-identifier-mock',
+              __typename: 'PageLayoutWidget',
+              id: 'rich-text-widget',
+              applicationId: '',
+              isActive: true,
+              pageLayoutTabId: 'tab-1',
+              title: 'Rich Text',
+              type: WidgetType.STANDALONE_RICH_TEXT,
+              configuration: {
+                configurationType: WidgetConfigurationType.STANDALONE_RICH_TEXT,
+                body: { tiptap: '' },
+              },
+              position: {
+                __typename: 'PageLayoutWidgetGridPosition' as const,
+                layoutMode: PageLayoutTabLayoutMode.GRID,
+                row: 0,
+                column: 0,
+                rowSpan: 4,
+                columnSpan: 4,
+              },
+              objectMetadataId: null,
+              createdAt: '2025-01-01T00:00:00.000Z',
+              updatedAt: '2025-01-01T00:00:00.000Z',
+              deletedAt: null,
+            },
+          ],
           createdAt: '2025-01-01T00:00:00.000Z',
           updatedAt: '2025-01-01T00:00:00.000Z',
           deletedAt: null,
@@ -139,10 +254,79 @@ describe('convertPageLayoutToTabLayouts', () => {
     const richTextMinSize =
       WIDGET_SIZES[WidgetType.STANDALONE_RICH_TEXT]!.minimum;
 
-    expect(result['tab-1'].desktop[0]).toMatchObject({
+    expect(result['tab-1'].desktop![0]).toMatchObject({
       i: 'rich-text-widget',
       minW: richTextMinSize.w,
       minH: richTextMinSize.h,
+    });
+  });
+
+  it('should use the widget-type minimum size for iframe widgets', () => {
+    const pageLayout: PageLayout = {
+      id: 'page-layout-1',
+      applicationId: 'application-id-mock',
+      name: 'Page Layout 1',
+      type: PageLayoutType.DASHBOARD,
+      isFirstTabPinned: true,
+      isSystemSideEffect: false,
+      objectMetadataId: null,
+      universalIdentifier: '20202020-0000-0000-0000-000000000001',
+      tabs: [
+        {
+          isSystemSideEffect: false,
+          universalIdentifier: 'universal-identifier-mock',
+          id: 'tab-1',
+          applicationId: '',
+          isActive: true,
+          title: 'Tab 1',
+          position: 0,
+          pageLayoutId: 'page-layout-1',
+          widgets: [
+            {
+              isSystemSideEffect: false,
+              universalIdentifier: 'universal-identifier-mock',
+              __typename: 'PageLayoutWidget',
+              id: 'iframe-widget',
+              applicationId: '',
+              isActive: true,
+              pageLayoutTabId: 'tab-1',
+              title: 'Iframe',
+              type: WidgetType.IFRAME,
+              configuration: {
+                configurationType: WidgetConfigurationType.IFRAME,
+                url: 'https://example.com',
+              },
+              position: {
+                __typename: 'PageLayoutWidgetGridPosition' as const,
+                layoutMode: PageLayoutTabLayoutMode.GRID,
+                row: 0,
+                column: 0,
+                rowSpan: 6,
+                columnSpan: 6,
+              },
+              objectMetadataId: null,
+              createdAt: '2025-01-01T00:00:00.000Z',
+              updatedAt: '2025-01-01T00:00:00.000Z',
+              deletedAt: null,
+            },
+          ],
+          createdAt: '2025-01-01T00:00:00.000Z',
+          updatedAt: '2025-01-01T00:00:00.000Z',
+          deletedAt: null,
+        },
+      ],
+      createdAt: '2025-01-01T00:00:00.000Z',
+      updatedAt: '2025-01-01T00:00:00.000Z',
+      deletedAt: null,
+    };
+
+    const result = convertPageLayoutToTabLayouts(pageLayout);
+    const iframeMinSize = WIDGET_SIZES[WidgetType.IFRAME]!.minimum;
+
+    expect(result['tab-1'].desktop![0]).toMatchObject({
+      i: 'iframe-widget',
+      minW: iframeMinSize.w,
+      minH: iframeMinSize.h,
     });
   });
 });

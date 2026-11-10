@@ -1,3 +1,4 @@
+import { fieldMetadataItemByIdSelector } from '@/object-metadata/states/fieldMetadataItemByIdSelector';
 import { formatFieldMetadataItemAsFieldDefinition } from '@/object-metadata/utils/formatFieldMetadataItemAsFieldDefinition';
 import { AdvancedFilterSidePanelValueFormCompositeFieldInput } from '@/object-record/advanced-filter/side-panel/components/AdvancedFilterSidePanelValueFormCompositeFieldInput';
 import { AdvancedFilterContext } from '@/object-record/advanced-filter/states/context/AdvancedFilterContext';
@@ -12,21 +13,26 @@ import { FormBooleanFieldInput } from '@/object-record/record-field/ui/form-type
 import { FormMultiSelectFieldInput } from '@/object-record/record-field/ui/form-types/components/FormMultiSelectFieldInput';
 import { FormRelativeDatePicker } from '@/object-record/record-field/ui/form-types/components/FormRelativeDatePicker';
 import { FormTextFieldInput } from '@/object-record/record-field/ui/form-types/components/FormTextFieldInput';
+import { FormWorkspaceMemberFilterValueInput } from '@/object-record/record-field/ui/form-types/components/FormWorkspaceMemberFilterValueInput';
 import {
   type FieldMetadata,
   type FieldMultiSelectMetadata,
   type FieldSelectMetadata,
 } from '@/object-record/record-field/ui/types/FieldMetadata';
+import { isFieldRelationManyToOne } from '@/object-record/record-field/ui/types/guards/isFieldRelationManyToOne';
 import { currentRecordFiltersComponentState } from '@/object-record/record-filter/states/currentRecordFiltersComponentState';
-import { RecordFilterOperand } from '@/object-record/record-filter/types/RecordFilterOperand';
 import { useAtomComponentSelectorValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentSelectorValue';
+import { useAtomFamilySelectorValue } from '@/ui/utilities/state/jotai/hooks/useAtomFamilySelectorValue';
 import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateValue';
 import { stringifyRelativeDateFilter } from '@/views/view-filter-value/utils/stringifyRelativeDateFilter';
 import { WORKFLOW_TIMEZONE } from '@/workflow/constants/WorkflowTimeZone';
-import { useFeatureFlagsMap } from '@/workspace/hooks/useFeatureFlagsMap';
 import { isObject, isString } from '@sniptt/guards';
 import { useContext } from 'react';
-import { FieldMetadataType } from 'twenty-shared/types';
+import {
+  RecordFilterOperand,
+  StandardObjectNameSingular,
+  FieldMetadataType,
+} from 'twenty-shared/types';
 import { isDefined, type RelativeDateFilter } from 'twenty-shared/utils';
 import { parseBooleanFromStringValue } from 'twenty-shared/workflow';
 import { type JsonValue } from 'type-fest';
@@ -69,10 +75,6 @@ export const AdvancedFilterSidePanelValueFormInput = ({
   const { applyObjectFilterDropdownFilterValue } =
     useApplyObjectFilterDropdownFilterValue();
 
-  const featureFlags = useFeatureFlagsMap();
-  const isWholeDayFilterEnabled =
-    featureFlags.IS_DATE_TIME_WHOLE_DAY_FILTER_ENABLED ?? false;
-
   const handleChange = (newValue: JsonValue) => {
     if (isString(newValue)) {
       applyObjectFilterDropdownFilterValue(newValue);
@@ -96,10 +98,23 @@ export const AdvancedFilterSidePanelValueFormInput = ({
     dropdownInstanceId,
   );
 
-  const fieldDefinition = fieldMetadataItemUsedInDropdown
+  const {
+    foundFieldMetadataItem: relationTargetFieldMetadataItem,
+    foundObjectMetadataItem: relationTargetObjectMetadataItem,
+  } = useAtomFamilySelectorValue(fieldMetadataItemByIdSelector, {
+    fieldMetadataItemId: recordFilter?.relationTargetFieldMetadataId ?? '',
+  });
+
+  const fieldMetadataItemForValueInput =
+    relationTargetFieldMetadataItem ?? fieldMetadataItemUsedInDropdown;
+
+  const objectMetadataItemForValueInput =
+    relationTargetObjectMetadataItem ?? objectMetadataItem;
+
+  const fieldDefinition = fieldMetadataItemForValueInput
     ? formatFieldMetadataItemAsFieldDefinition({
-        field: fieldMetadataItemUsedInDropdown,
-        objectMetadataItem: objectMetadataItem,
+        field: fieldMetadataItemForValueInput,
+        objectMetadataItem: objectMetadataItemForValueInput,
       })
     : null;
 
@@ -134,6 +149,7 @@ export const AdvancedFilterSidePanelValueFormInput = ({
         defaultValue={recordFilter.value}
         onChange={handleRelativeDateFilterChange}
         readonly={readonly}
+        isDateTimeField={recordFilter.type === FieldMetadataType.DATE_TIME}
       />
     );
   }
@@ -196,7 +212,6 @@ export const AdvancedFilterSidePanelValueFormInput = ({
 
   const field = {
     type:
-      isWholeDayFilterEnabled === true &&
       recordFilter.type === FieldMetadataType.DATE_TIME &&
       recordFilter.operand === RecordFilterOperand.IS
         ? FieldMetadataType.DATE
@@ -204,6 +219,25 @@ export const AdvancedFilterSidePanelValueFormInput = ({
     label: '',
     metadata: fieldDefinition?.metadata as FieldMetadata,
   };
+
+  const isDirectWorkspaceMemberRelationFilter =
+    !isDefined(recordFilter.relationTargetFieldMetadataId) &&
+    isFieldRelationManyToOne(field) &&
+    field.metadata.relationObjectMetadataNameSingular ===
+      StandardObjectNameSingular.WorkspaceMember;
+
+  if (isDirectWorkspaceMemberRelationFilter) {
+    return (
+      <FormWorkspaceMemberFilterValueInput
+        label=""
+        defaultValue={recordFilter.value}
+        onChange={handleChange}
+        onClear={handleClear}
+        readonly={readonly}
+        VariablePicker={VariablePicker}
+      />
+    );
+  }
 
   const shouldUseUTCTimeZone = isWorkflowFindRecords === true;
   const timeZone = shouldUseUTCTimeZone ? WORKFLOW_TIMEZONE : undefined;
@@ -214,8 +248,7 @@ export const AdvancedFilterSidePanelValueFormInput = ({
       defaultValue={recordFilter.value}
       onChange={handleChange}
       readonly={readonly}
-      // VariablePicker is not supported for date filters yet
-      VariablePicker={isFilterableByDateValue ? undefined : VariablePicker}
+      VariablePicker={VariablePicker}
       timeZone={timeZone}
     />
   );

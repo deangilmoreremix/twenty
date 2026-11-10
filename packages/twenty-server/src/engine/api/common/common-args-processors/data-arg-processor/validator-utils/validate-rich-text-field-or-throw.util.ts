@@ -1,7 +1,14 @@
 import { inspect } from 'util';
 
 import { msg } from '@lingui/core/macro';
-import { isNonEmptyString, isNull } from '@sniptt/guards';
+import { isNonEmptyString, isNull, isString } from '@sniptt/guards';
+import {
+  isPlainObject,
+  isSafeUrl,
+  parseJson,
+  richTextDocumentSchema,
+} from 'twenty-shared/utils';
+import { z } from 'zod';
 
 import { validateRawJsonFieldOrThrow } from 'src/engine/api/common/common-args-processors/data-arg-processor/validator-utils/validate-raw-json-field-or-throw.util';
 import { validateTextFieldOrThrow } from 'src/engine/api/common/common-args-processors/data-arg-processor/validator-utils/validate-text-field-or-throw.util';
@@ -10,13 +17,39 @@ import {
   CommonQueryRunnerExceptionCode,
 } from 'src/engine/api/common/common-query-runners/errors/common-query-runner.exception';
 
+const isDangerousUrl = (url: unknown): boolean =>
+  isString(url) && url.trim().length > 0 && !isSafeUrl(url.trim());
+
+const hasDangerousBlockNoteUrl = (value: unknown): boolean => {
+  if (Array.isArray(value)) {
+    return value.some(hasDangerousBlockNoteUrl);
+  }
+
+  if (!isPlainObject(value)) {
+    return false;
+  }
+
+  return Object.entries(value).some(([key, entryValue]) => {
+    switch (key) {
+      case 'url':
+      case 'href':
+      case 'src':
+        return isDangerousUrl(entryValue);
+      default:
+        return hasDangerousBlockNoteUrl(entryValue);
+    }
+  });
+};
+
 const validateBlocknoteFieldOrThrow = (
   value: unknown,
   fieldName: string,
 ): string | null => {
   const textValue = validateTextFieldOrThrow(value, fieldName);
 
-  if (!isNonEmptyString(textValue)) return textValue;
+  if (!isNonEmptyString(textValue)) {
+    return textValue;
+  }
 
   let parsed: unknown;
 
@@ -38,6 +71,41 @@ const validateBlocknoteFieldOrThrow = (
     );
   }
 
+  if (hasDangerousBlockNoteUrl(parsed)) {
+    throw new CommonQueryRunnerException(
+      `Dangerous URL protocol in blocknote content for field "${fieldName}"`,
+      CommonQueryRunnerExceptionCode.INVALID_ARGS_DATA,
+      {
+        userFriendlyMessage: msg`Content contains a URL with a dangerous protocol.`,
+      },
+    );
+  }
+
+  return textValue;
+};
+
+const validateTipTapFieldOrThrow = (
+  value: unknown,
+  fieldName: string,
+): string | null => {
+  const textValue = validateTextFieldOrThrow(value, fieldName);
+
+  if (!isNonEmptyString(textValue)) {
+    return textValue;
+  }
+
+  const parsedDocument = richTextDocumentSchema.safeParse(
+    parseJson<unknown>(textValue),
+  );
+
+  if (!parsedDocument.success) {
+    throw new CommonQueryRunnerException(
+      `Invalid tiptap value for field "${fieldName}" - ${z.prettifyError(parsedDocument.error)}`,
+      CommonQueryRunnerExceptionCode.INVALID_ARGS_DATA,
+      { userFriendlyMessage: msg`Invalid value for rich text.` },
+    );
+  }
+
   return textValue;
 };
 
@@ -47,10 +115,13 @@ export const validateRichTextFieldOrThrow = (
 ): {
   blocknote?: string | null;
   markdown?: string | null;
+  tiptap?: string | null;
 } | null => {
   const preValidatedValue = validateRawJsonFieldOrThrow(value, fieldName);
 
-  if (isNull(preValidatedValue)) return null;
+  if (isNull(preValidatedValue)) {
+    return null;
+  }
 
   for (const [subField, subFieldValue] of Object.entries(preValidatedValue)) {
     switch (subField) {
@@ -62,6 +133,9 @@ export const validateRichTextFieldOrThrow = (
         break;
       case 'markdown':
         validateTextFieldOrThrow(subFieldValue, `${fieldName}.${subField}`);
+        break;
+      case 'tiptap':
+        validateTipTapFieldOrThrow(subFieldValue, `${fieldName}.${subField}`);
         break;
       default:
         throw new CommonQueryRunnerException(
@@ -75,5 +149,6 @@ export const validateRichTextFieldOrThrow = (
   return value as {
     blocknote?: string | null;
     markdown?: string | null;
+    tiptap?: string | null;
   };
 };

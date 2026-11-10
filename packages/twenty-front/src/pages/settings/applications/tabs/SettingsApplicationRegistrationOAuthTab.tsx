@@ -1,65 +1,30 @@
-import { SettingsAdminTableCard } from '@/settings/admin-panel/components/SettingsAdminTableCard';
+import { SettingsTableCard } from '@/settings/components/SettingsTableCard';
 import { ApiKeyInput } from '@/settings/developers/components/ApiKeyInput';
-import { useSnackBar } from '@/ui/feedback/snack-bar-manager/hooks/useSnackBar';
-import { SettingsTextInput } from '@/ui/input/components/SettingsTextInput';
-import { ConfirmationModal } from '@/ui/layout/modal/components/ConfirmationModal';
-import { useModal } from '@/ui/layout/modal/hooks/useModal';
+import { ConfirmationDialog } from '@/ui/layout/dialog/components/ConfirmationDialog';
+import { useDialog } from '@/ui/layout/dialog/hooks/useDialog';
 import { useAtomFamilyStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomFamilyStateValue';
 import { useMutation } from '@apollo/client/react';
 import { styled } from '@linaria/react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { isNonEmptyString } from '@sniptt/guards';
 import { useState } from 'react';
+import { useToast } from 'twenty-ui/components/feedback';
+import { Section } from 'twenty-ui/components/layout';
+import { IconKey, IconRefresh, IconShield } from 'twenty-ui/icon';
+import { Button } from 'twenty-ui/primitives/input';
+import { themeCssVariables } from 'twenty-ui/theme';
 import {
-  H2Title,
-  IconKey,
-  IconRefresh,
-  IconShield,
-  IconTrash,
-} from 'twenty-ui/display';
-import { Button } from 'twenty-ui/input';
-import { Section } from 'twenty-ui/layout';
-import { themeCssVariables } from 'twenty-ui/theme-constants';
-import {
-  FindManyApplicationRegistrationsDocument,
-  FindOneApplicationRegistrationDocument,
   RotateApplicationRegistrationClientSecretDocument,
   UpdateApplicationRegistrationDocument,
 } from '~/generated-metadata/graphql';
+import { SettingsApplicationRegistrationRedirectURIsInput } from '~/pages/settings/applications/components/SettingsApplicationRegistrationRedirectURIsInput';
+import { SettingsApplicationRegistrationRedirectURIsTable } from '~/pages/settings/applications/components/SettingsApplicationRegistrationRedirectURIsTable';
 import { applicationRegistrationClientSecretFamilyState } from '~/pages/settings/applications/states/applicationRegistrationClientSecretFamilyState';
 import { type ApplicationRegistrationData } from '~/pages/settings/applications/tabs/types/ApplicationRegistrationData';
-import { isValidUrl } from 'twenty-shared/utils';
 
 const ROTATE_SECRET_MODAL_ID = 'rotate-application-registration-secret-modal';
 
-const StyledInputContainer = styled.div`
-  align-items: center;
-  display: flex;
-  flex-direction: row;
-  gap: ${themeCssVariables.spacing[2]};
-  width: 100%;
-`;
-
-const StyledRedirectUriRow = styled.div`
-  align-items: center;
-  display: flex;
-  gap: ${themeCssVariables.spacing[2]};
-  padding: ${themeCssVariables.spacing[1]} 0;
-`;
-
-const StyledRedirectUriValue = styled.span`
-  color: ${themeCssVariables.font.color.primary};
-  font-family: monospace;
-  word-break: break-all;
-`;
-
 const StyledRotateContainer = styled.div`
-  padding-top: ${themeCssVariables.spacing[2]};
-`;
-
-const StyledSaveContainer = styled.div`
-  display: flex;
-  gap: ${themeCssVariables.spacing[2]};
   padding-top: ${themeCssVariables.spacing[2]};
 `;
 
@@ -69,8 +34,8 @@ export const SettingsApplicationRegistrationOAuthTab = ({
   registration: ApplicationRegistrationData;
 }) => {
   const { t } = useLingui();
-  const { enqueueSuccessSnackBar, enqueueErrorSnackBar } = useSnackBar();
-  const { openModal } = useModal();
+  const { enqueueToast } = useToast();
+  const { openDialog } = useDialog();
 
   const applicationRegistrationId = registration.id;
 
@@ -84,50 +49,39 @@ export const SettingsApplicationRegistrationOAuthTab = ({
   const [formRedirectUris, setFormRedirectUris] = useState<string[]>(
     registration.oAuthRedirectUris ?? [],
   );
-  const [newRedirectUri, setNewRedirectUri] = useState('');
-  const [hasChanges, setHasChanges] = useState(false);
 
   const [updateRegistration] = useMutation(
     UpdateApplicationRegistrationDocument,
-    {
-      refetchQueries: [
-        FindOneApplicationRegistrationDocument,
-        FindManyApplicationRegistrationsDocument,
-      ],
-    },
   );
 
   const [rotateSecret] = useMutation(
     RotateApplicationRegistrationClientSecretDocument,
   );
 
-  const markDirty = () => setHasChanges(true);
-
-  const handleSave = async () => {
+  const handleSave = async (newFormRedirectUris: string[]) => {
     setIsLoading(true);
+
     try {
       await updateRegistration({
         variables: {
           input: {
             id: applicationRegistrationId,
             update: {
-              oAuthRedirectUris: formRedirectUris,
+              oAuthRedirectUris: newFormRedirectUris,
             },
           },
         },
       });
-      setHasChanges(false);
-      enqueueSuccessSnackBar({ message: t`Redirect URIs updated` });
+      enqueueToast({ status: 'success', children: t`Redirect URIs updated` });
+      setFormRedirectUris(newFormRedirectUris);
     } catch {
-      enqueueErrorSnackBar({ message: t`Error updating redirect URIs` });
+      enqueueToast({
+        status: 'error',
+        children: t`Error updating redirect URIs`,
+      });
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleCancel = () => {
-    setFormRedirectUris(registration.oAuthRedirectUris ?? []);
-    setHasChanges(false);
   };
 
   const handleRotateSecret = async () => {
@@ -141,51 +95,23 @@ export const SettingsApplicationRegistrationOAuthTab = ({
 
       if (isNonEmptyString(secret)) {
         setRotatedSecret(secret);
-        enqueueSuccessSnackBar({
-          message: t`Client secret rotated. Copy it now — it won't be shown again.`,
+        enqueueToast({
+          status: 'success',
+          children: t`Client secret rotated. Copy it now — it won't be shown again.`,
         });
       }
     } catch {
-      enqueueErrorSnackBar({
-        message: t`Error rotating client secret`,
+      enqueueToast({
+        status: 'error',
+        children: t`Error rotating client secret`,
       });
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleAddRedirectUri = () => {
-    const trimmed = newRedirectUri.trim();
-
-    if (!trimmed) {
-      return;
-    }
-
-    if (!isValidUrl(trimmed)) {
-      enqueueErrorSnackBar({ message: t`Please enter a valid URL` });
-
-      return;
-    }
-
-    if (formRedirectUris.includes(trimmed)) {
-      enqueueErrorSnackBar({ message: t`This redirect URI is already added` });
-
-      return;
-    }
-
-    setFormRedirectUris([...formRedirectUris, trimmed]);
-    setNewRedirectUri('');
-    markDirty();
-  };
-
-  const handleRemoveRedirectUri = (index: number) => {
-    setFormRedirectUris(
-      formRedirectUris.filter((_, uriIndex) => uriIndex !== index),
-    );
-    markDirty();
-  };
-
   const displayedSecret = rotatedSecret ?? applicationRegistrationClientSecret;
+
   const confirmationValue = t`yes`;
 
   const credentialItems = [
@@ -203,89 +129,50 @@ export const SettingsApplicationRegistrationOAuthTab = ({
 
   return (
     <>
-      <Section>
-        <H2Title
-          title={t`OAuth Credentials`}
+      <Section.Root>
+        <Section.Header
+          title={t`OAuth`}
           description={t`Credentials and scopes for OAuth authorization flows`}
         />
-        <SettingsAdminTableCard
-          rounded
-          items={credentialItems}
-          gridAutoColumns="3fr 8fr"
-        />
+        <SettingsTableCard items={credentialItems} gridAutoColumns="3fr 8fr" />
         <StyledRotateContainer>
           <Button
-            Icon={IconRefresh}
-            title={t`Rotate client secret`}
-            variant="secondary"
-            onClick={() => openModal(ROTATE_SECRET_MODAL_ID)}
-          />
+            startIcon={<IconRefresh />}
+            onClick={() => openDialog(ROTATE_SECRET_MODAL_ID)}
+            variant="outline"
+          >{t`Rotate client secret`}</Button>
         </StyledRotateContainer>
-      </Section>
+      </Section.Root>
 
       {displayedSecret && (
-        <Section>
-          <H2Title
+        <Section.Root>
+          <Section.Header
             title={t`Client Secret`}
             description={t`Copy this secret as it will not be visible again`}
           />
           <ApiKeyInput apiKey={displayedSecret} />
-        </Section>
+        </Section.Root>
       )}
 
-      <Section>
-        <H2Title
+      <Section.Root>
+        <Section.Header
           title={t`Redirect URIs`}
           description={t`Allowed redirect URIs for OAuth flows`}
         />
-        {formRedirectUris.map((uri, index) => (
-          <StyledRedirectUriRow key={`${uri}-${index}`}>
-            <StyledRedirectUriValue>{uri}</StyledRedirectUriValue>
-            <Button
-              Icon={IconTrash}
-              variant="tertiary"
-              size="medium"
-              onClick={() => handleRemoveRedirectUri(index)}
-            />
-          </StyledRedirectUriRow>
-        ))}
-        <StyledInputContainer>
-          <SettingsTextInput
-            instanceId="application-registration-new-redirect-uri"
-            value={newRedirectUri}
-            onChange={setNewRedirectUri}
-            placeholder={t`https://example.com/callback`}
-            fullWidth
-          />
-          <Button
-            title={t`Add`}
-            variant="secondary"
-            size="medium"
-            onClick={handleAddRedirectUri}
-          />
-        </StyledInputContainer>
-        {hasChanges && (
-          <StyledSaveContainer>
-            <Button
-              title={t`Save`}
-              variant="primary"
-              accent="blue"
-              onClick={handleSave}
-              disabled={isLoading}
-            />
-            <Button
-              title={t`Cancel`}
-              variant="secondary"
-              onClick={handleCancel}
-            />
-          </StyledSaveContainer>
-        )}
-      </Section>
+        <SettingsApplicationRegistrationRedirectURIsInput
+          redirectUris={formRedirectUris}
+          updateRedirectUris={handleSave}
+        />
+        <SettingsApplicationRegistrationRedirectURIsTable
+          redirectUris={formRedirectUris}
+          updateRedirectUris={handleSave}
+        />
+      </Section.Root>
 
-      <ConfirmationModal
+      <ConfirmationDialog
         confirmationPlaceholder={confirmationValue}
         confirmationValue={confirmationValue}
-        modalInstanceId={ROTATE_SECRET_MODAL_ID}
+        dialogId={ROTATE_SECRET_MODAL_ID}
         title={t`Rotate client secret`}
         subtitle={
           <Trans>

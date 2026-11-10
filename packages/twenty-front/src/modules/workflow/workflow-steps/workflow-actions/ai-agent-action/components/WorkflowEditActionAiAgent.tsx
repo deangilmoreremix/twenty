@@ -1,45 +1,34 @@
-import { WorkflowStepCmdEnterButton } from '@/workflow/workflow-steps/components/WorkflowStepCmdEnterButton';
-import { useAiModelOptions } from '@/ai/hooks/useAiModelOptions';
+import { agentResponseSchemaToOutputSchema } from '@/ai/utils/agentResponseSchemaToOutputSchema';
+import { TabListRoot } from '@/ui/layout/tab-list/components/TabListRoot';
+import { WorkflowStepTabPanel } from '@/workflow/workflow-steps/components/WorkflowStepTabPanel';
 import { TabList } from '@/ui/layout/tab-list/components/TabList';
 import { activeTabIdComponentState } from '@/ui/layout/tab-list/states/activeTabIdComponentState';
 import { type SingleTabProps } from '@/ui/layout/tab-list/types/SingleTabProps';
 import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateValue';
 import { useAtomState } from '@/ui/utilities/state/jotai/hooks/useAtomState';
-import { useFlowOrThrow } from '@/workflow/hooks/useFlowOrThrow';
 import { type WorkflowAiAgentAction } from '@/workflow/types/Workflow';
 import { WorkflowStepBody } from '@/workflow/workflow-steps/components/WorkflowStepBody';
+import { WorkflowStepCmdEnterButton } from '@/workflow/workflow-steps/components/WorkflowStepCmdEnterButton';
 import { WorkflowStepFooter } from '@/workflow/workflow-steps/components/WorkflowStepFooter';
-import { useUpdateWorkflowVersionStep } from '@/workflow/workflow-steps/hooks/useUpdateWorkflowVersionStep';
+import { WorkflowAiAgentAgentStepPromptTab } from '@/workflow/workflow-steps/workflow-actions/ai-agent-action/components/WorkflowAiAgentAgentStepPromptTab';
+import { WorkflowAiAgentGenerateStepPromptTab } from '@/workflow/workflow-steps/workflow-actions/ai-agent-action/components/WorkflowAiAgentGenerateStepPromptTab';
 import { WorkflowAiAgentPermissionsTab } from '@/workflow/workflow-steps/workflow-actions/ai-agent-action/components/WorkflowAiAgentPermissionsTab';
 import { WORKFLOW_AI_AGENT_TAB_LIST_COMPONENT_ID } from '@/workflow/workflow-steps/workflow-actions/ai-agent-action/constants/WorkflowAiAgentTabListComponentId';
 import { WORKFLOW_AI_AGENT_TABS } from '@/workflow/workflow-steps/workflow-actions/ai-agent-action/constants/WorkflowAiAgentTabs';
 import { useResetWorkflowAiAgentPermissionsStateOnSidePanelClose } from '@/workflow/workflow-steps/workflow-actions/ai-agent-action/hooks/useResetWorkflowAiAgentPermissionsStateOnSidePanelClose';
-import { workflowAiAgentActionAgentState } from '@/workflow/workflow-steps/workflow-actions/ai-agent-action/states/workflowAiAgentActionAgentState';
 import { workflowAiAgentPermissionsIsAddingPermissionState } from '@/workflow/workflow-steps/workflow-actions/ai-agent-action/states/workflowAiAgentPermissionsIsAddingPermissionState';
+import { type WorkflowAiAgentStepInput } from '@/workflow/workflow-steps/workflow-actions/ai-agent-action/types/WorkflowAiAgentStepInput';
+import { useQuery } from '@apollo/client/react';
 import { styled } from '@linaria/react';
 import { useLingui } from '@lingui/react/macro';
-import { useEffect, useState } from 'react';
-import {
-  type AgentResponseSchema,
-  type ModelConfiguration,
-} from 'twenty-shared/ai';
-import { SettingsPath } from 'twenty-shared/types';
+import { useState } from 'react';
 import { isDefined } from 'twenty-shared/utils';
-import { IconLock, IconSparkles } from 'twenty-ui/display';
+import { isWorkflowAiAgentGenerateStep } from 'twenty-shared/workflow';
+import { IconAlertTriangle, IconLock, IconSparkles } from 'twenty-ui/icon';
+import { themeCssVariables } from 'twenty-ui/theme';
 import { useDebouncedCallback } from 'use-debounce';
-import { useQuery, useMutation } from '@apollo/client/react';
-import {
-  FindOneAgentDocument,
-  GetRolesDocument,
-  UpdateOneAgentDocument,
-} from '~/generated-metadata/graphql';
-import { useNavigateSettings } from '~/hooks/useNavigateSettings';
+import { FindOneAgentDocument } from '~/generated-metadata/graphql';
 import { SidePanelSkeletonLoader } from '~/loading/components/SidePanelSkeletonLoader';
-import { WorkflowAiAgentPromptTab } from './WorkflowAiAgentPromptTab';
-import { themeCssVariables } from 'twenty-ui/theme-constants';
-
-export type WorkflowAiAgentTabId =
-  (typeof WORKFLOW_AI_AGENT_TABS)[keyof typeof WORKFLOW_AI_AGENT_TABS];
 
 type WorkflowEditActionAiAgentProps = {
   action: WorkflowAiAgentAction;
@@ -56,40 +45,45 @@ const StyledTabListContainer = styled.div`
   padding-left: ${themeCssVariables.spacing[2]};
 `;
 
+const StyledMissingAgentState = styled.div`
+  align-items: center;
+  color: ${themeCssVariables.font.color.tertiary};
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  font-size: ${themeCssVariables.font.size.sm};
+  gap: ${themeCssVariables.spacing[2]};
+  padding: ${themeCssVariables.spacing[8]} ${themeCssVariables.spacing[3]};
+  text-align: center;
+`;
+
 export const WorkflowEditActionAiAgent = ({
   action,
   actionOptions,
 }: WorkflowEditActionAiAgentProps) => {
   const { t } = useLingui();
   const componentInstanceId = `${WORKFLOW_AI_AGENT_TAB_LIST_COMPONENT_ID}-${action.id}`;
-  const agentId = action.settings.input.agentId;
-  const [workflowAiAgentActionAgent, setWorkflowAiAgentActionAgent] =
-    useAtomState(workflowAiAgentActionAgentState);
-  const {
-    data: agentData,
-    loading: agentLoading,
-    refetch: refetchAgent,
-  } = useQuery(FindOneAgentDocument, {
-    variables: { id: agentId || '' },
-    skip: !agentId,
-  });
+  const readonly = actionOptions.readonly ?? false;
+  const isGenerateStep = isWorkflowAiAgentGenerateStep(action.settings.input);
 
-  useEffect(() => {
-    if (agentData?.findOneAgent) {
-      setWorkflowAiAgentActionAgent(agentData.findOneAgent);
-    }
-  }, [agentData, setWorkflowAiAgentActionAgent]);
+  const { data: agentData, loading: agentLoading } = useQuery(
+    FindOneAgentDocument,
+    {
+      variables: { id: action.settings.input.agentId ?? '' },
+      skip: isGenerateStep,
+    },
+  );
+  const agent = agentData?.findOneAgent;
+
   useResetWorkflowAiAgentPermissionsStateOnSidePanelClose();
-  const [updateAgent] = useMutation(UpdateOneAgentDocument);
-  const aiModelOptions = useAiModelOptions();
-  const { updateWorkflowVersionStep } = useUpdateWorkflowVersionStep();
-  const flow = useFlowOrThrow();
 
-  const actionPrompt = action.settings.input.prompt || '';
-  const [prompt, setPrompt] = useState(actionPrompt);
+  const [input, setInput] = useState<WorkflowAiAgentStepInput>(
+    action.settings.input,
+  );
 
-  const savePrompt = useDebouncedCallback((newPrompt: string) => {
-    if (actionOptions.readonly === true) {
+  // saves the input of the latest render, so editing one field does not drop a pending edit of another
+  const saveInput = useDebouncedCallback(() => {
+    if (actionOptions.readonly) {
       return;
     }
 
@@ -97,220 +91,138 @@ export const WorkflowEditActionAiAgent = ({
       ...action,
       settings: {
         ...action.settings,
-        input: {
-          ...action.settings.input,
-          prompt: newPrompt,
-        },
+        input,
+        ...(input.responseFormat?.type === 'json'
+          ? {
+              outputSchema: agentResponseSchemaToOutputSchema(
+                input.responseFormat.schema,
+              ),
+            }
+          : {}),
       },
     });
   }, 500);
 
-  const handleAgentPromptChange = (newPrompt: string) => {
-    setPrompt(newPrompt);
-    savePrompt(newPrompt);
-  };
-
-  const handleAgentModelChange = async (modelId: string) => {
-    if (
-      actionOptions.readonly === true ||
-      !isDefined(workflowAiAgentActionAgent)
-    ) {
-      return;
-    }
-
-    const response = await updateAgent({
-      variables: {
-        input: {
-          id: workflowAiAgentActionAgent.id,
-          modelId,
-        },
-      },
-    });
-
-    setWorkflowAiAgentActionAgent({
-      ...workflowAiAgentActionAgent,
-      ...response.data?.updateOneAgent,
-    });
-  };
-
-  const handleModelConfigurationChange = async (
-    configuration: ModelConfiguration,
+  const handleInputChange = (
+    inputUpdate: Partial<WorkflowAiAgentStepInput>,
   ) => {
-    if (
-      actionOptions.readonly === true ||
-      !isDefined(workflowAiAgentActionAgent)
-    ) {
-      return;
-    }
-
-    const response = await updateAgent({
-      variables: {
-        input: {
-          id: workflowAiAgentActionAgent.id,
-          modelConfiguration: configuration,
-        },
-      },
-    });
-    setWorkflowAiAgentActionAgent({
-      ...workflowAiAgentActionAgent,
-      ...response.data?.updateOneAgent,
-    });
+    setInput((currentInput) => ({ ...currentInput, ...inputUpdate }));
+    saveInput();
   };
 
-  const updateAgentResponseFormat = async (format: {
-    type: 'text' | 'json';
-    schema?: AgentResponseSchema;
-  }) => {
-    if (
-      actionOptions.readonly === true ||
-      !isDefined(workflowAiAgentActionAgent)
-    ) {
-      return;
-    }
-
-    const response = await updateAgent({
-      variables: {
-        input: {
-          id: workflowAiAgentActionAgent.id,
-          responseFormat: format,
-        },
-      },
-    });
-
-    setWorkflowAiAgentActionAgent({
-      ...workflowAiAgentActionAgent,
-      ...response.data?.updateOneAgent,
-    });
-
-    await updateWorkflowVersionStep({
-      workflowVersionId: flow.workflowVersionId,
-      step: action,
-    });
-  };
-
-  const debouncedUpdateAgentResponseFormat = useDebouncedCallback(
-    updateAgentResponseFormat,
-    300,
-  );
-
+  // an agent step runs with its agent's role, edited on the agent
   const tabs: SingleTabProps[] = [
     {
       id: WORKFLOW_AI_AGENT_TABS.PROMPT,
       title: t`Prompt`,
       Icon: IconSparkles,
     },
-    {
-      id: WORKFLOW_AI_AGENT_TABS.PERMISSIONS,
-      title: t`Permissions`,
-      Icon: IconLock,
-    },
+    ...(isGenerateStep
+      ? [
+          {
+            id: WORKFLOW_AI_AGENT_TABS.PERMISSIONS,
+            title: t`Permissions`,
+            Icon: IconLock,
+          },
+        ]
+      : []),
   ];
 
   const activeTabId = useAtomComponentStateValue(
     activeTabIdComponentState,
     componentInstanceId,
   );
-  const currentTabId =
-    (activeTabId as WorkflowAiAgentTabId) ?? WORKFLOW_AI_AGENT_TABS.PROMPT;
-
-  const navigateSettings = useNavigateSettings();
-  const { data: rolesData } = useQuery(GetRolesDocument);
+  const isPermissionsTabActive =
+    isGenerateStep && activeTabId === WORKFLOW_AI_AGENT_TABS.PERMISSIONS;
 
   const [
     workflowAiAgentPermissionsIsAddingPermission,
     setWorkflowAiAgentPermissionsIsAddingPermission,
   ] = useAtomState(workflowAiAgentPermissionsIsAddingPermissionState);
 
-  const role = rolesData?.getRoles.find(
-    (item) => item.id === workflowAiAgentActionAgent?.roleId,
-  );
+  const footerActions =
+    isPermissionsTabActive &&
+    !workflowAiAgentPermissionsIsAddingPermission &&
+    !readonly
+      ? [
+          <WorkflowStepCmdEnterButton
+            key="add-permission"
+            title={t`Add permission`}
+            onClick={() =>
+              setWorkflowAiAgentPermissionsIsAddingPermission(true)
+            }
+          />,
+        ]
+      : [];
 
-  const handleAgentResponseFormatChange = async (format: {
-    type: 'text' | 'json';
-    schema?: AgentResponseSchema;
-  }) => {
-    if (format.type !== workflowAiAgentActionAgent?.responseFormat?.type) {
-      debouncedUpdateAgentResponseFormat.cancel();
-      void updateAgentResponseFormat(format);
-    } else {
-      void debouncedUpdateAgentResponseFormat(format);
-    }
-  };
+  if (!isGenerateStep && !agentLoading && !isDefined(agent)) {
+    return (
+      <>
+        <StyledMissingAgentState>
+          <IconAlertTriangle size={20} />
+          <div>{t`The agent this step runs could not be loaded. It may have been deleted.`}</div>
+        </StyledMissingAgentState>
+        {!readonly && <WorkflowStepFooter stepId={action.id} />}
+      </>
+    );
+  }
 
-  const handleViewRole = () => {
-    if (isDefined(role?.id)) {
-      navigateSettings(SettingsPath.RoleDetail, { roleId: role.id });
-    }
-  };
+  if (!isGenerateStep && !isDefined(agent)) {
+    return <SidePanelSkeletonLoader />;
+  }
 
-  const getFooterActions = () => {
-    if (currentTabId !== WORKFLOW_AI_AGENT_TABS.PERMISSIONS) {
-      return [];
-    }
-
-    if (workflowAiAgentPermissionsIsAddingPermission) {
-      return [
-        <WorkflowStepCmdEnterButton
-          key="view-role"
-          title={t`View role`}
-          onClick={handleViewRole}
-          disabled={!isDefined(role?.id)}
-        />,
-      ];
-    }
-
-    if (isDefined(actionOptions.readonly)) {
-      return [];
-    }
-
-    return [
-      <WorkflowStepCmdEnterButton
-        key="add-permission"
-        title={t`Add permission`}
-        onClick={() => setWorkflowAiAgentPermissionsIsAddingPermission(true)}
-      />,
-    ];
-  };
-
-  return agentLoading ? (
-    <SidePanelSkeletonLoader />
-  ) : (
-    <>
+  return (
+    <TabListRoot componentInstanceId={componentInstanceId}>
       <StyledTabListContainer>
         <TabList
+          aria-label={t`Agent configuration`}
           tabs={tabs}
           componentInstanceId={componentInstanceId}
           behaveAsLinks={false}
         />
       </StyledTabListContainer>
-      {currentTabId === WORKFLOW_AI_AGENT_TABS.PERMISSIONS ? (
-        <WorkflowStepBody paddingBlock="0" paddingInline="0">
-          <WorkflowAiAgentPermissionsTab
-            action={action}
-            readonly={actionOptions.readonly === true}
-            isAgentLoading={agentLoading}
-            refetchAgent={refetchAgent}
-          />
-        </WorkflowStepBody>
-      ) : (
-        <WorkflowStepBody>
-          <WorkflowAiAgentPromptTab
-            prompt={prompt}
-            readonly={actionOptions.readonly === true}
-            aiModelOptions={aiModelOptions}
-            onPromptChange={handleAgentPromptChange}
-            onModelChange={handleAgentModelChange}
-            onModelConfigurationChange={handleModelConfigurationChange}
-            onResponseFormatChange={handleAgentResponseFormatChange}
-          />
-        </WorkflowStepBody>
-      )}
-      {!actionOptions.readonly && (
+      <WorkflowStepTabPanel
+        value={
+          isPermissionsTabActive
+            ? WORKFLOW_AI_AGENT_TABS.PERMISSIONS
+            : WORKFLOW_AI_AGENT_TABS.PROMPT
+        }
+      >
+        {isPermissionsTabActive ? (
+          <WorkflowStepBody paddingBlock="0" paddingInline="0">
+            <WorkflowAiAgentPermissionsTab
+              scope={input.scope}
+              readonly={readonly}
+              onScopeChange={(scope) => handleInputChange({ scope })}
+            />
+          </WorkflowStepBody>
+        ) : (
+          <WorkflowStepBody>
+            {isDefined(agent) ? (
+              <WorkflowAiAgentAgentStepPromptTab
+                agent={agent}
+                stepId={action.id}
+                input={input}
+                readonly={readonly}
+                onInputChange={handleInputChange}
+              />
+            ) : (
+              <WorkflowAiAgentGenerateStepPromptTab
+                stepId={action.id}
+                input={input}
+                readonly={readonly}
+                onInputChange={handleInputChange}
+              />
+            )}
+          </WorkflowStepBody>
+        )}
+      </WorkflowStepTabPanel>
+      {!readonly && (
         <WorkflowStepFooter
-          additionalActions={getFooterActions()}
+          additionalActions={footerActions}
           stepId={action.id}
         />
       )}
-    </>
+    </TabListRoot>
   );
 };

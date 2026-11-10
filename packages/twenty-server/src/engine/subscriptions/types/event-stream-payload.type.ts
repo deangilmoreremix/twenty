@@ -1,10 +1,12 @@
+import { type EventStreamMetadataEvent } from 'src/engine/subscriptions/types/event-stream-metadata-event.type';
 import { type ObjectRecordSubscriptionEvent } from 'src/engine/subscriptions/types/object-record-subscription-event.type';
-import { type MetadataEvent } from 'src/engine/workspace-manager/workspace-migration/workspace-migration-runner/types/metadata-event';
+import { type QueueJobEvent } from 'src/engine/subscriptions/types/queue-job-event.type';
 
 export type EventStreamPayload = {
   objectRecordEventsWithQueryIds: {
     queryIds: string[];
     objectRecordEvent: ObjectRecordSubscriptionEvent;
   }[];
-  metadataEvents: MetadataEvent[];
+  metadataEvents: EventStreamMetadataEvent[];
+  queueJobEvents?: QueueJobEvent[];
 };

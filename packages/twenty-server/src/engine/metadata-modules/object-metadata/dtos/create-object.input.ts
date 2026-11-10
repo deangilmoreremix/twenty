@@ -61,9 +61,6 @@ export class CreateObjectInput {
   color?: string;
 
   @HideField()
-  dataSourceId: string;
-
-  @HideField()
   applicationId?: string;
 
   @HideField()
@@ -89,7 +86,7 @@ export class CreateObjectInput {
 
   @IsBoolean()
   @IsOptional()
-  @Field({ nullable: true }) // Not nullable to me
+  @Field({ nullable: true })
   isLabelSyncedWithName?: boolean;
 }
 

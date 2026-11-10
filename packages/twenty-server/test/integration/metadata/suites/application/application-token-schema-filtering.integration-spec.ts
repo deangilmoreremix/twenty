@@ -1,8 +1,9 @@
 import request from 'supertest';
 import { findManyApplications } from 'test/integration/graphql/utils/find-many-applications.util';
-import { generateApplicationToken } from 'test/integration/metadata/suites/application/utils/generate-application-token.util';
+import { generateAppleAdminApplicationTokenPair } from 'test/integration/utils/generate-apple-admin-application-token-pair.util';
 
 import { TWENTY_STANDARD_APPLICATION } from 'src/engine/workspace-manager/twenty-standard-application/constants/twenty-standard-applications';
+import { getConnectionTypename, getEdgeTypename } from 'twenty-shared/utils';
 
 const INTROSPECTION_QUERY = `
   query IntrospectionQuery {
@@ -16,7 +17,7 @@ const INTROSPECTION_QUERY = `
 `;
 
 // Custom objects seeded in the dev workspace that should NOT appear
-// in a schema scoped to the Twenty Standard Application
+// in a schema scoped to the Standard Application
 const CUSTOM_OBJECT_TYPE_NAMES = [
   'Rocket',
   'Pet',
@@ -54,13 +55,11 @@ describe('Application token schema filtering', () => {
 
     expect(standardApp).toBeDefined();
 
-    const { data: tokenData } = await generateApplicationToken({
+    const tokenPair = await generateAppleAdminApplicationTokenPair({
       applicationId: standardApp!.id,
-      expectToFail: false,
     });
 
-    standardAppToken =
-      tokenData.generateApplicationToken.applicationAccessToken.token;
+    standardAppToken = tokenPair.applicationAccessToken.token;
   });
 
   it('should not include custom objects in the schema when using a standard app token', async () => {
@@ -75,8 +74,8 @@ describe('Application token schema filtering', () => {
 
     for (const customTypeName of CUSTOM_OBJECT_TYPE_NAMES) {
       expect(typeNames).not.toContain(customTypeName);
-      expect(typeNames).not.toContain(`${customTypeName}Edge`);
-      expect(typeNames).not.toContain(`${customTypeName}Connection`);
+      expect(typeNames).not.toContain(getEdgeTypename(customTypeName));
+      expect(typeNames).not.toContain(getConnectionTypename(customTypeName));
     }
   });
 

@@ -1,32 +1,51 @@
-import { type LogLevel, Logger } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 
 import { plainToClass } from 'class-transformer';
 import {
+  IsDateString,
   IsDefined,
+  IsEnum,
+  IsIn,
+  IsInt,
+  IsNotEmpty,
   IsOptional,
+  IsString,
   IsUrl,
+  Max,
   ValidateIf,
   type ValidationError,
   validateSync,
 } from 'class-validator';
+import {
+  ENTERPRISE_INSTANCE_TYPE,
+  type EnterpriseInstanceType,
+} from 'twenty-shared/constants';
 import { isDefined } from 'twenty-shared/utils';
 import { type LoggerOptions } from 'typeorm/logger/LoggerOptions';
 
+import { IsLambdaResourceTags } from 'src/engine/core-modules/logic-function/logic-function-drivers/drivers/lambda/decorators/is-lambda-resource-tags.decorator';
 import { LogicFunctionDriverType } from 'src/engine/core-modules/logic-function/logic-function-drivers/interfaces/logic-function-driver.interface';
 import { type AwsRegion } from 'src/engine/core-modules/twenty-config/interfaces/aws-region.interface';
 import { NodeEnvironment } from 'src/engine/core-modules/twenty-config/interfaces/node-environment.interface';
 import { SupportDriver } from 'src/engine/core-modules/twenty-config/interfaces/support.interface';
 
+import { IsBillingPlansConfig } from 'src/engine/core-modules/billing/decorators/is-billing-plans-config.decorator';
+import { type BillingPlansConfig } from 'src/engine/core-modules/billing/types/billing-plans-config.type';
 import { CaptchaDriverType } from 'src/engine/core-modules/captcha/interfaces';
 import { CodeInterpreterDriverType } from 'src/engine/core-modules/code-interpreter/code-interpreter.interface';
+import { DpaRegion } from 'src/engine/core-modules/dpa/enums/dpa-region.enum';
 import { EmailDriver } from 'src/engine/core-modules/email/enums/email-driver.enum';
-import { type AiModelPreferences } from 'src/engine/metadata-modules/ai/ai-models/types/ai-model-preferences.type';
-import { type AiProvidersConfig } from 'src/engine/metadata-modules/ai/ai-models/types/ai-providers-config.type';
-import { loadDefaultModelPreferences } from 'src/engine/metadata-modules/ai/ai-models/utils/load-default-model-preferences.util';
+import { EmailingDomainDriver } from 'src/engine/core-modules/emailing-domain/drivers/types/emailing-domain-driver.type';
 import { ExceptionHandlerDriver } from 'src/engine/core-modules/exception-handler/interfaces';
 import { StorageDriverType } from 'src/engine/core-modules/file-storage/interfaces';
-import { LoggerDriverType } from 'src/engine/core-modules/logger/interfaces';
+import { ADDRESS_AUTOCOMPLETE_DRIVER_TYPE } from 'src/engine/core-modules/geo-map/constants/address-autocomplete-driver-type.constant';
+import { type AddressAutocompleteDriverType } from 'src/engine/core-modules/geo-map/types/address-autocomplete-driver-type.type';
+import {
+  LoggerDriverType,
+  type TwentyLogLevel,
+} from 'src/engine/core-modules/logger/interfaces';
 import { type MeterDriver } from 'src/engine/core-modules/metrics/types/meter-driver.type';
+import { MeterTemporality } from 'src/engine/core-modules/metrics/types/meter-temporality.type';
 import { CastToLogLevelArray } from 'src/engine/core-modules/twenty-config/decorators/cast-to-log-level-array.decorator';
 import { CastToMeterDriverArray } from 'src/engine/core-modules/twenty-config/decorators/cast-to-meter-driver.decorator';
 import { CastToPositiveNumber } from 'src/engine/core-modules/twenty-config/decorators/cast-to-positive-number.decorator';
@@ -34,7 +53,9 @@ import { CastToTypeORMLogLevelArray } from 'src/engine/core-modules/twenty-confi
 import { CastToUpperSnakeCase } from 'src/engine/core-modules/twenty-config/decorators/cast-to-upper-snake-case.decorator';
 import { ConfigVariablesMetadata } from 'src/engine/core-modules/twenty-config/decorators/config-variables-metadata.decorator';
 import { IsAWSRegion } from 'src/engine/core-modules/twenty-config/decorators/is-aws-region.decorator';
-import { IsDuration } from 'src/engine/core-modules/twenty-config/decorators/is-duration.decorator';
+import { DEFAULT_WORKSPACE_AUTO_LOGIN_WINDOW } from 'src/engine/core-modules/auth/constants/default-workspace-auto-login-window.constant';
+import { IsNonNegativeDuration } from 'src/engine/core-modules/twenty-config/decorators/is-non-negative-duration.decorator';
+import { IsPositiveDuration } from 'src/engine/core-modules/twenty-config/decorators/is-positive-duration.decorator';
 import { IsOptionalOrEmptyString } from 'src/engine/core-modules/twenty-config/decorators/is-optional-or-empty-string.decorator';
 import { IsStrictlyLowerThan } from 'src/engine/core-modules/twenty-config/decorators/is-strictly-lower-than.decorator';
 import { IsTwentySemVer } from 'src/engine/core-modules/twenty-config/decorators/is-twenty-semver.decorator';
@@ -44,6 +65,13 @@ import {
   ConfigVariableException,
   ConfigVariableExceptionCode,
 } from 'src/engine/core-modules/twenty-config/twenty-config.exception';
+import { type OnboardingEnrichmentCreditRewardTier } from 'src/engine/core-modules/onboarding/types/onboarding-enrichment-credit-reward-tier.type';
+import { type PlanUsageLimitDefaults } from 'src/engine/core-modules/usage-limit/types/plan-usage-limit-defaults.type';
+import { type AiProvidersConfig } from 'src/engine/metadata-modules/ai/ai-models/types/ai-providers-config.type';
+import {
+  DEFAULT_DISABLED_MODELS,
+  DEFAULT_MODELS_BY_TIER,
+} from 'src/engine/metadata-modules/ai/ai-models/utils/load-default-model-preferences.util';
 
 export class ConfigVariables {
   @ConfigVariablesMetadata({
@@ -75,18 +103,46 @@ export class ConfigVariables {
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.ADVANCED_SETTINGS,
     description:
-      'Enable safe mode for outbound requests (prevents private IPs and other security risks). Applies to HTTP workflow actions, webhooks, and IMAP/SMTP/CalDAV connections.',
+      'Hostnames or IP literals on a private network that outbound connections may reach, e.g. an on-premise mail server or identity provider (keycloak, mail.internal, 192.168.1.10). Exact hostname match, no patterns; a full URL is reduced to its hostname. Every other private address is blocked (SSRF protection) for HTTP workflow actions, webhooks, SSO and IMAP/SMTP/CalDAV connections. Set to * to allow all.',
+    type: ConfigVariableType.ARRAY,
+  })
+  @IsOptional()
+  OUTBOUND_HTTP_ALLOWED_INTERNAL_HOSTS: string[] = [];
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.ADVANCED_SETTINGS,
+    description:
+      'Accept IMAP and SMTP servers whose TLS certificate cannot be verified, e.g. self-signed. Prefer adding your CA with NODE_EXTRA_CA_CERTS, which keeps verification on.',
+    type: ConfigVariableType.BOOLEAN,
+  })
+  @IsOptional()
+  IMAP_SMTP_ALLOW_SELF_SIGNED = false;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.ADVANCED_SETTINGS,
+    description:
+      'Deprecated: set OUTBOUND_HTTP_ALLOWED_INTERNAL_HOSTS to * instead. While this is false every private address is reachable and OUTBOUND_HTTP_ALLOWED_INTERNAL_HOSTS is ignored.',
     type: ConfigVariableType.BOOLEAN,
   })
   @IsOptional()
   OUTBOUND_HTTP_SAFE_MODE_ENABLED = true;
 
   @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.ADVANCED_SETTINGS,
+    description:
+      'Lock workspace schema DDL changes (for hot upgrades). Blocks sign-up, workspace deletion, and all metadata schema changes.',
+    isEnvOnly: true,
+    type: ConfigVariableType.BOOLEAN,
+  })
+  @IsOptional()
+  WORKSPACE_SCHEMA_DDL_LOCKED = false;
+
+  @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.TOKENS_DURATION,
     description: 'Duration for which the email verification token is valid',
     type: ConfigVariableType.STRING,
   })
-  @IsDuration()
+  @IsPositiveDuration()
   @IsOptional()
   EMAIL_VERIFICATION_TOKEN_EXPIRES_IN = '1h';
 
@@ -95,9 +151,19 @@ export class ConfigVariables {
     description: 'Duration for which the password reset token is valid',
     type: ConfigVariableType.STRING,
   })
-  @IsDuration()
+  @IsPositiveDuration()
   @IsOptional()
   PASSWORD_RESET_TOKEN_EXPIRES_IN = '5m';
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.TOKENS_DURATION,
+    description:
+      'Duration for which an admin-issued two-factor authentication recovery code is valid',
+    type: ConfigVariableType.STRING,
+  })
+  @IsPositiveDuration()
+  @IsOptional()
+  TWO_FACTOR_AUTHENTICATION_RECOVERY_CODE_EXPIRES_IN = '1h';
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.GOOGLE_AUTH,
@@ -158,11 +224,53 @@ export class ConfigVariables {
   MESSAGING_PROVIDER_GMAIL_ENABLED = false;
 
   @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.GOOGLE_AUTH,
+    isSensitive: false,
+    description:
+      'Google Cloud Pub/Sub topic that Gmail push notifications publish to ' +
+      '(format: projects/<project>/topics/<topic>). Required for webhook-based Gmail sync.',
+    type: ConfigVariableType.STRING,
+  })
+  @IsOptional()
+  MESSAGING_GMAIL_PUBSUB_TOPIC: string;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.GOOGLE_AUTH,
+    isSensitive: false,
+    description:
+      'Service account email authorized to deliver Gmail Pub/Sub push ' +
+      'notifications. The signed OIDC token on each push is verified against ' +
+      'this email. Required for webhook-based Gmail sync.',
+    type: ConfigVariableType.STRING,
+  })
+  @IsOptional()
+  MESSAGING_GMAIL_PUBSUB_VERIFICATION_EMAIL: string;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.ADVANCED_SETTINGS,
+    description:
+      'Enable webhook-based sync for connected accounts (provider push ' +
+      'notifications on top of polling). Requires publicly reachable ' +
+      'webhook endpoints.',
+    type: ConfigVariableType.BOOLEAN,
+  })
+  IS_CONNECTED_ACCOUNT_WEBHOOK_SUBSCRIPTION_ENABLED = false;
+
+  @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.ADVANCED_SETTINGS,
     description: 'Enable or disable the IMAP messaging integration',
     type: ConfigVariableType.BOOLEAN,
   })
   IS_IMAP_SMTP_CALDAV_ENABLED = true;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.ADVANCED_SETTINGS,
+    description:
+      'Enable or disable the connection test when saving IMAP/SMTP/CALDAV accounts',
+    type: ConfigVariableType.BOOLEAN,
+  })
+  @IsOptional()
+  IS_IMAP_SMTP_CALDAV_CONNECTION_TEST_ENABLED = true;
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.ADVANCED_SETTINGS,
@@ -218,14 +326,16 @@ export class ConfigVariables {
   @ValidateIf((env) => env.AUTH_MICROSOFT_ENABLED)
   AUTH_MICROSOFT_APIS_CALLBACK_URL: string;
 
+  /**
+   * @deprecated Use is now GA - record page layouts are always seeded
+   */
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.ADVANCED_SETTINGS,
-    description:
-      'Enable or disable the seeding of standard record page layouts',
+    description: 'Deprecated - record page layouts are now always seeded (GA)',
     type: ConfigVariableType.BOOLEAN,
   })
   @IsOptional()
-  SHOULD_SEED_STANDARD_RECORD_PAGE_LAYOUTS = false;
+  SHOULD_SEED_STANDARD_RECORD_PAGE_LAYOUTS = true;
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.MICROSOFT_AUTH,
@@ -233,6 +343,16 @@ export class ConfigVariables {
     type: ConfigVariableType.BOOLEAN,
   })
   MESSAGING_PROVIDER_MICROSOFT_ENABLED = false;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.ADVANCED_SETTINGS,
+    description:
+      'Number of messages fetched per batch during message import, adjust incase of rate limiting caused by Gmail, Outlook or IMAP',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  @IsOptional()
+  MESSAGING_MESSAGES_GET_BATCH_SIZE = 400;
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.MICROSOFT_AUTH,
@@ -246,7 +366,7 @@ export class ConfigVariables {
     description: 'Duration for which the access token is valid',
     type: ConfigVariableType.STRING,
   })
-  @IsDuration()
+  @IsPositiveDuration()
   @IsOptional()
   ACCESS_TOKEN_EXPIRES_IN = '30m';
 
@@ -255,7 +375,7 @@ export class ConfigVariables {
     description: 'Duration for which the workspace agnostic token is valid',
     type: ConfigVariableType.STRING,
   })
-  @IsDuration()
+  @IsPositiveDuration()
   @IsOptional()
   WORKSPACE_AGNOSTIC_TOKEN_EXPIRES_IN = '30m';
 
@@ -273,16 +393,65 @@ export class ConfigVariables {
       'Grace period allowing concurrent refresh token use (e.g. two tabs refreshing simultaneously). Reuse after this window triggers suspicious activity detection.',
     type: ConfigVariableType.STRING,
   })
-  @IsDuration()
+  @IsNonNegativeDuration()
   @IsOptional()
   REFRESH_TOKEN_REUSE_GRACE_PERIOD = '1m';
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.TOKENS_DURATION,
+    description:
+      'Absolute lifetime of a cookie-based user session, set at sign-in and never extended',
+    type: ConfigVariableType.STRING,
+  })
+  @IsPositiveDuration()
+  @IsOptional()
+  SESSION_ABSOLUTE_LIFETIME = '180d';
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.TOKENS_DURATION,
+    description:
+      'Duration of inactivity after which a cookie-based user session expires',
+    type: ConfigVariableType.STRING,
+  })
+  @IsPositiveDuration()
+  @IsOptional()
+  SESSION_IDLE_TIMEOUT = '30d';
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.TOKENS_DURATION,
+    description:
+      'Window after authenticating on the workspace-agnostic domain during which a user-level session can still auto-login into a workspace without re-authenticating',
+    type: ConfigVariableType.STRING,
+  })
+  @IsNonNegativeDuration()
+  @IsOptional()
+  WORKSPACE_AUTO_LOGIN_WINDOW: string = DEFAULT_WORKSPACE_AUTO_LOGIN_WINDOW;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.ADVANCED_SETTINGS,
+    description:
+      'SameSite attribute of the user session cookie. Use none only for split-origin deployments, behind https',
+    type: ConfigVariableType.STRING,
+  })
+  @IsIn(['lax', 'strict', 'none'])
+  @IsOptional()
+  AUTH_COOKIE_SAME_SITE: 'lax' | 'strict' | 'none' = 'lax';
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.ADVANCED_SETTINGS,
+    description:
+      'Comma-separated list of extra origins allowed to send credentialed cross-origin requests (split-origin deployments)',
+    type: ConfigVariableType.STRING,
+  })
+  @IsOptional()
+  AUTH_COOKIE_ALLOWED_ORIGINS = '';
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.TOKENS_DURATION,
     description: 'Duration for which the login token is valid',
     type: ConfigVariableType.STRING,
   })
-  @IsDuration()
+  @IsPositiveDuration()
   @IsOptional()
   LOGIN_TOKEN_EXPIRES_IN = '15m';
 
@@ -291,7 +460,7 @@ export class ConfigVariables {
     description: 'Duration for which the file token is valid',
     type: ConfigVariableType.STRING,
   })
-  @IsDuration()
+  @IsPositiveDuration()
   @IsOptional()
   FILE_TOKEN_EXPIRES_IN = '1d';
 
@@ -300,7 +469,7 @@ export class ConfigVariables {
     description: 'Duration for which the invitation token is valid',
     type: ConfigVariableType.STRING,
   })
-  @IsDuration()
+  @IsPositiveDuration()
   @IsOptional()
   INVITATION_TOKEN_EXPIRES_IN = '30d';
 
@@ -316,7 +485,7 @@ export class ConfigVariables {
     description: 'Duration for which an application access token is valid',
     type: ConfigVariableType.STRING,
   })
-  @IsDuration()
+  @IsPositiveDuration()
   @IsOptional()
   APPLICATION_ACCESS_TOKEN_EXPIRES_IN = '30m';
 
@@ -325,9 +494,19 @@ export class ConfigVariables {
     description: 'Duration for which an application refresh token is valid',
     type: ConfigVariableType.STRING,
   })
-  @IsDuration()
+  @IsPositiveDuration()
   @IsOptional()
   APPLICATION_REFRESH_TOKEN_EXPIRES_IN = '60d';
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.TOKENS_DURATION,
+    description:
+      'Duration for which a playground token (in-app REST/GraphQL playground bearer) is valid',
+    type: ConfigVariableType.STRING,
+  })
+  @IsPositiveDuration()
+  @IsOptional()
+  PLAYGROUND_TOKEN_EXPIRES_IN = '2h';
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.EMAIL_SETTINGS,
@@ -369,6 +548,15 @@ export class ConfigVariables {
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.EMAIL_SETTINGS,
+    description:
+      'Hostname sent in the SMTP EHLO greeting. Defaults to the machine hostname; set a fully qualified name if the relay rejects it',
+    type: ConfigVariableType.STRING,
+  })
+  @IsOptional()
+  EMAIL_SMTP_NAME: string;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.EMAIL_SETTINGS,
     description: 'SMTP port for sending emails',
     type: ConfigVariableType.NUMBER,
   })
@@ -394,11 +582,34 @@ export class ConfigVariables {
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.ADVANCED_SETTINGS,
     description:
-      'When enabled, only server admins can create new workspaces. Ignored during initial setup when no workspace exists.',
+      'When enabled, only server admins can create new workspaces, and signing up without a pending invitation or an approved access domain is refused. Ignored during initial setup when no workspace exists.',
     type: ConfigVariableType.BOOLEAN,
   })
   @IsOptional()
   IS_WORKSPACE_CREATION_LIMITED_TO_SERVER_ADMINS = true;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.ADVANCED_SETTINGS,
+    description:
+      'When enabled, server admins can toggle any feature flag for any workspace from the admin panel. Always enabled in development mode and when billing is enabled.',
+    type: ConfigVariableType.BOOLEAN,
+  })
+  @IsOptional()
+  IS_FEATURE_FLAG_MANAGEMENT_ENABLED = false;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.SERVER_CONFIG,
+    description:
+      'Deployment region that determines the DPA hosting location shown to customers. The Processor entity (Twenty.com PBC) and governing law (Delaware, USA) are the same for all regions. EU (default) = Frankfurt, Germany; US = United States. Must match where Customer Personal Data actually lives.',
+    isHiddenInAdminPanel: true,
+    type: ConfigVariableType.ENUM,
+    options: Object.values(DpaRegion),
+    // Env-only: a runtime override could advertise a hosting location that does not match where data lives.
+    isEnvOnly: true,
+  })
+  @IsOptional()
+  @IsEnum(DpaRegion)
+  DPA_DEPLOYMENT_REGION: DpaRegion = DpaRegion.EU;
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.STORAGE_CONFIG,
@@ -420,11 +631,13 @@ export class ConfigVariables {
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.STORAGE_CONFIG,
-    description: 'AWS region of the S3 bucket (e.g. eu-west-3). Required.',
+    description:
+      'Region of the S3 bucket (e.g. "eu-west-3" for AWS, or a provider-specific slug like "fr-par" for Scaleway). Required.',
     type: ConfigVariableType.STRING,
   })
   @ValidateIf((env) => env.STORAGE_TYPE === StorageDriverType.S_3)
-  @IsAWSRegion()
+  @IsString()
+  @IsNotEmpty()
   STORAGE_S3_REGION: AwsRegion;
 
   @ConfigVariablesMetadata({
@@ -470,7 +683,7 @@ export class ConfigVariables {
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.STORAGE_CONFIG,
     description:
-      'When enabled, file downloads are 302-redirected to S3 presigned URLs instead of being proxied through the server. Reduces server load and bandwidth.',
+      'When enabled, file downloads are 302-redirected to S3 presigned URLs and direct uploads go straight to S3 via presigned PUT URLs instead of being proxied through the server. Reduces server load and bandwidth. Requires a bucket CORS policy allowing PUT from the frontend origin.',
     type: ConfigVariableType.BOOLEAN,
   })
   @ValidateIf((env) => env.STORAGE_TYPE === StorageDriverType.S_3)
@@ -499,6 +712,36 @@ export class ConfigVariables {
   STORAGE_S3_PRESIGNED_URL_EXPIRES_IN: number = 900;
 
   @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.STORAGE_CONFIG,
+    description:
+      'Maximum tarball upload size in bytes for application registration',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  @IsOptional()
+  MAX_TARBALL_UPLOAD_SIZE_BYTES: number = 100 * 1024 * 1024;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.STORAGE_CONFIG,
+    description:
+      'Maximum bytes of file storage a single workspace may hold, all its files counted. No limit when unset. USAGE_LIMIT_DEFAULTS_BY_PLAN can set it per billing plan',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  @IsOptional()
+  WORKSPACE_STORAGE_LIMIT_BYTES?: number;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.STORAGE_CONFIG,
+    description:
+      'Maximum number of records a single workspace may hold across its objects, system objects other than messages and calendar events left out, soft-deleted records included. No limit when unset. USAGE_LIMIT_DEFAULTS_BY_PLAN can set it per billing plan',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  @IsOptional()
+  WORKSPACE_RECORD_LIMIT?: number;
+
+  @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.LOGIC_FUNCTION_CONFIG,
     description: 'Type of function execution (local or Lambda)',
     type: ConfigVariableType.ENUM,
@@ -510,15 +753,6 @@ export class ConfigVariables {
     process.env.NODE_ENV === NodeEnvironment.DEVELOPMENT
       ? LogicFunctionDriverType.LOCAL
       : LogicFunctionDriverType.DISABLED;
-
-  @ConfigVariablesMetadata({
-    group: ConfigVariablesGroup.LOGIC_FUNCTION_CONFIG,
-    description:
-      'Configure whether console logs from logic functions are displayed in the terminal',
-    type: ConfigVariableType.BOOLEAN,
-  })
-  @IsOptional()
-  LOGIC_FUNCTION_LOGS_ENABLED: false;
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.LOGIC_FUNCTION_CONFIG,
@@ -571,6 +805,18 @@ export class ConfigVariables {
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.LOGIC_FUNCTION_CONFIG,
+    description:
+      'Resource tags applied when creating AWS Lambda functions (JSON object with up to 48 string values)',
+    type: ConfigVariableType.JSON,
+  })
+  @ValidateIf(
+    (env) => env.LOGIC_FUNCTION_TYPE === LogicFunctionDriverType.LAMBDA,
+  )
+  @IsLambdaResourceTags()
+  LOGIC_FUNCTION_LAMBDA_RESOURCE_TAGS: Record<string, string> = {};
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.LOGIC_FUNCTION_CONFIG,
     isSensitive: true,
     description: 'Access key ID for AWS Lambda functions',
     type: ConfigVariableType.STRING,
@@ -595,7 +841,8 @@ export class ConfigVariables {
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.LOGIC_FUNCTION_CONFIG,
-    description: 'S3 bucket for uploading Lambda layer zip files',
+    description:
+      'S3 bucket for uploading Lambda layer zip files. Required with the Lambda driver unless STORAGE_S3_NAME is set.',
     type: ConfigVariableType.STRING,
   })
   @ValidateIf(
@@ -616,6 +863,18 @@ export class ConfigVariables {
   @IsOptional()
   @IsAWSRegion()
   LOGIC_FUNCTION_LAMBDA_LAYER_BUCKET_REGION?: AwsRegion;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.LOGIC_FUNCTION_CONFIG,
+    description:
+      'Custom Lambda endpoint URL. Optional, only needed for Lambda-compatible emulators (e.g. http://floci:4566). Omit for AWS Lambda, where the SDK resolves the endpoint from the region.',
+    type: ConfigVariableType.STRING,
+  })
+  @ValidateIf(
+    (env) => env.LOGIC_FUNCTION_TYPE === LogicFunctionDriverType.LAMBDA,
+  )
+  @IsOptional()
+  LOGIC_FUNCTION_LAMBDA_ENDPOINT?: string;
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.CODE_INTERPRETER_CONFIG,
@@ -644,12 +903,41 @@ export class ConfigVariables {
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.CODE_INTERPRETER_CONFIG,
+    description:
+      'E2B template for code interpreter sandboxes; build one with the libraries the PDF and Office skills need using scripts/build-code-interpreter-e2b-template.ts (default: code-interpreter-v1)',
+    type: ConfigVariableType.STRING,
+  })
+  @IsOptional()
+  E2B_TEMPLATE: string = 'code-interpreter-v1';
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.CODE_INTERPRETER_CONFIG,
     description: 'Timeout in milliseconds for code execution (default: 300000)',
     type: ConfigVariableType.NUMBER,
   })
   @IsOptional()
   @CastToPositiveNumber()
   CODE_INTERPRETER_TIMEOUT_MS = 300_000;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.CODE_INTERPRETER_CONFIG,
+    description:
+      'Idle lifetime in milliseconds for a reused code interpreter sandbox; refreshed on each execution and reclaimed after this period of inactivity (default: 300000)',
+    type: ConfigVariableType.NUMBER,
+  })
+  @IsOptional()
+  @CastToPositiveNumber()
+  CODE_INTERPRETER_IDLE_TIMEOUT_MS = 300_000;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.CODE_INTERPRETER_CONFIG,
+    description:
+      'Maximum age in milliseconds a reused code interpreter sandbox is kept before garbage collection reclaims it; abandoned conversations are reclaimed after this period (default: 86400000)',
+    type: ConfigVariableType.NUMBER,
+  })
+  @IsOptional()
+  @CastToPositiveNumber()
+  CODE_INTERPRETER_SESSION_MAX_AGE_MS = 86_400_000;
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.ANALYTICS_CONFIG,
@@ -672,6 +960,16 @@ export class ConfigVariables {
   })
   @ValidateIf((env) => env.ANALYTICS_ENABLED === true)
   CLICKHOUSE_URL: string;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.ANALYTICS_CONFIG,
+    description:
+      'Interval in milliseconds between two flushes of the buffered usage rollups',
+    type: ConfigVariableType.NUMBER,
+  })
+  @IsOptional()
+  @CastToPositiveNumber()
+  USAGE_ROLLUP_FLUSH_INTERVAL_MS = 60_000;
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.LOGGING,
@@ -710,6 +1008,17 @@ export class ConfigVariables {
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.BILLING_CONFIG,
+    description:
+      'Required when billing is enabled. How each billing plan is sold, as {"PRO":{"isDefault":true,"upgradePlanKeys":["ENTERPRISE"]},"ENTERPRISE":{"downgradePlanKeys":["PRO"]}}. Upgrades apply now with proration, downgrades at period end. A plan left out has no switch. The plans some plan can switch to are the two plans on sale, and the one marked isDefault is the default plan at signup',
+    isHiddenInAdminPanel: true,
+    type: ConfigVariableType.JSON,
+  })
+  @IsBillingPlansConfig()
+  @ValidateIf((env) => env.IS_BILLING_ENABLED === true)
+  BILLING_PLANS: BillingPlansConfig = {};
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.BILLING_CONFIG,
     description: 'Duration of free trial with credit card in days',
     type: ConfigVariableType.NUMBER,
   })
@@ -730,7 +1039,17 @@ export class ConfigVariables {
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.BILLING_CONFIG,
-    description: 'Amount of credits for the free trial without credit card',
+    description:
+      'Email domains whose users keep the free trial on every workspace, however many trialing workspaces they are already in (twenty.com, acme.com). Exact domain match, subdomains not included',
+    type: ConfigVariableType.ARRAY,
+  })
+  @IsOptional()
+  BILLING_TRIAL_LIMIT_EXEMPT_EMAIL_DOMAINS: string[] = [];
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.BILLING_CONFIG,
+    description:
+      'Amount of credits for the free trial without credit card (in microCredits)',
     type: ConfigVariableType.NUMBER,
   })
   @CastToPositiveNumber()
@@ -739,12 +1058,66 @@ export class ConfigVariables {
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.BILLING_CONFIG,
-    description: 'Amount of credits for the free trial with credit card',
+    description:
+      'Amount of credits for the free trial with credit card (in microCredits)',
     type: ConfigVariableType.NUMBER,
   })
   @CastToPositiveNumber()
   @ValidateIf((env) => env.IS_BILLING_ENABLED === true)
-  BILLING_FREE_WORKFLOW_CREDITS_FOR_TRIAL_PERIOD_WITH_CREDIT_CARD = 5_000_000;
+  BILLING_FREE_WORKFLOW_CREDITS_FOR_TRIAL_PERIOD_WITH_CREDIT_CARD = 2_500_000;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.BILLING_CONFIG,
+    description:
+      'User credits each user can spend on AI chat and web search per period of the AI user credit limit default, before workspace credits (in microCredits). No user credits when unset. USAGE_LIMIT_DEFAULTS_BY_PLAN can set it per billing plan',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  @IsOptional()
+  AI_USER_CREDITS_LIMIT?: number;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.BILLING_CONFIG,
+    description:
+      'Quota and stock usage limit default values per billing plan, keyed by plan key then by the default\'s config variable, as {"PRO":{"WORKSPACE_RECORD_LIMIT":1000000},"ENTERPRISE":{"WORKSPACE_RECORD_LIMIT":null},"TRIAL":{"AI_USER_CREDITS_LIMIT":null}}. TRIAL applies to every trialing subscription and wins over its plan. null means no limit, and a variable left out keeps its own value',
+    isHiddenInAdminPanel: true,
+    type: ConfigVariableType.JSON,
+  })
+  @IsOptional()
+  USAGE_LIMIT_DEFAULTS_BY_PLAN: Record<string, PlanUsageLimitDefaults> = {};
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.BILLING_CONFIG,
+    description:
+      'Number of days before a trial WITHOUT a credit card ends to send the reminder to add a payment method',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  @IsOptional()
+  @ValidateIf((env) => env.IS_BILLING_ENABLED === true)
+  BILLING_TRIAL_WITHOUT_CREDIT_CARD_REMINDER_DAYS_BEFORE = 1;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.BILLING_CONFIG,
+    description:
+      'Number of days before a trial WITH a credit card ends to send the upcoming-charge reminder',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  @IsOptional()
+  @ValidateIf((env) => env.IS_BILLING_ENABLED === true)
+  BILLING_TRIAL_WITH_CREDIT_CARD_REMINDER_DAYS_BEFORE = 7;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.BILLING_CONFIG,
+    description:
+      'Number of days before a yearly subscription renews to send the renewal reminder',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  @IsOptional()
+  @ValidateIf((env) => env.IS_BILLING_ENABLED === true)
+  BILLING_SUBSCRIPTION_RENEWAL_REMINDER_DAYS_BEFORE = 7;
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.BILLING_CONFIG,
@@ -765,6 +1138,91 @@ export class ConfigVariables {
   BILLING_STRIPE_WEBHOOK_SECRET: string;
 
   @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.BILLING_CONFIG,
+    description:
+      'Stripe publishable key for billing, exposed to the frontend to mount Stripe Elements',
+    type: ConfigVariableType.STRING,
+  })
+  @ValidateIf((env) => env.IS_BILLING_ENABLED === true)
+  BILLING_STRIPE_PUBLISHABLE_KEY: string;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.BILLING_CONFIG,
+    description:
+      'Use the ClickHouse-backed poller (instead of Stripe billing alerts) as the source of truth for metered-credit cap enforcement',
+    type: ConfigVariableType.BOOLEAN,
+  })
+  @IsOptional()
+  BILLING_USAGE_CAP_CLICKHOUSE_ENABLED = false;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.BILLING_CONFIG,
+    description:
+      'Cap on the credits available in a period, as a multiple of the plan allowance. 2 means a workspace can hold at most its allowance plus one full allowance rolled over',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  @IsOptional()
+  BILLING_ROLLOVER_TOTAL_CAP_MULTIPLIER = 2;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.BILLING_CONFIG,
+    description:
+      'Largest credit amount a single admin panel grant can hand out (in microCredits)',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  @IsInt()
+  @IsOptional()
+  BILLING_MAX_ADMIN_CREDIT_GRANT_MICRO = 1_000_000_000;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.BILLING_CONFIG,
+    description:
+      'Free credits granted for completing the import-contacts onboarding step (in microCredits)',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  @IsInt()
+  @IsOptional()
+  ONBOARDING_IMPORT_CONTACTS_CREDITS_REWARD = 1_000_000;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.BILLING_CONFIG,
+    description:
+      'Maximum number of invitations that grant credits during the invite-team onboarding step',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  @IsInt()
+  @IsOptional()
+  ONBOARDING_INVITE_TEAM_MAX_INVITES = 5;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.BILLING_CONFIG,
+    description:
+      'Free credits granted per user invited during the invite-team onboarding step who signs up (in microCredits)',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  @IsInt()
+  @IsOptional()
+  ONBOARDING_INVITE_TEAM_CREDITS_REWARD_PER_USER = 500_000;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.BILLING_CONFIG,
+    description:
+      'Credit reward tiers for workspaces enrichment matched to a real company, keyed by tier name, as {"midMarket":{"minEmployeeCount":20,"amountMicro":5000000}} (amounts in microCredits). The most generous matching tier wins; no tiers disables the reward. Independent of ONBOARDING_BOOK_CALL_MIN_EMPLOYEE_COUNT, so credits and the book-a-call offer can target different companies.',
+    isHiddenInAdminPanel: true,
+    type: ConfigVariableType.JSON,
+  })
+  @IsOptional()
+  ONBOARDING_ENRICHMENT_CREDIT_REWARD_TIERS: Record<
+    string,
+    OnboardingEnrichmentCreditRewardTier
+  > = {};
+
+  @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.SERVER_CONFIG,
     description: 'Url for the frontend application',
     type: ConfigVariableType.STRING,
@@ -772,6 +1230,22 @@ export class ConfigVariables {
   @IsUrl({ require_tld: false, require_protocol: true })
   @IsOptional()
   FRONTEND_URL: string;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.SERVER_CONFIG,
+    description:
+      'Direct HTTPS origin URL for deployments that publish frontend HTML separately. Leave unset for standard self-hosted installations to use bundled HTML.',
+    type: ConfigVariableType.STRING,
+    isEnvOnly: true,
+    isHiddenInAdminPanel: true,
+  })
+  @IsUrl({
+    protocols: ['https'],
+    require_tld: false,
+    require_protocol: true,
+  })
+  @IsOptional()
+  FRONTEND_INDEX_URL: string | undefined;
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.SERVER_CONFIG,
@@ -792,12 +1266,34 @@ export class ConfigVariables {
   CALENDAR_BOOKING_PAGE_ID?: string;
 
   @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.ADVANCED_SETTINGS,
+    description:
+      'Minimum enriched company employee count required to show the book-a-call onboarding step. Leave unset or set to 0 to disable the step. The step also requires CALENDAR_BOOKING_PAGE_ID.',
+    isHiddenInAdminPanel: true,
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  @IsInt()
+  @IsOptional()
+  ONBOARDING_BOOK_CALL_MIN_EMPLOYEE_COUNT?: number;
+
+  @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.LOGGING,
     description: 'Enable or disable buffering for logs before sending',
     type: ConfigVariableType.BOOLEAN,
   })
   @IsOptional()
   LOGGER_IS_BUFFER_ENABLED = true;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.LOGGING,
+    description:
+      'Log one line per API request with the actor, the endpoint and the trace ids',
+    type: ConfigVariableType.BOOLEAN,
+    isEnvOnly: true,
+  })
+  @IsOptional()
+  API_ACCESS_LOG_ENABLED = false;
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.LOGGING,
@@ -813,14 +1309,15 @@ export class ConfigVariables {
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.LOGGING,
-    description: 'Levels of logging to be captured',
+    description:
+      'Levels of logging to be captured. The "performance" level emits LoggerService perf / perfTime / perfTimeEnd instrumentation.',
     type: ConfigVariableType.ARRAY,
-    options: ['log', 'error', 'warn', 'debug'],
+    options: ['log', 'error', 'warn', 'debug', 'verbose', 'performance'],
     isEnvOnly: true,
   })
   @CastToLogLevelArray()
   @IsOptional()
-  LOG_LEVELS: LogLevel[] = ['log', 'error', 'warn'];
+  LOG_LEVELS: TwentyLogLevel[] = ['log', 'error', 'warn', 'performance'];
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.LOGGING,
@@ -832,6 +1329,29 @@ export class ConfigVariables {
   @CastToMeterDriverArray()
   @IsOptional()
   METER_DRIVER: MeterDriver[] = [];
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.LOGGING,
+    description:
+      'Interval in milliseconds between two metric exports, for the drivers that push them: opentelemetry and console. The prometheus driver is scraped, so it is unaffected. Read before the config store is available, so it cannot be overridden from the database.',
+    type: ConfigVariableType.NUMBER,
+    isEnvOnly: true,
+  })
+  @CastToPositiveNumber()
+  @IsOptional()
+  METER_EXPORT_INTERVAL_MS = 30_000;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.LOGGING,
+    description:
+      'Temporality of the metrics pushed by the opentelemetry driver: delta sends what changed since the previous export, cumulative sends running totals on every export. Read before the config store is available, so it cannot be overridden from the database.',
+    type: ConfigVariableType.ENUM,
+    options: Object.values(MeterTemporality),
+    isEnvOnly: true,
+  })
+  @IsOptional()
+  @IsEnum(MeterTemporality)
+  METER_TEMPORALITY: MeterTemporality = MeterTemporality.Delta;
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.LOGGING,
@@ -875,6 +1395,49 @@ export class ConfigVariables {
   )
   @IsOptional()
   SENTRY_ENVIRONMENT: string;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.LOGGING,
+    description:
+      'Share of front-end traces sent to Sentry, between 0 and 1. Front-end traces propagate their sampling decision to the server, so this also drives the rate for browser-originated server traces.',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  @Max(1)
+  @IsOptional()
+  SENTRY_FRONT_TRACES_SAMPLE_RATE = 0.1;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.LOGGING,
+    description:
+      'Share of server traces sent to Sentry, between 0 and 1. Browser-originated traces inherit the front-end decision instead, and AI traces are always sampled at 1. Read before the config store is available, so it cannot be overridden from the database.',
+    type: ConfigVariableType.NUMBER,
+    isEnvOnly: true,
+  })
+  @CastToPositiveNumber()
+  @IsOptional()
+  SENTRY_TRACES_SAMPLE_RATE = 0.1;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.LOGGING,
+    description:
+      'Share of server processes that profile their sampled traces, between 0 and 1. Read before the config store is available, so it cannot be overridden from the database.',
+    type: ConfigVariableType.NUMBER,
+    isEnvOnly: true,
+  })
+  @CastToPositiveNumber()
+  @IsOptional()
+  SENTRY_PROFILES_SAMPLE_RATE = 0.01;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.LOGGING,
+    description:
+      'Ordered list of sinks the unified event pipeline writes to (e.g. clickhouse). The first is the read store.',
+    type: ConfigVariableType.ARRAY,
+    isEnvOnly: true,
+  })
+  @IsOptional()
+  EVENT_SINKS: string[] = ['clickhouse'];
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.SUPPORT_CHAT_CONFIG,
@@ -1008,6 +1571,17 @@ export class ConfigVariables {
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.ADVANCED_SETTINGS,
+    description:
+      'Optional prefix for cache-storage keys. Empty preserves existing key names. Use a Redis hash tag (e.g. "{twenty-cache}") to place all cache-storage keys in one hash slot and avoid CROSSSLOT errors. Changing it switches cache namespaces and requires all servers and workers to restart with the same value.',
+    isEnvOnly: true,
+    type: ConfigVariableType.STRING,
+  })
+  @IsOptional()
+  @IsString()
+  REDIS_CACHE_PREFIX: string = '';
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.ADVANCED_SETTINGS,
     isSensitive: true,
     description:
       'Optional separate Redis connection for queues with a different eviction policy (advanced production use case, most self-hosters do not need this)',
@@ -1023,13 +1597,104 @@ export class ConfigVariables {
   REDIS_QUEUE_URL: string;
 
   @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.ADVANCED_SETTINGS,
+    description:
+      'Key prefix for BullMQ queue keys. Wrap it in curly braces (e.g. "{twenty}") so all keys of a queue share one hash slot when Redis is clustered (Redis Cluster, Redis Enterprise / Azure Managed Redis), otherwise multi-key Lua scripts fail with CROSSSLOT. Changing it orphans jobs stored under the previous prefix.',
+    isEnvOnly: true,
+    type: ConfigVariableType.STRING,
+  })
+  @IsOptional()
+  @IsString()
+  REDIS_QUEUE_PREFIX: string = 'bull';
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.ADVANCED_SETTINGS,
+    description:
+      'Comma-separated list of queues this worker processes (e.g. workspace-queue). Empty means all queues. Used to dedicate worker pods to specific queues.',
+    isEnvOnly: true,
+    type: ConfigVariableType.ARRAY,
+  })
+  @IsOptional()
+  WORKER_ENABLED_QUEUES: string[] = [];
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.ADVANCED_SETTINGS,
+    description:
+      'Comma-separated list of queues this worker does not process (e.g. workspace-queue). Applied after WORKER_ENABLED_QUEUES. Used to keep long-running queues off general-purpose worker pods.',
+    isEnvOnly: true,
+    type: ConfigVariableType.ARRAY,
+  })
+  @IsOptional()
+  WORKER_EXCLUDED_QUEUES: string[] = [];
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.ADVANCED_SETTINGS,
+    description:
+      'Refuse jobs that would take more than their fair share of the job queue Redis memory',
+    type: ConfigVariableType.BOOLEAN,
+  })
+  @IsOptional()
+  IS_REDIS_MEMORY_FAIRNESS_ENABLED = false;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.ADVANCED_SETTINGS,
+    description:
+      'Delay the jobs that carry a limiter (workflows, logic functions) at enqueue: a burst of max, then one every durationMs / max, per workspace and application. Execution starts are not rechecked, so a paused worker can run overdue jobs together. Off: jobs are never delayed by their limiter.',
+    type: ConfigVariableType.BOOLEAN,
+  })
+  @IsOptional()
+  IS_WORKER_GROUP_LIMITER_ENABLED = false;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.ADVANCED_SETTINGS,
+    description:
+      'Maximum size in bytes of a single job (serialized data and options) when Redis memory fairness is enabled',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  @IsOptional()
+  JOB_QUEUE_MAX_JOB_SIZE_BYTES = 5_242_880;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.ADVANCED_SETTINGS,
+    description:
+      'Share of the free job queue memory a single workspace may use. Any value below 1 keeps Redis below capacity',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  @IsOptional()
+  @Max(1)
+  JOB_QUEUE_MEMORY_SHARE_BY_WORKSPACE_ID = 0.3;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.ADVANCED_SETTINGS,
+    description:
+      'Share of the free job queue memory a single application, across all workspaces, may use. Any value below 1 keeps Redis below capacity',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  @IsOptional()
+  @Max(1)
+  JOB_QUEUE_MEMORY_SHARE_BY_APPLICATION_UNIVERSAL_IDENTIFIER = 0.4;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.ADVANCED_SETTINGS,
+    description:
+      'Share of Redis maxmemory never given to job queue tenants (allocator error, non-job keys, Redis reserved memory)',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  @IsOptional()
+  @Max(1)
+  JOB_QUEUE_MEMORY_RESERVE = 0.1;
+
+  @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.SERVER_CONFIG,
     description: 'Node environment (development, production, etc.)',
     type: ConfigVariableType.ENUM,
     options: Object.values(NodeEnvironment),
     isEnvOnly: true,
   })
-  // @CastToUpperSnakeCase()
   NODE_ENV: NodeEnvironment = NodeEnvironment.PRODUCTION;
 
   @ConfigVariablesMetadata({
@@ -1044,6 +1709,31 @@ export class ConfigVariables {
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.SERVER_CONFIG,
+    description:
+      'Idle keep-alive timeout (ms) for the HTTP server. Should be higher ' +
+      'than the idle timeout of any reverse proxy / load balancer in front ' +
+      'of it (nginx, ALB, ... default 60s), so the proxy is the side that ' +
+      'closes idle connections.',
+    type: ConfigVariableType.NUMBER,
+    isEnvOnly: true,
+  })
+  @CastToPositiveNumber()
+  @IsOptional()
+  SERVER_KEEP_ALIVE_TIMEOUT_MS = 65000;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.SERVER_CONFIG,
+    description:
+      'How long (ms) a worker shutdown waits for active AI chat stream jobs to finish before aborting them into a retryable interrupted state. Must be lower than the pod terminationGracePeriodSeconds so the abort and clean exit fit before SIGKILL (default: 300000)',
+    type: ConfigVariableType.NUMBER,
+    isEnvOnly: true,
+  })
+  @CastToPositiveNumber()
+  @IsOptional()
+  AI_STREAM_SHUTDOWN_DRAIN_MS = 300_000;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.SERVER_CONFIG,
     description: 'Base URL for the server',
     type: ConfigVariableType.STRING,
     isEnvOnly: true,
@@ -1055,12 +1745,51 @@ export class ConfigVariables {
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.SERVER_CONFIG,
     description:
-      'Unique identifier for this server instance, generated as UUID v4 during database seeding',
+      'Private URL logic functions use to call the server, e.g. http://server:3000 with Docker Compose, so their requests skip an authenticating proxy in front of SERVER_URL. Must be reachable from the server and worker. Local driver only: leave it unset with the Lambda driver, whose functions run outside your network and cannot reach it. Falls back to SERVER_URL.',
+    type: ConfigVariableType.STRING,
+    isEnvOnly: true,
+  })
+  @IsOptionalOrEmptyString()
+  @IsUrl({ require_tld: false, require_protocol: true })
+  SERVER_INTERNAL_URL?: string;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.SERVER_CONFIG,
+    description:
+      'Express "trust proxy" setting. Controls whether X-Forwarded-* ' +
+      'headers are honored — required for request.protocol to return ' +
+      '"https" when TLS is terminated upstream (reverse proxy, ingress, ' +
+      'Cloudflare, etc.). Default trusts loopback + RFC1918/ULA peers, ' +
+      'which is correct when NestJS runs behind a reverse proxy (our ' +
+      'recommended self-host setup). Set to "false" when NestJS is ' +
+      'exposed directly to the internet. Accepts any value Express ' +
+      'supports — see https://expressjs.com/en/guide/behind-proxies.html.',
     type: ConfigVariableType.STRING,
     isEnvOnly: true,
   })
   @IsOptional()
+  TRUST_PROXY: string = 'loopback, linklocal, uniquelocal';
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.SERVER_CONFIG,
+    description:
+      'Unique identifier for this server instance, generated as UUID v4 during database seeding and persisted in the database. Can be overridden via the environment when IS_CONFIG_VARIABLES_IN_DB_ENABLED is false.',
+    type: ConfigVariableType.STRING,
+  })
+  @IsOptional()
   SERVER_ID: string;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.SERVER_CONFIG,
+    description:
+      "Declares whether this instance is a 'production' (billable per seat) or 'development' (included at no additional cost) enterprise instance. A subscription can register a single free development instance in addition to its production one.",
+    type: ConfigVariableType.ENUM,
+    options: Object.values(ENTERPRISE_INSTANCE_TYPE),
+  })
+  @IsOptional()
+  @IsIn(Object.values(ENTERPRISE_INSTANCE_TYPE))
+  ENTERPRISE_INSTANCE_TYPE: EnterpriseInstanceType =
+    ENTERPRISE_INSTANCE_TYPE.PRODUCTION;
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.SERVER_CONFIG,
@@ -1073,12 +1802,64 @@ export class ConfigVariables {
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.SERVER_CONFIG,
+    description:
+      'ISO date from which HTTP logic functions are no longer served on the legacy /s/ route. Functions created on or after this date are only reachable on the isolated public domain (*.withtwenty.com). Only enforced when PUBLIC_DOMAIN_URL is set; leave empty to keep serving every function on /s/ (default for self-hosting).',
+    isHiddenInAdminPanel: true,
+    type: ConfigVariableType.STRING,
+  })
+  @IsDateString()
+  @IsOptional()
+  LOGIC_FUNCTION_LEGACY_ROUTE_CUTOFF: string;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.SERVER_CONFIG,
     isSensitive: true,
     description: 'Secret key for the application',
     isEnvOnly: true,
     type: ConfigVariableType.STRING,
   })
   APP_SECRET: string;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.SERVER_CONFIG,
+    isSensitive: true,
+    description:
+      'Primary key for at-rest encryption of secrets. Falls back to APP_SECRET when unset.',
+    isEnvOnly: true,
+    type: ConfigVariableType.STRING,
+  })
+  @IsOptional()
+  ENCRYPTION_KEY: string;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.SERVER_CONFIG,
+    isSensitive: true,
+    description:
+      'Verification-only fallback key. During rotation, set this to the previous ENCRYPTION_KEY so rows encrypted with the old key remain decryptable and session cookies signed under it still verify.',
+    isEnvOnly: true,
+    type: ConfigVariableType.STRING,
+  })
+  @IsOptional()
+  FALLBACK_ENCRYPTION_KEY: string;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.ADVANCED_SETTINGS,
+    description:
+      'Days the current JWT signing key stays valid before the rotation cron issues a new one. Leave unset to disable auto-rotation.',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  @IsOptional()
+  SIGNING_KEY_ROTATION_DAYS?: number;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.ADVANCED_SETTINGS,
+    description:
+      'Register the cron job that syncs the marketplace catalog from the npm registry. Disable to stop the automatic catalog import.',
+    type: ConfigVariableType.BOOLEAN,
+  })
+  @IsOptional()
+  MARKETPLACE_CATALOG_SYNC_CRON_ENABLED = true;
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.RATE_LIMITING,
@@ -1123,6 +1904,114 @@ export class ConfigVariables {
   @CastToPositiveNumber()
   API_RATE_LIMITING_LONG_LIMIT = 100;
 
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.RATE_LIMITING,
+    description:
+      'Time-to-live for per-application API rate limiting in milliseconds',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  APPLICATION_API_RATE_LIMITING_TTL_IN_MS = 60_000;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.RATE_LIMITING,
+    description:
+      'Maximum number of API requests allowed per application across all workspaces in the rate limiting window',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  APPLICATION_API_RATE_LIMITING_LIMIT = 500;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.RATE_LIMITING,
+    description:
+      'Time-to-live for outbound email send rate limiting in milliseconds',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  EMAIL_SEND_RATE_LIMITING_TTL_IN_MS = 10_000;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.RATE_LIMITING,
+    description:
+      'Maximum number of emails sent across all workspaces in the rate limiting window. Set it below the send rate the email provider publishes for the account, so transactional mail sharing that account keeps headroom during a campaign',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  EMAIL_SEND_RATE_LIMITING_LIMIT = 100;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.RATE_LIMITING,
+    description:
+      'Maximum number of emails a single workspace may send per UTC day, campaign and one-off sends counted together. USAGE_LIMIT_DEFAULTS_BY_PLAN can set it per billing plan, and a workspace limit configured in the app replaces it',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  EMAIL_SEND_WORKSPACE_DAILY_LIMIT = 1_000;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.RATE_LIMITING,
+    description:
+      'Time-to-live for the per-workspace outbound email send rate limiting window, in milliseconds',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  EMAIL_SEND_WORKSPACE_RATE_LIMITING_TTL_IN_MS = 10_000;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.RATE_LIMITING,
+    description:
+      'Maximum number of emails a single workspace may send in the rate limiting window. Applies on top of the server-wide limit, so set it below that one to stop a single workspace consuming the whole instance budget with one campaign. Left equal to the server-wide limit it never binds first',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  EMAIL_SEND_WORKSPACE_RATE_LIMITING_LIMIT = 100;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.RATE_LIMITING,
+    description:
+      'Time-to-live for the outbound webhook call rate limiting window, in milliseconds',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  WEBHOOK_CALL_RATE_LIMITING_TTL_IN_MS = 60_000;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.RATE_LIMITING,
+    description:
+      'Maximum number of outbound webhook calls a single workspace may make in the rate limiting window. Calls above it are never enqueued and are recorded as a failed webhook response',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  WEBHOOK_CALL_RATE_LIMITING_LIMIT = 60;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.RATE_LIMITING,
+    description:
+      'Time-to-live for application job enqueue rate limiting in milliseconds',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  APPLICATION_JOB_ENQUEUE_RATE_LIMITING_TTL_IN_MS = 60_000;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.RATE_LIMITING,
+    description:
+      'Maximum number of jobs a single application installation can enqueue in the rate limiting window',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  APPLICATION_JOB_ENQUEUE_RATE_LIMITING_LIMIT = 500;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.RATE_LIMITING,
+    description:
+      'Maximum number of jobs enqueued per application registration across all workspaces in the rate limiting window',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  APPLICATION_REGISTRATION_JOB_ENQUEUE_RATE_LIMITING_LIMIT = 2000;
+
   @CastToPositiveNumber()
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.RATE_LIMITING,
@@ -1154,7 +2043,7 @@ export class ConfigVariables {
     type: ConfigVariableType.NUMBER,
   })
   @CastToPositiveNumber()
-  INVITATION_SENDING_BY_WORKSPACE_THROTTLE_TTL_IN_MS = 604_800_000; // 7 days
+  INVITATION_SENDING_BY_WORKSPACE_THROTTLE_TTL_IN_MS = 604_800_000;
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.RATE_LIMITING,
@@ -1172,7 +2061,7 @@ export class ConfigVariables {
     type: ConfigVariableType.NUMBER,
   })
   @CastToPositiveNumber()
-  INVITATION_SENDING_BY_EMAIL_THROTTLE_TTL_IN_MS = 604_800_000; // 7 days
+  INVITATION_SENDING_BY_EMAIL_THROTTLE_TTL_IN_MS = 604_800_000;
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.RATE_LIMITING,
@@ -1246,6 +2135,19 @@ export class ConfigVariables {
   CLOUDFLARE_DCV_DELEGATION_ID: string;
 
   @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.CLOUDFLARE_CONFIG,
+    description:
+      'Store the visitor location headers Cloudflare adds (cf-ipcountry, ' +
+      'cf-region, cf-ipcity) on user sessions. Only enable when every ' +
+      'request reaches the server through Cloudflare: otherwise clients ' +
+      'can forge them.',
+    type: ConfigVariableType.BOOLEAN,
+    isEnvOnly: true,
+  })
+  @IsOptional()
+  IS_CLOUDFLARE_GEOLOCATION_ENABLED = false;
+
+  @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.LLM,
     isSensitive: true,
     description: 'API key for OpenAI models (GPT, o-series)',
@@ -1302,8 +2204,17 @@ export class ConfigVariables {
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.LLM,
     isSensitive: true,
+    description: 'API key for TypeSafe AI classification models (Jev)',
+    type: ConfigVariableType.STRING,
+  })
+  @IsOptional()
+  TYPESAFE_AI_API_KEY?: string;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.LLM,
+    isSensitive: true,
     description:
-      'AI provider configurations. Custom providers are deep-merged on top of the built-in catalog (ai-providers.json). Use for custom endpoints, extra regions, or credentials set via admin panel.',
+      'AI provider configurations. An entry with the same name as a built-in provider (ai-providers.json) replaces it and keeps only the models it lists. Use for custom endpoints, extra regions, or credentials set via admin panel.',
     type: ConfigVariableType.JSON,
   })
   @IsOptional()
@@ -1312,11 +2223,74 @@ export class ConfigVariables {
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.LLM,
     description:
-      'AI model admin preferences: disabled models, recommended models, and default fast/smart model lists. Managed via admin panel or env.',
-    type: ConfigVariableType.JSON,
+      'Storage path for the AI catalog override (e.g. config/ai-catalog.json). When set, the catalog is fetched from the configured storage backend at startup instead of using the built-in ai-providers.json.',
+    type: ConfigVariableType.STRING,
   })
   @IsOptional()
-  AI_MODEL_PREFERENCES: AiModelPreferences = loadDefaultModelPreferences();
+  AI_CATALOG_STORAGE_PATH?: string;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.LLM,
+    description:
+      'Ordered list of model IDs backing the Extra Fast tier; the first available one is used. An ID may pin an effort level as provider/model@effort. Managed via admin panel or env.',
+    type: ConfigVariableType.ARRAY,
+  })
+  @IsOptional()
+  AI_MODELS_DEFAULT_EXTRA_FAST: string[] = DEFAULT_MODELS_BY_TIER.extraFast;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.LLM,
+    description:
+      'Ordered list of model IDs backing the Fast tier; the first available one is used. An ID may pin an effort level as provider/model@effort. Managed via admin panel or env.',
+    type: ConfigVariableType.ARRAY,
+  })
+  @IsOptional()
+  AI_MODELS_DEFAULT_FAST: string[] = DEFAULT_MODELS_BY_TIER.fast;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.LLM,
+    description:
+      'Ordered list of model IDs backing the Balanced tier; the first available one is used. An ID may pin an effort level as provider/model@effort. Managed via admin panel or env.',
+    type: ConfigVariableType.ARRAY,
+  })
+  @IsOptional()
+  AI_MODELS_DEFAULT_BALANCED: string[] = DEFAULT_MODELS_BY_TIER.balanced;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.LLM,
+    description:
+      'Ordered list of model IDs backing the Smart tier; the first available one is used. An ID may pin an effort level as provider/model@effort. Managed via admin panel or env.',
+    type: ConfigVariableType.ARRAY,
+  })
+  @IsOptional()
+  AI_MODELS_DEFAULT_SMART: string[] = DEFAULT_MODELS_BY_TIER.smart;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.LLM,
+    description:
+      'Ordered list of model IDs backing the Extra Smart tier; the first available one is used. An ID may pin an effort level as provider/model@effort. Managed via admin panel or env.',
+    type: ConfigVariableType.ARRAY,
+  })
+  @IsOptional()
+  AI_MODELS_DEFAULT_EXTRA_SMART: string[] = DEFAULT_MODELS_BY_TIER.extraSmart;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.LLM,
+    description:
+      'List of model IDs disabled by default. Disabled models cannot be used by any workspace. Managed via admin panel or env.',
+    type: ConfigVariableType.ARRAY,
+  })
+  @IsOptional()
+  AI_MODELS_DEFAULT_DISABLED: string[] = DEFAULT_DISABLED_MODELS;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.LLM,
+    description:
+      'Ask OpenAI and Azure reasoning models for reasoning summaries in AI chat. Disable it if your OpenAI organization is not verified, since OpenAI rejects these requests.',
+    type: ConfigVariableType.BOOLEAN,
+  })
+  @IsOptional()
+  IS_OPENAI_REASONING_SUMMARY_ENABLED = true;
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.SERVER_CONFIG,
@@ -1403,7 +2377,7 @@ export class ConfigVariables {
     type: ConfigVariableType.NUMBER,
   })
   @CastToPositiveNumber()
-  WORKFLOW_EXEC_HARD_THROTTLE_TTL = 3_600_000; // 1 hour;
+  WORKFLOW_EXEC_HARD_THROTTLE_TTL = 3_600_000;
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.CAPTCHA_CONFIG,
@@ -1432,6 +2406,24 @@ export class ConfigVariables {
   })
   @IsOptional()
   CAPTCHA_SECRET_KEY?: string;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.CAPTCHA_CONFIG,
+    description:
+      'Minimum Google reCAPTCHA v3 score, between 0 and 1, required to accept a request',
+    type: ConfigVariableType.NUMBER,
+  })
+  @CastToPositiveNumber()
+  @IsOptional()
+  CAPTCHA_MIN_SCORE = 0;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.CAPTCHA_CONFIG,
+    description: 'Require a valid captcha to create a new workspace',
+    type: ConfigVariableType.BOOLEAN,
+  })
+  @IsOptional()
+  IS_WORKSPACE_CREATION_CAPTCHA_ENABLED = false;
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.SERVER_CONFIG,
@@ -1491,7 +2483,8 @@ export class ConfigVariables {
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.ADVANCED_SETTINGS,
-    description: 'Enable or disable google map api usage',
+    description:
+      'Enable or disable address autocomplete (see ADDRESS_AUTOCOMPLETE_DRIVER)',
     type: ConfigVariableType.BOOLEAN,
   })
   @IsOptional()
@@ -1499,42 +2492,71 @@ export class ConfigVariables {
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.ADVANCED_SETTINGS,
+    description:
+      'Address autocomplete driver: GOOGLE_PLACES (worldwide, requires GOOGLE_MAP_API_KEY) or BASE_ADRESSE_NATIONALE (French national address database, France only, no key needed)',
+    type: ConfigVariableType.ENUM,
+    options: Object.values(ADDRESS_AUTOCOMPLETE_DRIVER_TYPE),
+  })
+  @IsOptional()
+  @CastToUpperSnakeCase()
+  @IsIn(Object.values(ADDRESS_AUTOCOMPLETE_DRIVER_TYPE))
+  ADDRESS_AUTOCOMPLETE_DRIVER: AddressAutocompleteDriverType =
+    ADDRESS_AUTOCOMPLETE_DRIVER_TYPE.GOOGLE_PLACES;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.ADVANCED_SETTINGS,
     isSensitive: true,
     description: 'Google map api key for places and map',
     type: ConfigVariableType.STRING,
   })
-  @ValidateIf((env) => env.IS_MAPS_AND_ADDRESS_AUTOCOMPLETE_ENABLED)
+  @ValidateIf(
+    (env) =>
+      env.IS_MAPS_AND_ADDRESS_AUTOCOMPLETE_ENABLED &&
+      env.ADDRESS_AUTOCOMPLETE_DRIVER ===
+        ADDRESS_AUTOCOMPLETE_DRIVER_TYPE.GOOGLE_PLACES,
+  )
   GOOGLE_MAP_API_KEY: string;
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.ADVANCED_SETTINGS,
     isSensitive: true,
-    description: 'Mintlify API key for documentation search',
-    isEnvOnly: true,
-    isHiddenInAdminPanel: true,
+    description:
+      'API key for People Data Labs company enrichment. When unset, workspace company enrichment is skipped.',
     type: ConfigVariableType.STRING,
   })
   @IsOptional()
-  MINTLIFY_API_KEY: string;
+  PEOPLE_DATA_LABS_API_KEY?: string;
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.ADVANCED_SETTINGS,
-    isSensitive: true,
-    description: 'Mintlify subdomain for documentation search',
-    isEnvOnly: true,
-    isHiddenInAdminPanel: true,
-    type: ConfigVariableType.STRING,
+    description:
+      'Enable or disable the AI chat that helps set up the workspace at the end of onboarding',
+    type: ConfigVariableType.BOOLEAN,
   })
   @IsOptional()
-  MINTLIFY_SUBDOMAIN: string;
+  IS_ONBOARDING_AI_CHAT_ENABLED = false;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.AWS_SES_SETTINGS,
+    description:
+      'Driver used for the emailing domain feature — AWS_SES (requires AWS credentials), RESEND (requires a Resend API key), LOG fakes registration/verification/sends locally',
+    type: ConfigVariableType.ENUM,
+    options: Object.values(EmailingDomainDriver),
+    isEnvOnly: true,
+  })
+  @CastToUpperSnakeCase()
+  EMAILING_DOMAIN_DRIVER: EmailingDomainDriver = EmailingDomainDriver.LOG;
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.AWS_SES_SETTINGS,
     description: 'AWS region',
     type: ConfigVariableType.STRING,
   })
+  @ValidateIf(
+    (env) => env.EMAILING_DOMAIN_DRIVER === EmailingDomainDriver.AWS_SES,
+  )
   @IsAWSRegion()
-  @IsOptional()
+  @IsNotEmpty()
   AWS_SES_REGION: AwsRegion;
 
   @ConfigVariablesMetadata({
@@ -1569,8 +2591,88 @@ export class ConfigVariables {
     description: 'AWS Account ID for SES ARN construction',
     type: ConfigVariableType.STRING,
   })
-  @IsOptional()
+  @ValidateIf(
+    (env) => env.EMAILING_DOMAIN_DRIVER === EmailingDomainDriver.AWS_SES,
+  )
+  @IsString()
+  @IsNotEmpty()
   AWS_SES_ACCOUNT_ID: string;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.AWS_SES_SETTINGS,
+    description:
+      'Domain used for email group inbound mail (the right-hand side of ch_xxx@<domain>). Required to enable email group channels.',
+    type: ConfigVariableType.STRING,
+  })
+  @IsOptional()
+  INBOUND_EMAIL_DOMAIN: string;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.AWS_SES_SETTINGS,
+    description:
+      'Comma-separated list of SNS topic ARNs accepted by the inbound-email and outbound-event webhooks (e.g. arn:aws:sns:us-east-1:123:my-inbound). Every SNS payload whose topic is absent from this list is rejected.',
+    type: ConfigVariableType.STRING,
+  })
+  @IsOptional()
+  @IsString()
+  SES_SNS_TOPIC_ARN_ALLOWLIST: string;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.AWS_SES_SETTINGS,
+    description:
+      'SNS topic ARN that receives SES DELIVERY, BOUNCE, COMPLAINT, REJECT and RENDERING_FAILURE events. An SNS event destination pointing at it is added to each workspace SES configuration set, and the topic must be subscribed to /webhooks/messaging/ses/outbound. Bounces and complaints also arrive through the pre-existing EventBridge destination, so those two are delivered twice and deduplicated downstream.',
+    type: ConfigVariableType.STRING,
+  })
+  @IsOptional()
+  @IsString()
+  SES_OUTBOUND_SNS_TOPIC_ARN: string;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.AWS_SES_SETTINGS,
+    description:
+      'Tatami Monitor ingest webhook URL (SNS HTTPS subscription target for deliverability observability).',
+    type: ConfigVariableType.STRING,
+    isSensitive: true,
+  })
+  @IsOptional()
+  TATAMI_SES_WEBHOOK_URL: string;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.AWS_SES_SETTINGS,
+    description:
+      'SNS topic ARN that fans out SES events to Tatami Monitor. When set, an SNS event destination is added to each workspace SES configuration set.',
+    type: ConfigVariableType.STRING,
+  })
+  @IsOptional()
+  TATAMI_SNS_TOPIC_ARN: string;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.RESEND_SETTINGS,
+    isSensitive: true,
+    description: 'Resend API key used when EMAILING_DOMAIN_DRIVER is RESEND',
+    type: ConfigVariableType.STRING,
+  })
+  @IsOptional()
+  RESEND_API_KEY: string;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.RESEND_SETTINGS,
+    isSensitive: true,
+    description:
+      'Signing secret of the Resend webhook endpoint that targets /webhooks/messaging/resend (whsec_...)',
+    type: ConfigVariableType.STRING,
+  })
+  @IsOptional()
+  RESEND_WEBHOOK_SIGNING_SECRET: string;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.RESEND_SETTINGS,
+    description:
+      'Region Resend provisions new emailing domains in (us-east-1, eu-west-1, sa-east-1 or ap-northeast-1). Leave empty for the Resend default.',
+    type: ConfigVariableType.STRING,
+  })
+  @IsOptional()
+  RESEND_DOMAIN_REGION: string;
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.ADVANCED_SETTINGS,
@@ -1595,12 +2697,56 @@ export class ConfigVariables {
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.ADVANCED_SETTINGS,
     description:
+      'Timeout in milliseconds for the search ILIKE fallback query per searchable object. Triggered only for input containing CJK characters when the tsvector query returns 0 results on the first page. When the timeout fires the fallback is skipped for that object.',
+    type: ConfigVariableType.NUMBER,
+    isEnvOnly: true,
+  })
+  @CastToPositiveNumber()
+  @IsOptional()
+  SEARCH_ILIKE_FALLBACK_TIMEOUT_MS: number = 2000;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.ADVANCED_SETTINGS,
+    description:
       'Default npm registry URL for resolving app packages (e.g. https://registry.npmjs.org)',
     type: ConfigVariableType.STRING,
   })
   @IsUrl({ require_tld: false })
   @IsOptional()
   APP_REGISTRY_URL: string = 'https://registry.npmjs.org';
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.ADVANCED_SETTINGS,
+    description:
+      'CDN base URL for serving files from registry (e.g. https://unpkg.com)',
+    type: ConfigVariableType.STRING,
+  })
+  @IsUrl({ require_tld: false })
+  @IsOptional()
+  APP_REGISTRY_CDN_URL: string = 'https://unpkg.com';
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.ADVANCED_SETTINGS,
+    description:
+      'Client ID of the GitHub OAuth app used to verify app ownership when claiming a marketplace application',
+    isHiddenInAdminPanel: true,
+    type: ConfigVariableType.STRING,
+  })
+  @IsString()
+  @IsOptional()
+  APP_CLAIM_GITHUB_CLIENT_ID: string;
+
+  @ConfigVariablesMetadata({
+    group: ConfigVariablesGroup.ADVANCED_SETTINGS,
+    isSensitive: true,
+    description:
+      'Client secret of the GitHub OAuth app used to verify app ownership when claiming a marketplace application',
+    isHiddenInAdminPanel: true,
+    type: ConfigVariableType.STRING,
+  })
+  @IsString()
+  @IsOptional()
+  APP_CLAIM_GITHUB_CLIENT_SECRET: string;
 
   @ConfigVariablesMetadata({
     group: ConfigVariablesGroup.ADVANCED_SETTINGS,

@@ -3,6 +3,7 @@ import { useSidePanelWorkflowNavigation } from '@/side-panel/pages/workflow/hook
 import { sidePanelNavigationStackState } from '@/side-panel/states/sidePanelNavigationStackState';
 import { useAtomComponentState } from '@/ui/utilities/state/jotai/hooks/useAtomComponentState';
 import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateValue';
+import { useSetAtomState } from '@/ui/utilities/state/jotai/hooks/useSetAtomState';
 import { workflowVisualizerWorkflowIdComponentState } from '@/workflow/states/workflowVisualizerWorkflowIdComponentState';
 import { workflowVisualizerWorkflowVersionIdComponentState } from '@/workflow/states/workflowVisualizerWorkflowVersionIdComponentState';
 import { WORKFLOW_DIAGRAM_STEP_NODE_BASE_CLICK_OUTSIDE_ID } from '@/workflow/workflow-diagram/constants/WorkflowDiagramStepNodeClickOutsideId';
@@ -14,11 +15,11 @@ import { WorkflowNodeLabelWithCounterPart } from '@/workflow/workflow-diagram/wo
 import { WorkflowNodeRightPart } from '@/workflow/workflow-diagram/workflow-nodes/components/WorkflowNodeRightPart';
 import { WorkflowNodeTitle } from '@/workflow/workflow-diagram/workflow-nodes/components/WorkflowNodeTitle';
 import { useLingui } from '@lingui/react/macro';
-import { useSetAtomState } from '@/ui/utilities/state/jotai/hooks/useSetAtomState';
 import { useContext } from 'react';
 import { isDefined } from 'twenty-shared/utils';
+import { doNotTranslate } from 'twenty-shared/i18n';
 import { TRIGGER_STEP_ID } from 'twenty-shared/workflow';
-import { useIcons } from 'twenty-ui/display';
+import { useIcons } from 'twenty-ui/icon/provider';
 
 export const WorkflowDiagramEmptyTriggerReadonly = ({ id }: { id: string }) => {
   const { getIcon } = useIcons();
@@ -35,7 +36,8 @@ export const WorkflowDiagramEmptyTriggerReadonly = ({ id }: { id: string }) => {
     workflowSelectedNodeComponentState,
   );
 
-  const { isInSidePanel } = useContext(CommandMenuContext);
+  const { commandMenuContextApi } = useContext(CommandMenuContext);
+  const isInSidePanel = commandMenuContextApi.isInSidePanel;
 
   const { openWorkflowViewStepInSidePanel } = useSidePanelWorkflowNavigation();
 
@@ -51,7 +53,9 @@ export const WorkflowDiagramEmptyTriggerReadonly = ({ id }: { id: string }) => {
       !isDefined(workflowVisualizerWorkflowVersionId)
     ) {
       throw new Error(
-        'Workflow ID and Version ID must be defined to open the command menu.',
+        doNotTranslate(
+          'Workflow ID and Version ID must be defined to open the command menu.',
+        ),
       );
     }
 

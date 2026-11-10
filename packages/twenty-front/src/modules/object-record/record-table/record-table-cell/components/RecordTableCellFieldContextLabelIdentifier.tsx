@@ -2,7 +2,7 @@ import { getObjectPermissionsForObject } from '@/object-metadata/utils/getObject
 import { isRecordFieldReadOnly } from '@/object-record/read-only/utils/isRecordFieldReadOnly';
 import { FieldContext } from '@/object-record/record-field/ui/contexts/FieldContext';
 import { useRecordIndexContextOrThrow } from '@/object-record/record-index/contexts/RecordIndexContext';
-import { shouldCompactRecordIndexLabelIdentifierComponentState } from '@/object-record/record-index/states/shouldCompactRecordIndexLabelIdentifierComponentState';
+import { useGetRecordTableRowIndex } from '@/object-record/record-table/record-table-row/hooks/useGetRecordTableRowIndex';
 import { RecordTableCellContext } from '@/object-record/record-table/contexts/RecordTableCellContext';
 import { useRecordTableContextOrThrow } from '@/object-record/record-table/contexts/RecordTableContext';
 import { useRecordTableRowContextOrThrow } from '@/object-record/record-table/contexts/RecordTableRowContext';
@@ -10,6 +10,7 @@ import { RecordTableUpdateContext } from '@/object-record/record-table/contexts/
 import { isRecordTableCellsNonEditableComponentState } from '@/object-record/record-table/states/isRecordTableCellsNonEditableComponentState';
 import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateValue';
 import { useContext, type ReactNode } from 'react';
+import { canReachSomeRecords, isDefined } from 'twenty-shared/utils';
 
 type RecordTableCellFieldContextLabelIdentifierProps = {
   children: ReactNode;
@@ -20,10 +21,13 @@ export const RecordTableCellFieldContextLabelIdentifier = ({
 }: RecordTableCellFieldContextLabelIdentifierProps) => {
   const {
     objectPermissionsByObjectMetadataId,
+    fieldMetadataItemByFieldMetadataItemId,
     fieldDefinitionByFieldMetadataItemId,
   } = useRecordIndexContextOrThrow();
-  const { recordId, isRecordReadOnly, rowIndex } =
+  const { recordId, isRecordReadOnly, restrictedFieldNames } =
     useRecordTableRowContextOrThrow();
+
+  const { getRecordTableRowIndex } = useGetRecordTableRowIndex();
 
   const isRecordTableCellsNonEditable = useAtomComponentStateValue(
     isRecordTableCellsNonEditableComponentState,
@@ -38,19 +42,28 @@ export const RecordTableCellFieldContextLabelIdentifier = ({
     objectMetadataItem.id,
   );
 
-  const shouldCompactRecordIndexLabelIdentifier = useAtomComponentStateValue(
-    shouldCompactRecordIndexLabelIdentifierComponentState,
-  );
-
-  const hasObjectReadPermissions = objectPermissions.canReadObjectRecords;
+  const hasObjectReadPermissions = canReachSomeRecords({
+    objectRecordsPermissions: objectPermissions,
+    operationType: 'read',
+  });
 
   const updateRecord = useContext(RecordTableUpdateContext);
 
   const fieldDefinition =
     fieldDefinitionByFieldMetadataItemId[recordField.fieldMetadataItemId];
+  const fieldMetadataItem =
+    fieldMetadataItemByFieldMetadataItemId[recordField.fieldMetadataItemId];
+
+  if (!isDefined(fieldMetadataItem)) {
+    return null;
+  }
 
   const handleChipClick = () => {
-    onRecordIdentifierClick?.(rowIndex, recordId);
+    const rowIndex = getRecordTableRowIndex();
+
+    if (isDefined(rowIndex)) {
+      onRecordIdentifierClick?.(rowIndex, recordId);
+    }
   };
 
   return (
@@ -60,19 +73,16 @@ export const RecordTableCellFieldContextLabelIdentifier = ({
         fieldDefinition,
         useUpdateRecord: updateRecord ? () => [updateRecord, {}] : undefined,
         isLabelIdentifier: true,
-        isLabelIdentifierCompact: shouldCompactRecordIndexLabelIdentifier,
         displayedMaxRows: 1,
         isRecordFieldReadOnly:
           isRecordTableCellsNonEditable ||
+          restrictedFieldNames.includes(fieldDefinition.metadata.fieldName) ||
           isRecordFieldReadOnly({
             isRecordReadOnly: isRecordReadOnly ?? false,
-            isSystemObject: objectMetadataItem.isSystem,
-            objectPermissions,
-            fieldMetadataItem: {
-              id: recordField.fieldMetadataItemId,
-              isUIReadOnly: fieldDefinition.metadata.isUIReadOnly ?? false,
-              isCustom: fieldDefinition.metadata.isCustom ?? false,
-            },
+            objectMetadataId: objectMetadataItem.id,
+            fieldMetadataItem,
+            fieldDefinition,
+            objectPermissionsByObjectMetadataId,
           }),
         maxWidth: recordField.size,
         onRecordChipClick: handleChipClick,

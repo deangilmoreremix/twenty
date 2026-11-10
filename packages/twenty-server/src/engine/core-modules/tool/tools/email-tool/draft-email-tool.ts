@@ -1,15 +1,19 @@
+import { EmailOperation } from 'twenty-shared/types';
 import { Injectable, Logger } from '@nestjs/common';
 
+import { SOURCE_LOCALE } from 'twenty-shared/translations';
+
+import { I18nService } from 'src/engine/core-modules/i18n/i18n.service';
 import { EmailComposerService } from 'src/engine/core-modules/tool/tools/email-tool/email-composer.service';
 import { EmailToolInputZodSchema } from 'src/engine/core-modules/tool/tools/email-tool/email-tool.schema';
 import { EmailToolException } from 'src/engine/core-modules/tool/tools/email-tool/exceptions/email-tool.exception';
+import { getMissingDraftEmailScopes } from 'src/engine/core-modules/tool/tools/email-tool/utils/get-missing-draft-email-scopes.util';
+import { isInsufficientPermissionsError } from 'src/engine/core-modules/tool/tools/email-tool/utils/is-insufficient-permissions-error.util';
 import { type ComposedEmail } from 'src/engine/core-modules/tool/tools/email-tool/types/composed-email.type';
 import { type EmailToolInput } from 'src/engine/core-modules/tool/tools/email-tool/types/email-tool-input.type';
 import { type ToolOutput } from 'src/engine/core-modules/tool/types/tool-output.type';
-import {
-  type Tool,
-  type ToolExecutionContext,
-} from 'src/engine/core-modules/tool/types/tool.type';
+import { type ToolExecutionContext } from 'src/engine/core-modules/tool/types/tool-execution-context.type';
+import { type Tool } from 'src/engine/core-modules/tool/types/tool.type';
 import { MessagingMessageOutboundService } from 'src/modules/messaging/message-outbound-manager/services/messaging-message-outbound.service';
 
 @Injectable()
@@ -23,6 +27,7 @@ export class DraftEmailTool implements Tool {
   constructor(
     private readonly emailComposerService: EmailComposerService,
     private readonly messageOutboundService: MessagingMessageOutboundService,
+    private readonly i18nService: I18nService,
   ) {}
 
   async execute(
@@ -30,16 +35,34 @@ export class DraftEmailTool implements Tool {
     context: ToolExecutionContext,
   ): Promise<ToolOutput> {
     try {
-      const result = await this.emailComposerService.composeEmail(
+      const result = await this.emailComposerService.composeEmail({
         parameters,
         context,
-      );
+        operation: EmailOperation.DRAFT,
+      });
 
       if (!result.success) {
-        return result.output;
+        const errorMessage = this.i18nService
+          .getI18nInstance(SOURCE_LOCALE)
+          ._(result.error);
+
+        return { success: false, message: errorMessage, error: errorMessage };
       }
 
       const { data } = result;
+
+      const missingDraftScopes = getMissingDraftEmailScopes(
+        data.connectedAccount,
+      );
+
+      if (missingDraftScopes.length > 0) {
+        return {
+          success: false,
+          message: 'Failed to create draft due to insufficient permissions',
+          error:
+            'The connected email account does not have permission to create drafts.',
+        };
+      }
 
       await this.createDraft(data);
 
@@ -55,6 +78,8 @@ export class DraftEmailTool implements Tool {
           ccRecipients: data.recipients.cc,
           bccRecipients: data.recipients.bcc,
           subject: data.sanitizedSubject,
+          sanitizedHtmlBody: data.sanitizedHtmlBody,
+          plainTextBody: data.plainTextBody,
           connectedAccountId: data.connectedAccount.id,
           attachmentCount: data.attachments.length,
         },
@@ -70,6 +95,15 @@ export class DraftEmailTool implements Tool {
 
       this.logger.error(`Failed to create draft: ${error}`);
 
+      if (isInsufficientPermissionsError(error)) {
+        return {
+          success: false,
+          message: 'Failed to create draft due to insufficient permissions',
+          error:
+            'The connected email account does not have permission to create drafts.',
+        };
+      }
+
       return {
         success: false,
         message: 'Failed to create draft',
@@ -82,6 +116,7 @@ export class DraftEmailTool implements Tool {
   private async createDraft(data: ComposedEmail): Promise<void> {
     await this.messageOutboundService.createDraft(
       {
+        fromHandle: data.fromHandle,
         to: data.recipients.to,
         cc: data.recipients.cc.length > 0 ? data.recipients.cc : undefined,
         bcc: data.recipients.bcc.length > 0 ? data.recipients.bcc : undefined,
@@ -90,6 +125,8 @@ export class DraftEmailTool implements Tool {
         html: data.sanitizedHtmlBody,
         attachments: data.attachments,
         inReplyTo: data.inReplyTo,
+        threadExternalId: data.threadExternalId,
+        references: data.references,
       },
       data.connectedAccount,
     );

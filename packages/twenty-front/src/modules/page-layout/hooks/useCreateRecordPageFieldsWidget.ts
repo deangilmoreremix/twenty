@@ -8,12 +8,10 @@ import { createDefaultFieldsWidget } from '@/page-layout/utils/createDefaultFiel
 import { useNavigatePageLayoutSidePanel } from '@/side-panel/pages/page-layout/hooks/useNavigatePageLayoutSidePanel';
 import { useTargetRecord } from '@/ui/layout/contexts/useTargetRecord';
 import { useAtomComponentStateCallbackState } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateCallbackState';
-import { usePerformViewAPIPersist } from '@/views/hooks/internal/usePerformViewAPIPersist';
 import { useStore } from 'jotai';
 import { useCallback } from 'react';
 import { SidePanelPages } from 'twenty-shared/types';
 import { v4 as uuidv4 } from 'uuid';
-import { ViewType } from '~/generated-metadata/graphql';
 
 export const useCreateRecordPageFieldsWidget = () => {
   const { tabId } = usePageLayoutContentContext();
@@ -25,8 +23,6 @@ export const useCreateRecordPageFieldsWidget = () => {
   });
 
   const { currentPageLayout } = useCurrentPageLayoutOrThrow();
-
-  const { performViewAPICreate } = usePerformViewAPIPersist();
 
   const pageLayoutDraftState = useAtomComponentStateCallbackState(
     pageLayoutDraftComponentState,
@@ -40,25 +36,8 @@ export const useCreateRecordPageFieldsWidget = () => {
 
   const store = useStore();
 
-  const createRecordPageFieldsWidget = useCallback(async () => {
+  const createRecordPageFieldsWidget = useCallback(() => {
     const viewId = uuidv4();
-
-    const result = await performViewAPICreate(
-      {
-        input: {
-          id: viewId,
-          name: `${objectMetadataItem.labelSingular} Fields`,
-          icon: 'IconList',
-          objectMetadataId: objectMetadataItem.id,
-          type: ViewType.FIELDS_WIDGET,
-        },
-      },
-      objectMetadataItem.id,
-    );
-
-    if (result.status === 'failed') {
-      return;
-    }
 
     const activeTab = currentPageLayout.tabs.find((tab) => tab.id === tabId);
     const positionIndex = activeTab?.widgets.length ?? 0;
@@ -78,21 +57,20 @@ export const useCreateRecordPageFieldsWidget = () => {
       tabs: addWidgetToTab(prev.tabs, tabId, newWidget),
     }));
 
-    store.set(pageLayoutEditingWidgetIdState, widgetId);
-
     navigatePageLayoutSidePanel({
-      sidePanelPage: SidePanelPages.PageLayoutFieldsSettings,
+      sidePanelPage: SidePanelPages.RecordPageFieldsSettings,
       focusTitleInput: true,
       resetNavigationStack: true,
     });
+    store.set(pageLayoutEditingWidgetIdState, widgetId);
+
+    return newWidget;
   }, [
     currentPageLayout.tabs,
     navigatePageLayoutSidePanel,
     objectMetadataItem.id,
-    objectMetadataItem.labelSingular,
     pageLayoutDraftState,
     pageLayoutEditingWidgetIdState,
-    performViewAPICreate,
     store,
     tabId,
   ]);

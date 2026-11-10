@@ -3,6 +3,7 @@ import { useSidePanelWorkflowNavigation } from '@/side-panel/pages/workflow/hook
 import { sidePanelNavigationStackState } from '@/side-panel/states/sidePanelNavigationStackState';
 import { useAtomComponentState } from '@/ui/utilities/state/jotai/hooks/useAtomComponentState';
 import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateValue';
+import { useSetAtomState } from '@/ui/utilities/state/jotai/hooks/useSetAtomState';
 import { workflowVisualizerWorkflowIdComponentState } from '@/workflow/states/workflowVisualizerWorkflowIdComponentState';
 import { workflowVisualizerWorkflowVersionIdComponentState } from '@/workflow/states/workflowVisualizerWorkflowVersionIdComponentState';
 import { WORKFLOW_DIAGRAM_STEP_NODE_BASE_CLICK_OUTSIDE_ID } from '@/workflow/workflow-diagram/constants/WorkflowDiagramStepNodeClickOutsideId';
@@ -19,12 +20,13 @@ import { WorkflowNodeLabelWithCounterPart } from '@/workflow/workflow-diagram/wo
 import { WorkflowNodeRightPart } from '@/workflow/workflow-diagram/workflow-nodes/components/WorkflowNodeRightPart';
 import { WorkflowNodeTitle } from '@/workflow/workflow-diagram/workflow-nodes/components/WorkflowNodeTitle';
 import { WORKFLOW_DIAGRAM_NODE_DEFAULT_SOURCE_HANDLE_ID } from '@/workflow/workflow-diagram/workflow-nodes/constants/WorkflowDiagramNodeDefaultSourceHandleId';
+import { useWorkflowNodeLabel } from '@/workflow/workflow-diagram/workflow-nodes/hooks/useWorkflowNodeLabel';
 import { isNodeTitleHighlighted } from '@/workflow/workflow-diagram/workflow-nodes/utils/isNodeTitleHighlighted';
 import { Position } from '@xyflow/react';
-import { useSetAtomState } from '@/ui/utilities/state/jotai/hooks/useSetAtomState';
 import { useContext } from 'react';
-import { capitalize, isDefined } from 'twenty-shared/utils';
-import { useIcons } from 'twenty-ui/display';
+import { isDefined } from 'twenty-shared/utils';
+import { doNotTranslate } from 'twenty-shared/i18n';
+import { useIcons } from 'twenty-ui/icon/provider';
 
 export const WorkflowDiagramStepNodeReadonly = ({
   id,
@@ -50,7 +52,8 @@ export const WorkflowDiagramStepNodeReadonly = ({
 
   const { openWorkflowViewStepInSidePanel } = useSidePanelWorkflowNavigation();
 
-  const { isInSidePanel } = useContext(CommandMenuContext);
+  const { commandMenuContextApi } = useContext(CommandMenuContext);
+  const isInSidePanel = commandMenuContextApi.isInSidePanel;
 
   const setSidePanelNavigationStack = useSetAtomState(
     sidePanelNavigationStackState,
@@ -61,7 +64,9 @@ export const WorkflowDiagramStepNodeReadonly = ({
       !isDefined(workflowVisualizerWorkflowId) ||
       !isDefined(workflowVisualizerWorkflowVersionId)
     ) {
-      throw new Error('Workflow ID and Version ID must be defined');
+      throw new Error(
+        doNotTranslate('Workflow ID and Version ID must be defined'),
+      );
     }
 
     if (!isInSidePanel) {
@@ -84,14 +89,17 @@ export const WorkflowDiagramStepNodeReadonly = ({
     actionType: data.nodeType === 'action' ? data.actionType : undefined,
   });
 
+  const nodeLabel = useWorkflowNodeLabel(data);
+
   return (
     <>
       <WorkflowNodeContainer
         data-click-outside-id={WORKFLOW_DIAGRAM_STEP_NODE_BASE_CLICK_OUTSIDE_ID}
         onClick={handleClick}
         selected={selected}
+        targetHandleCount={data.targetHandleIds?.length}
       >
-        <WorkflowDiagramHandleTarget />
+        <WorkflowDiagramHandleTarget targetHandleIds={data.targetHandleIds} />
         <WorkflowNodeIconContainer>
           <WorkflowDiagramStepNodeIcon data={data} />
         </WorkflowNodeIconContainer>
@@ -99,7 +107,7 @@ export const WorkflowDiagramStepNodeReadonly = ({
         <WorkflowNodeRightPart>
           <WorkflowNodeLabelWithCounterPart>
             <WorkflowNodeLabel selected={selected}>
-              {capitalize(data.nodeType)}
+              {nodeLabel}
             </WorkflowNodeLabel>
           </WorkflowNodeLabelWithCounterPart>
 

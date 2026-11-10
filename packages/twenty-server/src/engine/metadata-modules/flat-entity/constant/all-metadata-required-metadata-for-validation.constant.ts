@@ -61,6 +61,7 @@ export const ALL_METADATA_REQUIRED_METADATA_FOR_VALIDATION = {
   roleTarget: {
     role: true,
     agent: true,
+    webhook: true,
   },
   agent: {
     role: true,
@@ -69,17 +70,33 @@ export const ALL_METADATA_REQUIRED_METADATA_FOR_VALIDATION = {
   commandMenuItem: {
     objectMetadata: true,
     frontComponent: true,
+    pageLayout: true,
   },
   navigationMenuItem: {
     objectMetadata: true,
     view: true,
+    pageLayout: true,
+    agentChatChannel: true,
+    workflow: true,
+    agent: true,
+  },
+  rolePermissionFlag: {
+    permissionFlag: true,
+    role: true,
   },
   permissionFlag: {
-    role: true,
+    rolePermissionFlag: true,
   },
   objectPermission: {
     role: true,
     objectMetadata: true,
+  },
+  fieldPermission: {
+    role: true,
+    objectMetadata: true,
+    fieldMetadata: true,
+    rowLevelPermissionPredicateGroup: true,
+    rowLevelPermissionRule: true,
   },
   pageLayout: {
     objectMetadata: true,
@@ -92,17 +109,66 @@ export const ALL_METADATA_REQUIRED_METADATA_FOR_VALIDATION = {
     objectMetadata: true,
     pageLayoutTab: true,
     frontComponent: true,
+    fieldMetadata: true,
+    commandMenuItem: true,
   },
   rowLevelPermissionPredicate: {
     fieldMetadata: true,
     objectMetadata: true,
     role: true,
     rowLevelPermissionPredicateGroup: true,
+    rowLevelPermissionRule: true,
   },
   rowLevelPermissionPredicateGroup: {
     role: true,
     objectMetadata: true,
+    rowLevelPermissionRule: true,
   },
-  frontComponent: {},
+  rowLevelPermissionRule: {
+    role: true,
+    objectMetadata: true,
+  },
+  frontComponent: {
+    objectMetadata: true,
+  },
   webhook: {},
+  mcpServer: {
+    connectionProvider: true,
+  },
+  applicationVariable: {},
+  connectionProvider: {},
+  messagingProvider: {
+    connectionProvider: true,
+    logicFunction: true,
+  },
+  searchFieldMetadata: {
+    objectMetadata: true,
+    fieldMetadata: true,
+  },
+  timelineActivityType: {
+    objectMetadata: true,
+    fieldMetadata: true,
+    frontComponent: true,
+  },
+  settingsMenuItem: {
+    frontComponent: true,
+  },
+  fieldMetadataOption: {
+    fieldMetadata: true,
+  },
+  relatedRecordPath: {
+    objectMetadata: true,
+    fieldMetadata: true,
+  },
+  validationRule: {
+    objectMetadata: true,
+    fieldMetadata: true,
+  },
+  workflow: {},
+  workflowVersion: {},
+  agentChatChannel: {},
+  agentChatChannelRole: {
+    agentChatChannel: true,
+    role: true,
+  },
 } as const satisfies MetadataRequiredForValidation;

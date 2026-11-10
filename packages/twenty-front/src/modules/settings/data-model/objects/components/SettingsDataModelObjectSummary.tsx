@@ -1,21 +1,30 @@
-import { t } from '@lingui/core/macro';
 import { styled } from '@linaria/react';
-import { useContext } from 'react';
-
+import { ObjectMetadataIcon } from '@/object-metadata/components/ObjectMetadataIcon';
 import { type EnrichedObjectMetadataItem } from '@/object-metadata/types/EnrichedObjectMetadataItem';
-import {
-  IconBox,
-  OverflowingTextWithTooltip,
-  useIcons,
-} from 'twenty-ui/display';
 import { SettingsItemTypeTag } from '@/settings/components/SettingsItemTypeTag';
-import { ThemeContext, themeCssVariables } from 'twenty-ui/theme-constants';
+import { TooltipDelay } from '@/ui/layout/tooltip/constants/TooltipDelay';
+import { isNonEmptyArray } from 'twenty-shared/utils';
+import { Tooltip } from 'twenty-ui/primitives/surfaces';
+import { OverflowingTextWithTooltip } from 'twenty-ui/primitives/typography';
+import { IconBox } from 'twenty-ui/icon';
+import { useTheme, themeCssVariables } from 'twenty-ui/theme';
+import { useLingui } from '@lingui/react/macro';
+import { formatDisplayList } from '~/utils/format/formatDisplayList';
+
+const MAX_VISIBLE_OBJECTS = 3;
 
 export type SettingsDataModelObjectPreviewProps = {
   className?: string;
   objectMetadataItems: Pick<
     EnrichedObjectMetadataItem,
-    'icon' | 'labelSingular' | 'labelPlural' | 'isCustom' | 'isRemote'
+    | 'icon'
+    | 'labelSingular'
+    | 'labelPlural'
+    | 'applicationId'
+    | 'isRemote'
+    | 'nameSingular'
+    | 'color'
+    | 'isSystem'
   >[];
   pluralizeLabel?: boolean;
 };
@@ -56,7 +65,14 @@ const StyledSeparator = styled.div`
 type SettingsDataModelObjectPreviewItemProps = {
   objectMetadataItem: Pick<
     EnrichedObjectMetadataItem,
-    'icon' | 'labelSingular' | 'labelPlural' | 'isCustom' | 'isRemote'
+    | 'icon'
+    | 'labelSingular'
+    | 'labelPlural'
+    | 'applicationId'
+    | 'isRemote'
+    | 'nameSingular'
+    | 'color'
+    | 'isSystem'
   >;
   pluralizeLabel: boolean;
   index: number;
@@ -67,9 +83,7 @@ const SettingsDataModelObjectPreviewItem = ({
   pluralizeLabel = true,
   index,
 }: SettingsDataModelObjectPreviewItemProps) => {
-  const { theme } = useContext(ThemeContext);
-  const { getIcon } = useIcons();
-  const ObjectIcon = getIcon(objectMetadataItem.icon);
+  const theme = useTheme();
 
   return (
     <>
@@ -77,7 +91,8 @@ const SettingsDataModelObjectPreviewItem = ({
       <StyledObjectPreview key={`${objectMetadataItem.labelSingular}-${index}`}>
         <StyledObjectName>
           <StyledIconContainer>
-            <ObjectIcon
+            <ObjectMetadataIcon
+              objectMetadataItem={objectMetadataItem}
               size={theme.icon.size.sm}
               stroke={theme.icon.stroke.md}
             />
@@ -97,32 +112,39 @@ const SettingsDataModelObjectPreviewItem = ({
 };
 
 const SettingsDataModelObjectPreviewOtherObjects = ({
-  selected,
+  objectLabels,
 }: {
-  selected: number;
+  objectLabels: string[];
 }) => {
-  const { theme } = useContext(ThemeContext);
+  const { t } = useLingui();
+  const theme = useTheme();
 
   return (
     <>
       <StyledSeparator />
-      <StyledObjectPreview key={`other-objects`}>
-        <StyledObjectName>
-          <StyledIconContainer>
-            <IconBox
-              size={theme.icon.size.sm}
-              stroke={theme.icon.stroke.md}
-              color={theme.font.color.tertiary}
-            />
-          </StyledIconContainer>
-          <StyledOverflowingTextWithTooltip>
-            <OverflowingTextWithTooltip text={t`Other objects`} />
-          </StyledOverflowingTextWithTooltip>
-        </StyledObjectName>
-        <StyledNumber>
-          <OverflowingTextWithTooltip text={`${selected - 3}`} />
-        </StyledNumber>
-      </StyledObjectPreview>
+      <Tooltip
+        content={formatDisplayList(objectLabels)}
+        side="bottom"
+        delay={TooltipDelay.shortDelay}
+      >
+        <StyledObjectPreview>
+          <StyledObjectName>
+            <StyledIconContainer>
+              <IconBox
+                size={theme.icon.size.sm}
+                stroke={theme.icon.stroke.md}
+                color={theme.font.color.tertiary}
+              />
+            </StyledIconContainer>
+            <StyledOverflowingTextWithTooltip>
+              <OverflowingTextWithTooltip text={t`Other objects`} />
+            </StyledOverflowingTextWithTooltip>
+          </StyledObjectName>
+          <StyledNumber>
+            <OverflowingTextWithTooltip text={`${objectLabels.length}`} />
+          </StyledNumber>
+        </StyledObjectPreview>
+      </Tooltip>
     </>
   );
 };
@@ -131,25 +153,28 @@ export const SettingsDataModelObjectPreview = ({
   objectMetadataItems,
   pluralizeLabel = true,
 }: SettingsDataModelObjectPreviewProps) => {
-  let selected = 0;
+  const otherObjectLabels = objectMetadataItems
+    .slice(MAX_VISIBLE_OBJECTS)
+    .map(({ labelPlural, labelSingular }) =>
+      pluralizeLabel ? labelPlural : labelSingular,
+    );
 
   return (
     <>
-      {objectMetadataItems.map((objectMetadataItem, index) => {
-        selected++;
-        return selected <= 3 ? (
+      {objectMetadataItems
+        .slice(0, MAX_VISIBLE_OBJECTS)
+        .map((objectMetadataItem, index) => (
           <SettingsDataModelObjectPreviewItem
             key={`${objectMetadataItem.labelSingular}-${index}`}
             objectMetadataItem={objectMetadataItem}
             pluralizeLabel={pluralizeLabel}
             index={index}
           />
-        ) : (
-          <></>
-        );
-      })}
-      {selected > 3 && (
-        <SettingsDataModelObjectPreviewOtherObjects selected={selected} />
+        ))}
+      {isNonEmptyArray(otherObjectLabels) && (
+        <SettingsDataModelObjectPreviewOtherObjects
+          objectLabels={otherObjectLabels}
+        />
       )}
     </>
   );

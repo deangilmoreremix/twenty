@@ -3,8 +3,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 
-import { JsonContains, Repository } from 'typeorm';
-import { findOrThrow } from 'twenty-shared/utils';
+import { Repository } from 'typeorm';
 
 import {
   BillingException,
@@ -17,6 +16,11 @@ import { type SubscriptionInterval } from 'src/engine/core-modules/billing/enums
 import { BillingUsageType } from 'src/engine/core-modules/billing/enums/billing-usage-type.enum';
 import { type BillingGetPlanResult } from 'src/engine/core-modules/billing/types/billing-get-plan-result.type';
 import { type BillingGetPricesPerPlanResult } from 'src/engine/core-modules/billing/types/billing-get-prices-per-plan-result.type';
+import { assertPlanIsSellableOrThrow } from 'src/engine/core-modules/billing/utils/assert-plan-is-sellable-or-throw.util';
+import { findDefaultPlanKey } from 'src/engine/core-modules/billing/utils/find-default-plan-key.util';
+import { getBillingPlanConfig } from 'src/engine/core-modules/billing/utils/get-billing-plan-config.util';
+import { getSellablePlanKeys } from 'src/engine/core-modules/billing/utils/get-sellable-plan-keys.util';
+import { TwentyConfigService } from 'src/engine/core-modules/twenty-config/twenty-config.service';
 
 @Injectable()
 export class BillingPlanService {
@@ -24,43 +28,13 @@ export class BillingPlanService {
   constructor(
     @InjectRepository(BillingProductEntity)
     private readonly billingProductRepository: Repository<BillingProductEntity>,
+    private readonly twentyConfigService: TwentyConfigService,
   ) {}
 
-  async getProductsByProductMetadata({
-    planKey,
-    priceUsageBased,
-    productKey,
-  }: {
-    planKey: BillingPlanKey;
-    priceUsageBased: BillingUsageType;
-    productKey: BillingProductKey;
-  }): Promise<BillingProductEntity[]> {
-    return await this.billingProductRepository.find({
-      where: {
-        metadata: JsonContains({
-          priceUsageBased,
-          planKey,
-          productKey,
-        }),
-        active: true,
-      },
-      relations: ['billingPrices'],
-    });
-  }
-
-  async getPlanBaseProduct(
-    planKey: BillingPlanKey,
-  ): Promise<BillingProductEntity> {
-    const [baseProduct] = await this.getProductsByProductMetadata({
-      planKey,
-      priceUsageBased: BillingUsageType.LICENSED,
-      productKey: BillingProductKey.BASE_PRODUCT,
-    });
-
-    return baseProduct;
-  }
-
   async listPlans(): Promise<BillingGetPlanResult[]> {
+    const plansConfig = this.twentyConfigService.get('BILLING_PLANS');
+    const sellablePlanKeys = getSellablePlanKeys(plansConfig);
+    const defaultPlanKey = findDefaultPlanKey(plansConfig);
     const planKeys = Object.values(BillingPlanKey);
 
     const products = await this.billingProductRepository.find({
@@ -82,45 +56,46 @@ export class BillingPlanService {
         (product) =>
           product.metadata.priceUsageBased === BillingUsageType.METERED,
       );
-      const licensedProducts = planProducts.filter(
+      const baseProducts = planProducts.filter(
         (product) =>
-          product.metadata.priceUsageBased === BillingUsageType.LICENSED,
+          product.metadata.productKey === BillingProductKey.BASE_PRODUCT,
       );
+      const resourceCreditProducts = planProducts.filter(
+        (product) =>
+          product.metadata.productKey === BillingProductKey.RESOURCE_CREDIT,
+      );
+      const { upgradePlanKeys, downgradePlanKeys } = getBillingPlanConfig({
+        plansConfig,
+        planKey,
+      });
 
       return {
         planKey,
+        isSellable: sellablePlanKeys.includes(planKey),
+        isCheckoutDefault: planKey === defaultPlanKey,
+        upgradePlanKeys,
+        downgradePlanKeys,
         meteredProducts,
-        licensedProducts,
+        baseProducts,
+        resourceCreditProducts,
       };
     });
   }
 
-  async getPlanByPriceId(stripePriceId: string) {
-    const plans = await this.listPlans();
-
-    return findOrThrow(plans, (plan) => {
-      return (
-        plan.meteredProducts.some((product) =>
-          product.billingPrices.some(
-            (price) => price.stripePriceId === stripePriceId,
-          ),
-        ) ||
-        plan.licensedProducts.some((product) =>
-          product.billingPrices.some(
-            (price) => price.stripePriceId === stripePriceId,
-          ),
-        )
-      );
-    });
-  }
-
-  async getPricesPerPlanByInterval({
+  async getSellablePlanPricesByIntervalOrThrow({
     planKey,
     interval,
   }: {
     planKey: BillingPlanKey;
     interval: SubscriptionInterval;
   }): Promise<BillingGetPricesPerPlanResult> {
+    assertPlanIsSellableOrThrow({
+      planKey,
+      sellablePlanKeys: getSellablePlanKeys(
+        this.twentyConfigService.get('BILLING_PLANS'),
+      ),
+    });
+
     const plans = await this.listPlans();
     const plan = plans.find((plan) => plan.planKey === planKey);
 
@@ -130,21 +105,24 @@ export class BillingPlanService {
         BillingExceptionCode.BILLING_PLAN_NOT_FOUND,
       );
     }
-    const { meteredProducts, licensedProducts } = plan;
+    const { meteredProducts, baseProducts, resourceCreditProducts } = plan;
 
     const filterPricesByInterval = (product: BillingProductEntity) =>
       product.billingPrices.filter((price) => price.interval === interval);
 
-    const meteredProductsPrices = meteredProducts.flatMap(
+    const meteredProductPrices = meteredProducts.flatMap(
       filterPricesByInterval,
     );
-    const licensedProductsPrices = licensedProducts.flatMap(
+    const baseProductPrices = baseProducts.flatMap(filterPricesByInterval);
+
+    const resourceCreditProductPrices = resourceCreditProducts.flatMap(
       filterPricesByInterval,
     );
 
     return {
-      meteredProductsPrices,
-      licensedProductsPrices,
+      meteredProductPrices,
+      baseProductPrices,
+      resourceCreditProductPrices,
     };
   }
 }

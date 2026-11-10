@@ -1,5 +1,5 @@
 import { type CalendarChannel } from '@/accounts/types/CalendarChannel';
-import { type ImapSmtpCaldavAccount } from '@/accounts/types/ImapSmtpCaldavAccount';
+import { type ImapSmtpCaldavAccountInput } from '@/accounts/types/ImapSmtpCaldavAccountInput';
 import { type ConnectedAccountProvider } from 'twenty-shared/types';
 import { type MessageChannel } from './MessageChannel';
 
@@ -7,14 +7,24 @@ export type ConnectedAccount = {
   id: string;
   handle: string;
   provider: ConnectedAccountProvider;
-  accessToken: string;
-  refreshToken: string;
-  accountOwnerId: string;
-  lastSyncHistoryId: string;
-  authFailedAt: Date | null;
+  authFailedAt: string | null;
+  authFailedReason: string | null;
+  // Set when the account is disconnected or frozen: synced data is kept but
+  // cannot be updated until the account is reconnected.
+  archivedAt: string | null;
+  scopes: string[] | null;
+  handleAliases: string[] | null;
+  lastSignedInAt: string | null;
+  userWorkspaceId: string;
+  connectionProviderId: string | null;
+  applicationId: string | null;
+  name: string | null;
+  scope: 'USER' | 'WORKSPACE';
+  lastCredentialsRefreshedAt: string | null;
+  connectionParameters: ImapSmtpCaldavAccountInput | null;
+  createdAt: string;
+  updatedAt: string;
   messageChannels: MessageChannel[];
   calendarChannels: CalendarChannel[];
-  scopes: string[] | null;
-  connectionParameters?: ImapSmtpCaldavAccount;
   __typename: 'ConnectedAccount';
 };

@@ -1,5 +1,5 @@
 import { FormSingleRecordPicker } from '@/object-record/record-field/ui/form-types/components/FormSingleRecordPicker';
-import { type VariablePickerComponent } from '@/object-record/record-field/ui/form-types/types/VariablePickerComponent';
+import { type VariablePickerComponent } from '@/ui/input/types/VariablePickerComponent';
 import {
   type FieldRelationToOneValue,
   type FieldRelationValue,
@@ -11,7 +11,7 @@ import { type JsonValue } from 'type-fest';
 export type FormRelationToOneFieldInputProps = {
   label?: string;
   objectNameSingular?: string;
-  defaultValue?: FieldRelationValue<FieldRelationToOneValue> | string;
+  defaultValue?: FieldRelationValue<FieldRelationToOneValue> | string | null;
   onChange: (value: JsonValue) => void;
   onClear?: () => void;
   readonly?: boolean;

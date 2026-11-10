@@ -1,5 +1,6 @@
 import { styled } from '@linaria/react';
 import { CommandMenuComponentInstanceContext } from '@/command-menu/states/contexts/CommandMenuComponentInstanceContext';
+import { MAIN_CONTEXT_STORE_INSTANCE_ID } from '@/context-store/constants/MainContextStoreInstanceId';
 import { SIDE_PANEL_COMPONENT_INSTANCE_ID } from '@/side-panel/constants/SidePanelComponentInstanceId';
 import { contextStoreCurrentObjectMetadataItemIdComponentState } from '@/context-store/states/contextStoreCurrentObjectMetadataItemIdComponentState';
 import { contextStoreCurrentViewIdComponentState } from '@/context-store/states/contextStoreCurrentViewIdComponentState';
@@ -7,20 +8,15 @@ import { ContextStoreComponentInstanceContext } from '@/context-store/states/con
 import { objectMetadataItemsSelector } from '@/object-metadata/states/objectMetadataItemsSelector';
 import { RecordComponentInstanceContextsWrapper } from '@/object-record/components/RecordComponentInstanceContextsWrapper';
 import { getRecordIndexIdFromObjectNamePluralAndViewId } from '@/object-record/utils/getRecordIndexIdFromObjectNamePluralAndViewId';
-import { useIsMobile } from '@/ui/utilities/responsive/hooks/useIsMobile';
 import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateValue';
 import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomStateValue';
-import { themeCssVariables } from 'twenty-ui/theme-constants';
 
-const StyledSidePanelContainer = styled.div<{ isMobile: boolean }>`
+const StyledSidePanelContainer = styled.div`
   display: flex;
   flex: 1;
   flex-direction: column;
-  max-height: ${({ isMobile }) => {
-    const mobileOffset = isMobile ? themeCssVariables.spacing[16] : '0px';
-
-    return `calc(100% - ${mobileOffset})`;
-  }};
+  max-height: 100%;
+  min-height: 0;
 `;
 
 type SidePanelContainerProps = {
@@ -30,9 +26,8 @@ type SidePanelContainerProps = {
 export const SidePanelContainer = ({ children }: SidePanelContainerProps) => {
   const contextStoreCurrentObjectMetadataItemId = useAtomComponentStateValue(
     contextStoreCurrentObjectMetadataItemIdComponentState,
-    SIDE_PANEL_COMPONENT_INSTANCE_ID,
+    MAIN_CONTEXT_STORE_INSTANCE_ID,
   );
-  const isMobile = useIsMobile();
 
   const objectMetadataItems = useAtomStateValue(objectMetadataItemsSelector);
 
@@ -43,7 +38,7 @@ export const SidePanelContainer = ({ children }: SidePanelContainerProps) => {
 
   const contextStoreCurrentViewId = useAtomComponentStateValue(
     contextStoreCurrentViewIdComponentState,
-    SIDE_PANEL_COMPONENT_INSTANCE_ID,
+    MAIN_CONTEXT_STORE_INSTANCE_ID,
   );
 
   const recordIndexId = getRecordIndexIdFromObjectNamePluralAndViewId(
@@ -54,14 +49,12 @@ export const SidePanelContainer = ({ children }: SidePanelContainerProps) => {
   return (
     <RecordComponentInstanceContextsWrapper componentInstanceId={recordIndexId}>
       <ContextStoreComponentInstanceContext.Provider
-        value={{ instanceId: SIDE_PANEL_COMPONENT_INSTANCE_ID }}
+        value={{ instanceId: MAIN_CONTEXT_STORE_INSTANCE_ID }}
       >
         <CommandMenuComponentInstanceContext.Provider
           value={{ instanceId: SIDE_PANEL_COMPONENT_INSTANCE_ID }}
         >
-          <StyledSidePanelContainer isMobile={isMobile}>
-            {children}
-          </StyledSidePanelContainer>
+          <StyledSidePanelContainer>{children}</StyledSidePanelContainer>
         </CommandMenuComponentInstanceContext.Provider>
       </ContextStoreComponentInstanceContext.Provider>
     </RecordComponentInstanceContextsWrapper>

@@ -1,31 +1,13 @@
 import { gql } from 'graphql-tag';
-import { makeMetadataAPIRequest } from 'test/integration/metadata/suites/utils/make-metadata-api-request.util';
-import { updateFeatureFlag } from 'test/integration/metadata/suites/utils/update-feature-flag.util';
-import { FeatureFlagKey } from 'twenty-shared/types';
+import { makeMetadataApiRequest } from 'test/integration/metadata/suites/utils/make-metadata-api-request.util';
 
-import { MESSAGE_CHANNEL_DATA_SEED_IDS } from 'src/engine/workspace-manager/dev-seeder/data/constants/message-channel-data-seeds.constant';
-import { MESSAGE_FOLDER_DATA_SEED_IDS } from 'src/engine/workspace-manager/dev-seeder/data/constants/message-folder-data-seeds.constant';
+import { MESSAGE_CHANNEL_DATA_SEED_IDS } from 'src/engine/workspace-manager/dev-seeder/core/constants/message-channel-seed-ids.constant';
+import { MESSAGE_FOLDER_DATA_SEED_IDS } from 'src/engine/workspace-manager/dev-seeder/core/constants/message-folder-seed-ids.constant';
 
 describe('messageFolderResolver (e2e)', () => {
-  beforeAll(async () => {
-    await updateFeatureFlag({
-      featureFlag: FeatureFlagKey.IS_CONNECTED_ACCOUNT_MIGRATED,
-      value: true,
-      expectToFail: false,
-    });
-  });
-
-  afterAll(async () => {
-    await updateFeatureFlag({
-      featureFlag: FeatureFlagKey.IS_CONNECTED_ACCOUNT_MIGRATED,
-      value: false,
-      expectToFail: false,
-    });
-  });
-
   describe('myMessageFolders', () => {
     it('should return only the current user message folders', async () => {
-      const response = await makeMetadataAPIRequest({
+      const response = await makeMetadataApiRequest({
         query: gql`
           query MyMessageFolders {
             myMessageFolders {
@@ -46,13 +28,11 @@ describe('messageFolderResolver (e2e)', () => {
 
       expect(folderIds).toContain(MESSAGE_FOLDER_DATA_SEED_IDS.JANE_INBOX);
       expect(folderIds).toContain(MESSAGE_FOLDER_DATA_SEED_IDS.JANE_SENT);
-      expect(folderIds).not.toContain(
-        MESSAGE_FOLDER_DATA_SEED_IDS.JONY_INBOX,
-      );
+      expect(folderIds).not.toContain(MESSAGE_FOLDER_DATA_SEED_IDS.JONY_INBOX);
     });
 
     it('should filter by messageChannelId', async () => {
-      const response = await makeMetadataAPIRequest({
+      const response = await makeMetadataApiRequest({
         query: gql`
           query MyMessageFolders($messageChannelId: UUID) {
             myMessageFolders(messageChannelId: $messageChannelId) {
@@ -73,13 +53,11 @@ describe('messageFolderResolver (e2e)', () => {
       const folderIds = folders.map((folder: { id: string }) => folder.id);
 
       expect(folderIds).toContain(MESSAGE_FOLDER_DATA_SEED_IDS.JANE_INBOX);
-      expect(folderIds).not.toContain(
-        MESSAGE_FOLDER_DATA_SEED_IDS.JONY_INBOX,
-      );
+      expect(folderIds).not.toContain(MESSAGE_FOLDER_DATA_SEED_IDS.JONY_INBOX);
     });
 
     it('should deny filtering by another user messageChannelId', async () => {
-      const response = await makeMetadataAPIRequest({
+      const response = await makeMetadataApiRequest({
         query: gql`
           query MyMessageFolders($messageChannelId: UUID) {
             myMessageFolders(messageChannelId: $messageChannelId) {
@@ -97,7 +75,7 @@ describe('messageFolderResolver (e2e)', () => {
     });
 
     it('should not expose hidden fields', async () => {
-      const response = await makeMetadataAPIRequest({
+      const response = await makeMetadataApiRequest({
         query: gql`
           query MyMessageFolders {
             myMessageFolders {
@@ -115,7 +93,7 @@ describe('messageFolderResolver (e2e)', () => {
 
   describe('updateMessageFolder', () => {
     it('should allow updating own folder isSynced', async () => {
-      const response = await makeMetadataAPIRequest({
+      const response = await makeMetadataApiRequest({
         query: gql`
           mutation UpdateMessageFolder($input: UpdateMessageFolderInput!) {
             updateMessageFolder(input: $input) {
@@ -138,7 +116,7 @@ describe('messageFolderResolver (e2e)', () => {
     });
 
     it('should deny updating another user folder', async () => {
-      const response = await makeMetadataAPIRequest({
+      const response = await makeMetadataApiRequest({
         query: gql`
           mutation UpdateMessageFolder($input: UpdateMessageFolderInput!) {
             updateMessageFolder(input: $input) {

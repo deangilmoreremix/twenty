@@ -1,4 +1,4 @@
-import { MessageFolderImportPolicy } from 'src/modules/messaging/common/standard-objects/message-channel.workspace-entity';
+import { MessageFolderImportPolicy } from 'twenty-shared/types';
 import { computeGmailExcludeSearchFilter } from 'src/modules/messaging/message-import-manager/drivers/gmail/utils/compute-gmail-exclude-search-filter.util';
 
 describe('computeGmailExcludeSearchFilter', () => {
@@ -190,8 +190,8 @@ describe('computeGmailExcludeSearchFilter', () => {
 
     expect(result).toContain('-label:trash');
     expect(result).toContain('-label:spam');
-    expect(result).toContain('-label:draft');
     expect(result).toContain('-label:chat');
+    expect(result).not.toContain('-label:draft');
   });
 
   it('uses -category: syntax for category exclusions in ALL_FOLDERS mode', () => {

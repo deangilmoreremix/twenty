@@ -17,12 +17,14 @@ export const phonesCompositeType: CompositeType = {
       type: FieldMetadataType.TEXT,
       hidden: false,
       isRequired: false,
+      isIncludedInUniqueConstraint: true,
     },
     {
       name: 'primaryPhoneCallingCode',
       type: FieldMetadataType.TEXT,
       hidden: false,
       isRequired: false,
+      isIncludedInUniqueConstraint: true,
     },
     {
       name: 'additionalPhones',
@@ -42,7 +44,9 @@ export type AdditionalPhoneMetadata = {
 type PrimaryPhoneMetadata<
   T extends AdditionalPhoneMetadata = AdditionalPhoneMetadata,
 > = {
-  [Property in keyof AdditionalPhoneMetadata as `primaryPhone${Capitalize<string & Property>}`]: T[Property];
+  [
+    Property in keyof AdditionalPhoneMetadata as `primaryPhone${Capitalize<string & Property>}`
+  ]: T[Property];
 };
 
 export type PhonesMetadata = PrimaryPhoneMetadata & {

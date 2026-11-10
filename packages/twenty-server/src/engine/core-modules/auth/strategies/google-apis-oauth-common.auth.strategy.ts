@@ -5,7 +5,7 @@ import { Strategy, type VerifyCallback } from 'passport-google-oauth20';
 import { getGoogleApisOauthScopes } from 'src/engine/core-modules/auth/utils/get-google-apis-oauth-scopes';
 import { type TwentyConfigService } from 'src/engine/core-modules/twenty-config/twenty-config.service';
 
-export type GoogleAPIScopeConfig = {
+export type GoogleApiScopeConfig = {
   isCalendarEnabled?: boolean;
   isMessagingAliasFetchingEnabled?: boolean;
 };
@@ -14,11 +14,8 @@ export abstract class GoogleAPIsOauthCommonStrategy extends PassportStrategy(
   Strategy,
   'google-apis',
 ) {
-  constructor(
-    twentyConfigService: TwentyConfigService,
-    isDraftEmailEnabled = false,
-  ) {
-    const scopes = getGoogleApisOauthScopes(isDraftEmailEnabled);
+  constructor(twentyConfigService: TwentyConfigService) {
+    const scopes = getGoogleApisOauthScopes();
 
     super({
       clientID: twentyConfigService.get('AUTH_GOOGLE_CLIENT_ID'),

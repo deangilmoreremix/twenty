@@ -1,19 +1,11 @@
-import { UseGuards, UseInterceptors } from '@nestjs/common';
+import { UseGuards, UseInterceptors, UseFilters } from '@nestjs/common';
 import { Args, Mutation, Query } from '@nestjs/graphql';
-
-import { FeatureFlagKey } from 'twenty-shared/types';
 
 import { UUIDScalarType } from 'src/engine/api/graphql/workspace-schema-builder/graphql-types/scalars';
 import { MetadataResolver } from 'src/engine/api/graphql/graphql-config/decorators/metadata-resolver.decorator';
 import { WorkspaceEntity } from 'src/engine/core-modules/workspace/workspace.entity';
 import { AuthUserWorkspaceId } from 'src/engine/decorators/auth/auth-user-workspace-id.decorator';
 import { AuthWorkspace } from 'src/engine/decorators/auth/auth-workspace.decorator';
-import {
-  FeatureFlagGuard,
-  RequireFeatureFlag,
-} from 'src/engine/guards/feature-flag.guard';
-import { NoPermissionGuard } from 'src/engine/guards/no-permission.guard';
-import { WorkspaceAuthGuard } from 'src/engine/guards/workspace-auth.guard';
 import { MessageFolderDTO } from 'src/engine/metadata-modules/message-folder/dtos/message-folder.dto';
 import {
   UpdateMessageFolderInput,
@@ -21,18 +13,34 @@ import {
 } from 'src/engine/metadata-modules/message-folder/dtos/update-message-folder.input';
 import { MessageFolderGraphqlApiExceptionInterceptor } from 'src/engine/metadata-modules/message-folder/interceptors/message-folder-graphql-api-exception.interceptor';
 import { MessageFolderMetadataService } from 'src/engine/metadata-modules/message-folder/message-folder-metadata.service';
+import { AuthGraphqlApiExceptionFilter } from 'src/engine/core-modules/auth/filters/auth-graphql-api-exception.filter';
+import { AccessPolicyGuard } from 'src/engine/guards/access-policy.guard';
 
-@UseGuards(WorkspaceAuthGuard, FeatureFlagGuard)
+@UseGuards(
+  AccessPolicyGuard({
+    authPrincipals: {
+      userSession: {
+        standard: true,
+        impersonated: true,
+        playground: true,
+        workspaceAgnostic: false,
+      },
+      apiKey: true,
+      oauthClient: true,
+      application: true,
+    },
+    requiredPermissionFlags: [],
+  }),
+)
 @UseInterceptors(MessageFolderGraphqlApiExceptionInterceptor)
 @MetadataResolver(() => MessageFolderDTO)
+@UseFilters(AuthGraphqlApiExceptionFilter)
 export class MessageFolderResolver {
   constructor(
     private readonly messageFolderMetadataService: MessageFolderMetadataService,
   ) {}
 
   @Query(() => [MessageFolderDTO])
-  @UseGuards(NoPermissionGuard)
-  @RequireFeatureFlag(FeatureFlagKey.IS_CONNECTED_ACCOUNT_MIGRATED)
   async myMessageFolders(
     @AuthWorkspace() workspace: WorkspaceEntity,
     @AuthUserWorkspaceId() userWorkspaceId: string,
@@ -57,14 +65,12 @@ export class MessageFolderResolver {
   }
 
   @Mutation(() => MessageFolderDTO)
-  @UseGuards(NoPermissionGuard)
-  @RequireFeatureFlag(FeatureFlagKey.IS_CONNECTED_ACCOUNT_MIGRATED)
   async updateMessageFolder(
     @Args('input') input: UpdateMessageFolderInput,
     @AuthWorkspace() workspace: WorkspaceEntity,
     @AuthUserWorkspaceId() userWorkspaceId: string,
   ): Promise<MessageFolderDTO> {
-    await this.messageFolderMetadataService.verifyOwnership({
+    await this.messageFolderMetadataService.verifyAdministrableByCaller({
       id: input.id,
       userWorkspaceId,
       workspaceId: workspace.id,
@@ -78,8 +84,6 @@ export class MessageFolderResolver {
   }
 
   @Mutation(() => [MessageFolderDTO])
-  @UseGuards(NoPermissionGuard)
-  @RequireFeatureFlag(FeatureFlagKey.IS_CONNECTED_ACCOUNT_MIGRATED)
   async updateMessageFolders(
     @Args('input') input: UpdateMessageFoldersInput,
     @AuthWorkspace() workspace: WorkspaceEntity,
@@ -87,7 +91,7 @@ export class MessageFolderResolver {
   ): Promise<MessageFolderDTO[]> {
     await Promise.all(
       input.ids.map((id) =>
-        this.messageFolderMetadataService.verifyOwnership({
+        this.messageFolderMetadataService.verifyAdministrableByCaller({
           id,
           userWorkspaceId,
           workspaceId: workspace.id,
@@ -95,7 +99,7 @@ export class MessageFolderResolver {
       ),
     );
 
-    return this.messageFolderMetadataService.updateMany({
+    return this.messageFolderMetadataService.setSyncStatus({
       ids: input.ids,
       workspaceId: workspace.id,
       data: input.update,

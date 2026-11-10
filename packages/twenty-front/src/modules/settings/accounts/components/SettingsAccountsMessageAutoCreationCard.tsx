@@ -1,7 +1,7 @@
-import { MessageChannelContactAutoCreationPolicy } from '@/accounts/types/MessageChannel';
 import { SettingsAccountsMessageAutoCreationIcon } from '@/settings/accounts/components/SettingsAccountsMessageAutoCreationIcon';
-import { SettingsAccountsRadioSettingsCard } from '@/settings/accounts/components/SettingsAccountsRadioSettingsCard';
+import { SettingsRadioSettingsCard } from '@/settings/components/SettingsRadioSettingsCard';
 import { msg } from '@lingui/core/macro';
+import { MessageChannelContactAutoCreationPolicy } from 'twenty-shared/types';
 
 type SettingsAccountsMessageAutoCreationCardProps = {
   onChange: (nextValue: MessageChannelContactAutoCreationPolicy) => void;
@@ -40,7 +40,7 @@ export const SettingsAccountsMessageAutoCreationCard = ({
   onChange,
   value = MessageChannelContactAutoCreationPolicy.SENT_AND_RECEIVED,
 }: SettingsAccountsMessageAutoCreationCardProps) => (
-  <SettingsAccountsRadioSettingsCard
+  <SettingsRadioSettingsCard
     name="message-auto-creation"
     options={autoCreationOptions}
     value={value}

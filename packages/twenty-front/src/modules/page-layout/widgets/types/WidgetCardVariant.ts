@@ -1,5 +1,1 @@
-export type WidgetCardVariant =
-  | 'canvas'
-  | 'side-column'
-  | 'dashboard'
-  | 'record-page';
+export type WidgetCardVariant = 'framed' | 'flush';

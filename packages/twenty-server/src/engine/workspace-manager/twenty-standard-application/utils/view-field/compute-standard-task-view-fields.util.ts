@@ -8,7 +8,6 @@ export const computeStandardTaskViewFields = (
   args: Omit<CreateStandardViewFieldArgs<'task'>, 'context'>,
 ): Record<string, FlatViewField> => {
   return {
-    // allTasks view fields
     allTasksTitle: createStandardViewFieldFlatMetadata({
       ...args,
       objectName: 'task',
@@ -106,7 +105,6 @@ export const computeStandardTaskViewFields = (
       },
     }),
 
-    // byStatus view fields
     byStatusTitle: createStandardViewFieldFlatMetadata({
       ...args,
       objectName: 'task',
@@ -168,7 +166,6 @@ export const computeStandardTaskViewFields = (
       },
     }),
 
-    // assignedToMe view fields
     assignedToMeTitle: createStandardViewFieldFlatMetadata({
       ...args,
       objectName: 'task',
@@ -254,7 +251,6 @@ export const computeStandardTaskViewFields = (
       },
     }),
 
-    // taskRecordPageFields view fields
     taskRecordPageFieldsDueAt: createStandardViewFieldFlatMetadata({
       ...args,
       objectName: 'task',
@@ -262,7 +258,7 @@ export const computeStandardTaskViewFields = (
         viewName: 'taskRecordPageFields',
         viewFieldName: 'dueAt',
         fieldName: 'dueAt',
-        position: 1,
+        position: 0,
         isVisible: true,
         size: 150,
         viewFieldGroupName: 'general',
@@ -275,7 +271,7 @@ export const computeStandardTaskViewFields = (
         viewName: 'taskRecordPageFields',
         viewFieldName: 'status',
         fieldName: 'status',
-        position: 2,
+        position: 1,
         isVisible: true,
         size: 150,
         viewFieldGroupName: 'general',
@@ -288,7 +284,7 @@ export const computeStandardTaskViewFields = (
         viewName: 'taskRecordPageFields',
         viewFieldName: 'assignee',
         fieldName: 'assignee',
-        position: 3,
+        position: 2,
         isVisible: true,
         size: 150,
         viewFieldGroupName: 'general',
@@ -305,71 +301,6 @@ export const computeStandardTaskViewFields = (
         isVisible: true,
         size: 150,
         viewFieldGroupName: 'general',
-      },
-    }),
-    taskRecordPageFieldsCreatedAt: createStandardViewFieldFlatMetadata({
-      ...args,
-      objectName: 'task',
-      context: {
-        viewName: 'taskRecordPageFields',
-        viewFieldName: 'createdAt',
-        fieldName: 'createdAt',
-        position: 0,
-        isVisible: true,
-        size: 150,
-        viewFieldGroupName: 'other',
-      },
-    }),
-    taskRecordPageFieldsCreatedBy: createStandardViewFieldFlatMetadata({
-      ...args,
-      objectName: 'task',
-      context: {
-        viewName: 'taskRecordPageFields',
-        viewFieldName: 'createdBy',
-        fieldName: 'createdBy',
-        position: 1,
-        isVisible: true,
-        size: 150,
-        viewFieldGroupName: 'other',
-      },
-    }),
-    taskRecordPageFieldsBodyV2: createStandardViewFieldFlatMetadata({
-      ...args,
-      objectName: 'task',
-      context: {
-        viewName: 'taskRecordPageFields',
-        viewFieldName: 'bodyV2',
-        fieldName: 'bodyV2',
-        position: 0,
-        isVisible: false,
-        size: 150,
-        viewFieldGroupName: 'additional',
-      },
-    }),
-    taskRecordPageFieldsUpdatedAt: createStandardViewFieldFlatMetadata({
-      ...args,
-      objectName: 'task',
-      context: {
-        viewName: 'taskRecordPageFields',
-        viewFieldName: 'updatedAt',
-        fieldName: 'updatedAt',
-        position: 2,
-        isVisible: false,
-        size: 150,
-        viewFieldGroupName: 'other',
-      },
-    }),
-    taskRecordPageFieldsUpdatedBy: createStandardViewFieldFlatMetadata({
-      ...args,
-      objectName: 'task',
-      context: {
-        viewName: 'taskRecordPageFields',
-        viewFieldName: 'updatedBy',
-        fieldName: 'updatedBy',
-        position: 3,
-        isVisible: false,
-        size: 150,
-        viewFieldGroupName: 'other',
       },
     }),
     taskRecordPageFieldsAttachments: createStandardViewFieldFlatMetadata({
@@ -400,18 +331,5 @@ export const computeStandardTaskViewFields = (
         },
       },
     ),
-    taskRecordPageFieldsFavorites: createStandardViewFieldFlatMetadata({
-      ...args,
-      objectName: 'task',
-      context: {
-        viewName: 'taskRecordPageFields',
-        viewFieldName: 'favorites',
-        fieldName: 'favorites',
-        position: 7,
-        isVisible: false,
-        size: 150,
-        viewFieldGroupName: 'general',
-      },
-    }),
   };
 };

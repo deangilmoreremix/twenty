@@ -1,10 +1,13 @@
+import { useApolloFactory } from '@/apollo/hooks/useApolloFactory';
+import { clearSessionGeneration } from '@/auth/utils/clearSessionGeneration';
+import { getSessionGeneration } from '@/auth/utils/getSessionGeneration';
+import { rotateSessionGeneration } from '@/auth/utils/rotateSessionGeneration';
 import { gql } from '@apollo/client';
 import { CombinedGraphQLErrors } from '@apollo/client/errors';
 import { act, renderHook } from '@testing-library/react';
 import fetchMock, { enableFetchMocks } from 'jest-fetch-mock';
 import { MemoryRouter, useLocation } from 'react-router-dom';
-import { SnackBarComponentInstanceContext } from '@/ui/feedback/snack-bar-manager/contexts/SnackBarComponentInstanceContext';
-import { useApolloFactory } from '@/apollo/hooks/useApolloFactory';
+import { ToastProvider } from 'twenty-ui/components/feedback';
 
 enableFetchMocks();
 
@@ -24,15 +27,17 @@ const Wrapper = ({ children }: { children: React.ReactNode }) => (
     initialEntries={['/welcome', '/verify', '/opportunities']}
     initialIndex={2}
   >
-    <SnackBarComponentInstanceContext.Provider
-      value={{ instanceId: 'test-instance-id' }}
-    >
-      {children}
-    </SnackBarComponentInstanceContext.Provider>
+    <ToastProvider>{children}</ToastProvider>
   </MemoryRouter>
 );
 
 describe('useApolloFactory', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    fetchMock.resetMocks();
+    clearSessionGeneration();
+  });
+
   it('should work as expected', () => {
     const { result } = renderHook(() => useApolloFactory(), {
       wrapper: Wrapper,
@@ -47,6 +52,12 @@ describe('useApolloFactory', () => {
   });
 
   it('should navigate to /welcome on unauthenticated error', async () => {
+    expect.assertions(6);
+
+    rotateSessionGeneration();
+
+    expect(getSessionGeneration()).not.toBeNull();
+
     const errors = [
       {
         extensions: {
@@ -66,7 +77,10 @@ describe('useApolloFactory', () => {
     const { result } = renderHook(
       () => {
         const location = useLocation();
-        return { factory: useApolloFactory(), location };
+        return {
+          factory: useApolloFactory(),
+          location,
+        };
       },
       {
         wrapper: Wrapper,
@@ -74,6 +88,8 @@ describe('useApolloFactory', () => {
     );
 
     expect(result.current.location.pathname).toBe('/opportunities');
+
+    let mutationError: unknown;
 
     try {
       await act(async () => {
@@ -88,13 +104,12 @@ describe('useApolloFactory', () => {
         });
       });
     } catch (error) {
-      expect(error).toBeInstanceOf(CombinedGraphQLErrors);
-      expect((error as CombinedGraphQLErrors).message).toBe(
-        'Error message not found.',
-      );
-
-      expect(mockNavigate).toHaveBeenCalled();
-      expect(mockNavigate).toHaveBeenCalledWith('/welcome');
+      mutationError = error;
     }
+
+    expect(mutationError).toBeInstanceOf(CombinedGraphQLErrors);
+    expect(getSessionGeneration()).toBeNull();
+    expect(mockNavigate).toHaveBeenCalled();
+    expect(mockNavigate).toHaveBeenCalledWith('/welcome');
   });
 });

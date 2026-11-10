@@ -1,31 +1,33 @@
 import { Injectable } from '@nestjs/common';
 
 import { isNonEmptyString } from '@sniptt/guards';
-import { type AiSdkPackage } from 'twenty-shared/ai';
+import { isDefined } from 'twenty-shared/utils';
 
-import {
-  AI_SDK_ANTHROPIC,
-  AI_SDK_BEDROCK,
-  AI_SDK_OPENAI,
-} from 'src/engine/metadata-modules/ai/ai-models/constants/ai-sdk-package.const';
+import { readIsCompanyEnrichmentEnabled } from 'src/engine/core-modules/company-enrichment/utils/read-is-company-enrichment-enabled.util';
+import { readBookCallStepMinEmployeeCount } from 'src/engine/core-modules/onboarding/utils/read-book-call-step-min-employee-count.util';
 import { NodeEnvironment } from 'src/engine/core-modules/twenty-config/interfaces/node-environment.interface';
 import { SupportDriver } from 'src/engine/core-modules/twenty-config/interfaces/support.interface';
 
+import { MaintenanceModeService } from 'src/engine/core-modules/admin-panel/maintenance-mode.service';
 import {
-  type ClientAIModelConfig,
+  type ClientAiEvaluationModelConfig,
+  type ClientAiModelConfig,
   type ClientConfig,
-  type NativeModelCapabilities,
 } from 'src/engine/core-modules/client-config/client-config.entity';
 import { DomainServerConfigService } from 'src/engine/core-modules/domain/domain-server-config/services/domain-server-config.service';
+import { EmailingDomainDriver } from 'src/engine/core-modules/emailing-domain/drivers/types/emailing-domain-driver.type';
 import { PUBLIC_FEATURE_FLAGS } from 'src/engine/core-modules/feature-flag/constants/public-feature-flag.const';
 import { TwentyConfigService } from 'src/engine/core-modules/twenty-config/twenty-config.service';
-import { convertDollarsToBillingCredits } from 'src/engine/metadata-modules/ai/ai-billing/utils/convert-dollars-to-billing-credits.util';
-import {
-  AUTO_SELECT_FAST_MODEL_ID,
-  AUTO_SELECT_SMART_MODEL_ID,
-} from 'twenty-shared/constants';
-import { MODEL_FAMILY_LABELS } from 'src/engine/metadata-modules/ai/ai-models/constants/model-family-labels.const';
+import { toDisplayCredits } from 'src/engine/core-modules/usage/utils/to-display-credits.util';
+import { AI_MODEL_TIERS, parseAiModelVariantId } from 'twenty-shared/ai';
+import { ENTERPRISE_INSTANCE_TYPE } from 'twenty-shared/constants';
+import { MODEL_FAMILY_LABELS } from 'src/engine/metadata-modules/ai/ai-models/constants/model-family-labels.constant';
+import { getAvailableEfforts } from 'src/engine/metadata-modules/ai/ai-models/utils/get-available-efforts.util';
+import { getNativeModelCapabilities } from 'src/engine/metadata-modules/ai/ai-models/utils/get-native-model-capabilities.util';
+import { AI_DATA_POLICIES } from 'src/engine/metadata-modules/ai/ai-models/constants/ai-data-policies.constant';
 import { AiModelRegistryService } from 'src/engine/metadata-modules/ai/ai-models/services/ai-model-registry.service';
+import { type AiModelBenchmark } from 'src/engine/metadata-modules/ai/ai-models/types/ai-model-benchmark.type';
+import { type AiModelConfig } from 'src/engine/metadata-modules/ai/ai-models/types/ai-model-config.type';
 
 @Injectable()
 export class ClientConfigService {
@@ -33,19 +35,25 @@ export class ClientConfigService {
     private twentyConfigService: TwentyConfigService,
     private domainServerConfigService: DomainServerConfigService,
     private aiModelRegistryService: AiModelRegistryService,
+    private maintenanceModeService: MaintenanceModeService,
   ) {}
 
-  private deriveNativeCapabilities(
-    sdkPackage?: AiSdkPackage,
-  ): NativeModelCapabilities | undefined {
-    switch (sdkPackage) {
-      case AI_SDK_OPENAI:
-      case AI_SDK_ANTHROPIC:
-      case AI_SDK_BEDROCK:
-        return { webSearch: true };
-      default:
-        return undefined;
+  private resolveBenchmark(modelConfig: AiModelConfig | undefined): {
+    benchmark?: AiModelBenchmark;
+    isInherited: boolean;
+  } {
+    if (isDefined(modelConfig?.benchmark)) {
+      return { benchmark: modelConfig.benchmark, isInherited: false };
     }
+
+    const { modelId: baseModelId, effort } = parseAiModelVariantId(
+      modelConfig?.modelId ?? '',
+    );
+    const baseBenchmark = isDefined(effort)
+      ? this.aiModelRegistryService.getModelConfig(baseModelId)?.benchmark
+      : undefined;
+
+    return { benchmark: baseBenchmark, isInherited: isDefined(baseBenchmark) };
   }
 
   private isCloudflareIntegrationEnabled(): boolean {
@@ -61,19 +69,38 @@ export class ClientConfigService {
     const calendarBookingPageId = this.twentyConfigService.get(
       'CALENDAR_BOOKING_PAGE_ID',
     );
+    const isBookCallOnboardingStepEnabled = isDefined(
+      readBookCallStepMinEmployeeCount(this.twentyConfigService),
+    );
+    const isCompanyEnrichmentEnabled = readIsCompanyEnrichmentEnabled(
+      this.twentyConfigService,
+    );
+
+    const isEmailingDomainInDemoMode =
+      this.twentyConfigService.get('EMAILING_DOMAIN_DRIVER') ===
+      EmailingDomainDriver.LOG;
+
+    const isBillingEnabled = this.twentyConfigService.get('IS_BILLING_ENABLED');
 
     const availableModels =
       this.aiModelRegistryService.getAdminFilteredModels();
-    const recommendedModelIds =
-      this.aiModelRegistryService.getRecommendedModelIds();
+    const resolvedProviders =
+      this.aiModelRegistryService.getResolvedProvidersForAdmin();
 
-    const aiModels: ClientAIModelConfig[] = availableModels.map(
+    const getProviderLabel = (providerName?: string | null) =>
+      providerName
+        ? (resolvedProviders[providerName]?.label ?? providerName)
+        : undefined;
+
+    const aiModels: ClientAiModelConfig[] = availableModels.map(
       (registeredModel) => {
         const modelConfig = this.aiModelRegistryService.getModelConfig(
           registeredModel.modelId,
         );
 
         const modelFamily = modelConfig?.modelFamily;
+        const providerName = registeredModel.providerName;
+        const { benchmark, isInherited } = this.resolveBenchmark(modelConfig);
 
         return {
           modelId: registeredModel.modelId,
@@ -83,73 +110,86 @@ export class ClientConfigService {
             ? MODEL_FAMILY_LABELS[modelFamily]
             : undefined,
           sdkPackage: registeredModel.sdkPackage,
-          providerName: registeredModel.providerName,
-          nativeCapabilities: this.deriveNativeCapabilities(
+          providerName,
+          providerLabel: getProviderLabel(providerName),
+          nativeCapabilities: getNativeModelCapabilities(
             registeredModel.sdkPackage,
           ),
-          inputCostPerMillionTokensInCredits: modelConfig
-            ? convertDollarsToBillingCredits(
-                modelConfig.inputCostPerMillionTokens,
-              )
-            : 0,
-          outputCostPerMillionTokensInCredits: modelConfig
-            ? convertDollarsToBillingCredits(
-                modelConfig.outputCostPerMillionTokens,
-              )
-            : 0,
+          inputCostPerMillionTokens: modelConfig?.inputCostPerMillionTokens,
+          outputCostPerMillionTokens: modelConfig?.outputCostPerMillionTokens,
+          contextWindowTokens: modelConfig?.contextWindowTokens,
+          maxOutputTokens: modelConfig?.maxOutputTokens,
           isDeprecated: modelConfig?.isDeprecated,
-          isRecommended: recommendedModelIds.has(registeredModel.modelId),
           dataResidency: modelConfig?.dataResidency,
+          zeroDataRetention: modelConfig?.zeroDataRetention,
+          intelligenceIndex: benchmark?.intelligenceIndex,
+          outputTokensPerSecond: benchmark?.outputTokensPerSecond,
+          costPerTask: benchmark?.costPerTask,
+          isBenchmarkInherited: isInherited,
+          efforts:
+            isDefined(modelConfig) && !isDefined(modelConfig.effort)
+              ? getAvailableEfforts(modelConfig)
+              : undefined,
+          effort: modelConfig?.effort,
         };
       },
     );
 
-    if (aiModels.length > 0) {
-      const defaultSpeedModel =
-        this.aiModelRegistryService.getDefaultSpeedModel();
-      const defaultSpeedModelConfig =
-        this.aiModelRegistryService.getModelConfig(defaultSpeedModel?.modelId);
+    const aiEvaluationModels: ClientAiEvaluationModelConfig[] =
+      this.aiModelRegistryService
+        .getAvailableEvaluationModelConfigs()
+        .filter((modelConfig) =>
+          this.aiModelRegistryService.isModelAdminAllowed(modelConfig.modelId),
+        )
+        .map((modelConfig) => ({
+          modelId: modelConfig.modelId,
+          label: modelConfig.label,
+          description: modelConfig.description,
+          providerLabel: getProviderLabel(modelConfig.modelId.split('/')[0]),
+          isAvailable: isDefined(
+            this.aiModelRegistryService.getEvaluationModel(modelConfig.modelId),
+          ),
+          supportedQuestionTypes: modelConfig.supportedQuestionTypes,
+          maxCriteriaPerQuestion: modelConfig.maxCriteriaPerQuestion,
+          maxScoreLevels: modelConfig.maxScoreLevels,
+          medianLatencyMs: modelConfig.medianLatencyMs,
+          inputCostPerMillionTokens: modelConfig.inputCostPerMillionTokens,
+          outputCostPerMillionTokens: modelConfig.outputCostPerMillionTokens,
+          isDeprecated: modelConfig.isDeprecated,
+        }));
 
-      const defaultPerformanceModel =
-        this.aiModelRegistryService.getDefaultPerformanceModel();
-      const defaultPerformanceModelConfig =
-        this.aiModelRegistryService.getModelConfig(
-          defaultPerformanceModel?.modelId,
-        );
+    const aiModelTiers = AI_DATA_POLICIES.flatMap((aiDataPolicy) =>
+      AI_MODEL_TIERS.flatMap((tier) => {
+        const model = this.aiModelRegistryService.findDefaultModelForTier({
+          tier,
+          aiDataPolicy,
+        });
 
-      aiModels.unshift(
-        {
-          modelId: AUTO_SELECT_SMART_MODEL_ID,
-          label:
-            defaultPerformanceModelConfig?.label ||
-            defaultPerformanceModel?.modelId ||
-            'Default',
-          modelFamily: defaultPerformanceModelConfig?.modelFamily,
-          providerName: defaultPerformanceModel?.providerName,
-          sdkPackage: defaultPerformanceModel?.sdkPackage ?? null,
-          inputCostPerMillionTokensInCredits: 0,
-          outputCostPerMillionTokensInCredits: 0,
-        },
-        {
-          modelId: AUTO_SELECT_FAST_MODEL_ID,
-          label:
-            defaultSpeedModelConfig?.label ||
-            defaultSpeedModel?.modelId ||
-            'Default',
-          modelFamily: defaultSpeedModelConfig?.modelFamily,
-          providerName: defaultSpeedModel?.providerName,
-          sdkPackage: defaultSpeedModel?.sdkPackage ?? null,
-          inputCostPerMillionTokensInCredits: 0,
-          outputCostPerMillionTokensInCredits: 0,
-        },
-      );
-    }
+        if (!isDefined(model)) {
+          return [];
+        }
+
+        return [
+          {
+            tier,
+            modelId: model.modelId,
+            requiredDataResidencyRegion:
+              aiDataPolicy.requiredDataResidencyRegion,
+            isZeroDataRetentionRequired:
+              aiDataPolicy.isZeroDataRetentionRequired,
+          },
+        ];
+      }),
+    );
 
     const clientConfig: ClientConfig = {
       appVersion: this.twentyConfigService.get('APP_VERSION'),
       billing: {
-        isBillingEnabled: this.twentyConfigService.get('IS_BILLING_ENABLED'),
+        isBillingEnabled,
         billingUrl: this.twentyConfigService.get('BILLING_PLAN_REQUIRED_LINK'),
+        stripePublishableKey: this.twentyConfigService.get(
+          'BILLING_STRIPE_PUBLISHABLE_KEY',
+        ),
         trialPeriods: [
           {
             duration: this.twentyConfigService.get(
@@ -166,6 +206,8 @@ export class ClientConfigService {
         ],
       },
       aiModels,
+      aiEvaluationModels,
+      aiModelTiers,
       authProviders: {
         google: this.twentyConfigService.get('AUTH_GOOGLE_ENABLED'),
         magicLink: false,
@@ -182,6 +224,10 @@ export class ClientConfigService {
       ),
       defaultSubdomain: this.twentyConfigService.get('DEFAULT_SUBDOMAIN'),
       frontDomain: this.domainServerConfigService.getFrontUrl().hostname,
+      serverUrl: this.twentyConfigService.get('SERVER_URL'),
+      publicFunctionDomain:
+        this.domainServerConfigService.getPublicBaseHostnameOrUndefined() ??
+        null,
       support: {
         supportDriver: supportDriver ? supportDriver : SupportDriver.NONE,
         supportFrontChatId: this.twentyConfigService.get(
@@ -192,6 +238,9 @@ export class ClientConfigService {
         environment: this.twentyConfigService.get('SENTRY_ENVIRONMENT'),
         release: this.twentyConfigService.get('APP_VERSION'),
         dsn: this.twentyConfigService.get('SENTRY_FRONT_DSN'),
+        tracesSampleRate: this.twentyConfigService.get(
+          'SENTRY_FRONT_TRACES_SAMPLE_RATE',
+        ),
       },
       captcha: {
         provider: captchaProvider ? captchaProvider : undefined,
@@ -202,6 +251,39 @@ export class ClientConfigService {
           'MUTATION_MAXIMUM_AFFECTED_RECORDS',
         ),
       },
+      onboarding: isBillingEnabled
+        ? {
+            importContactsCreditsReward: toDisplayCredits(
+              this.twentyConfigService.get(
+                'ONBOARDING_IMPORT_CONTACTS_CREDITS_REWARD',
+              ),
+            ),
+            inviteTeamCreditsRewardPerUser: toDisplayCredits(
+              this.twentyConfigService.get(
+                'ONBOARDING_INVITE_TEAM_CREDITS_REWARD_PER_USER',
+              ),
+            ),
+            createProfileCreditsReward: toDisplayCredits(
+              this.twentyConfigService.get(
+                'BILLING_FREE_WORKFLOW_CREDITS_FOR_TRIAL_PERIOD_WITHOUT_CREDIT_CARD',
+              ),
+            ),
+            upgradeCreditsReward: toDisplayCredits(
+              Math.max(
+                0,
+                this.twentyConfigService.get(
+                  'BILLING_FREE_WORKFLOW_CREDITS_FOR_TRIAL_PERIOD_WITH_CREDIT_CARD',
+                ) -
+                  this.twentyConfigService.get(
+                    'BILLING_FREE_WORKFLOW_CREDITS_FOR_TRIAL_PERIOD_WITHOUT_CREDIT_CARD',
+                  ),
+              ),
+            ),
+            inviteTeamMaxInvites: this.twentyConfigService.get(
+              'ONBOARDING_INVITE_TEAM_MAX_INVITES',
+            ),
+          }
+        : null,
       isAttachmentPreviewEnabled: this.twentyConfigService.get(
         'IS_ATTACHMENT_PREVIEW_ENABLED',
       ),
@@ -209,8 +291,10 @@ export class ClientConfigService {
       canManageFeatureFlags:
         this.twentyConfigService.get('NODE_ENV') ===
           NodeEnvironment.DEVELOPMENT ||
-        this.twentyConfigService.get('IS_BILLING_ENABLED'),
+        isBillingEnabled ||
+        this.twentyConfigService.get('IS_FEATURE_FLAG_MANAGEMENT_ENABLED'),
       publicFeatureFlags: PUBLIC_FEATURE_FLAGS,
+      isCookieSessionEnabled: true,
       isMicrosoftMessagingEnabled: this.twentyConfigService.get(
         'MESSAGING_PROVIDER_MICROSOFT_ENABLED',
       ),
@@ -229,15 +313,38 @@ export class ClientConfigService {
       isImapSmtpCaldavEnabled: this.twentyConfigService.get(
         'IS_IMAP_SMTP_CALDAV_ENABLED',
       ),
+      isEmailingDomainInDemoMode,
       allowRequestsToTwentyIcons: this.twentyConfigService.get(
         'ALLOW_REQUESTS_TO_TWENTY_ICONS',
       ),
       calendarBookingPageId: isNonEmptyString(calendarBookingPageId)
         ? calendarBookingPageId
         : undefined,
+      isBookCallOnboardingStepEnabled,
+      isCompanyEnrichmentEnabled,
       isCloudflareIntegrationEnabled: this.isCloudflareIntegrationEnabled(),
       isClickHouseConfigured: !!this.twentyConfigService.get('CLICKHOUSE_URL'),
+      isWorkspaceSchemaDDLLocked: this.twentyConfigService.get(
+        'WORKSPACE_SCHEMA_DDL_LOCKED',
+      ),
+      isOnboardingAiChatEnabled: this.twentyConfigService.get(
+        'IS_ONBOARDING_AI_CHAT_ENABLED',
+      ),
+      enterpriseInstanceType:
+        this.twentyConfigService.get('ENTERPRISE_INSTANCE_TYPE') ??
+        ENTERPRISE_INSTANCE_TYPE.PRODUCTION,
     };
+
+    const maintenanceMode =
+      await this.maintenanceModeService.getMaintenanceMode();
+
+    if (isDefined(maintenanceMode)) {
+      clientConfig.maintenance = {
+        startAt: new Date(maintenanceMode.startAt),
+        endAt: new Date(maintenanceMode.endAt),
+        link: maintenanceMode.link,
+      };
+    }
 
     return clientConfig;
   }

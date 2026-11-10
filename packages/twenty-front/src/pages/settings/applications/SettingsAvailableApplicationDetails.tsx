@@ -1,552 +1,291 @@
-import { useInstallMarketplaceApp } from '@/marketplace/hooks/useInstallMarketplaceApp';
+import { AppChip } from '@/applications/components/AppChip';
+import { CurrentApplicationContext } from '@/applications/contexts/CurrentApplicationContext';
+import { getCustomApplicationDescription } from '@/applications/utils/getCustomApplicationDescription';
+import { getCustomApplicationReadme } from '@/applications/utils/getCustomApplicationReadme';
+import { getStandardApplicationDescription } from '@/applications/utils/getStandardApplicationDescription';
+import { getStandardApplicationReadme } from '@/applications/utils/getStandardApplicationReadme';
+import { isTwentyStandardApplication } from '@/applications/utils/isTwentyStandardApplication';
+import { isWorkspaceCustomApplication } from '@/applications/utils/isWorkspaceCustomApplication';
+import { currentWorkspaceState } from '@/auth/states/currentWorkspaceState';
+import { SettingsApplicationInstallPermissionValidationModal } from '@/marketplace/components/SettingsApplicationInstallPermissionValidationModal';
+import { useCopyMarketplaceAppLink } from '@/marketplace/hooks/useCopyMarketplaceAppLink';
+import { useInstallMarketplaceAppWithPermissionValidation } from '@/marketplace/hooks/useInstallMarketplaceAppWithPermissionValidation';
+import { getMarketplaceAppDefaultRoleManifest } from '@/marketplace/utils/getMarketplaceAppDefaultRoleManifest';
+import { useMarketplaceApplicationContentLink } from '@/settings/applications/hooks/useMarketplaceApplicationContentLink';
+import { SettingsApplicationActionButton } from '@/settings/applications/components/SettingsApplicationActionButton';
 import { SettingsPageContainer } from '@/settings/components/SettingsPageContainer';
+import { SettingsSectionSkeletonLoader } from '@/settings/components/SettingsSectionSkeletonLoader';
+import { SettingsPageLayout } from '@/settings/components/layout/SettingsPageLayout';
 import { useHasPermissionFlag } from '@/settings/roles/hooks/useHasPermissionFlag';
-import { SubMenuTopBarContainer } from '@/ui/layout/page/components/SubMenuTopBarContainer';
-import { TabList } from '@/ui/layout/tab-list/components/TabList';
-import { activeTabIdComponentState } from '@/ui/layout/tab-list/states/activeTabIdComponentState';
-import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentStateValue';
-import { styled } from '@linaria/react';
-import { t } from '@lingui/core/macro';
-import { useState } from 'react';
+import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomStateValue';
+import { useQuery } from '@apollo/client/react';
+import { useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { SettingsPath } from 'twenty-shared/types';
 import { getSettingsPath, isDefined } from 'twenty-shared/utils';
+import { InlineBanner } from 'twenty-ui/components/feedback';
+import { IconEyeOff, IconShoppingBag } from 'twenty-ui/icon';
 import {
-  IconApps,
-  IconBox,
-  IconCheck,
-  IconColumns,
-  IconCommand,
-  IconDownload,
-  IconEyeOff,
-  IconFileText,
-  IconInfoCircle,
-  IconLayoutGrid,
-  IconLock,
-  IconSettings,
-  IconWorld,
-} from 'twenty-ui/display';
-import { Button } from 'twenty-ui/input';
-import { Section } from 'twenty-ui/layout';
-import { themeCssVariables } from 'twenty-ui/theme-constants';
-import { useQuery } from '@apollo/client/react';
-import {
-  PermissionFlagType,
+  ApplicationRegistrationSourceType,
+  FindMarketplaceAppDetailDocument,
   FindOneApplicationByUniversalIdentifierDocument,
-  FindOneMarketplaceAppDocument,
+  PermissionFlagType,
 } from '~/generated-metadata/graphql';
-import { useMarketplaceApps } from '~/modules/marketplace/hooks/useMarketplaceApps';
-import { SettingsApplicationPermissionsTab } from '~/pages/settings/applications/tabs/SettingsApplicationPermissionsTab';
-import { SettingsAvailableApplicationDetailContentTab } from '~/pages/settings/applications/tabs/SettingsAvailableApplicationDetailContentTab';
-
-const AVAILABLE_APPLICATION_DETAIL_ID = 'available-application-detail';
-
-const StyledHeader = styled.div`
-  align-items: center;
-  display: flex;
-  gap: ${themeCssVariables.spacing[4]};
-  justify-content: space-between;
-  margin-bottom: ${themeCssVariables.spacing[4]};
-`;
-
-const StyledHeaderLeft = styled.div`
-  align-items: center;
-  display: flex;
-  gap: ${themeCssVariables.spacing[3]};
-`;
-
-const StyledLogo = styled.div`
-  align-items: center;
-  background-color: ${themeCssVariables.background.tertiary};
-  border-radius: ${themeCssVariables.border.radius.sm};
-  display: flex;
-  flex-shrink: 0;
-  height: 48px;
-  justify-content: center;
-  overflow: hidden;
-  width: 48px;
-`;
-
-const StyledLogoImage = styled.img`
-  height: 32px;
-  object-fit: contain;
-  width: 32px;
-`;
-
-const StyledLogoPlaceholder = styled.div`
-  align-items: center;
-  background-color: ${themeCssVariables.color.blue};
-  border-radius: ${themeCssVariables.border.radius.xs};
-  color: ${themeCssVariables.font.color.inverted};
-  display: flex;
-  font-size: ${themeCssVariables.font.size.lg};
-  font-weight: ${themeCssVariables.font.weight.medium};
-  height: 32px;
-  justify-content: center;
-  width: 32px;
-`;
-
-const StyledHeaderInfo = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: ${themeCssVariables.spacing[1]};
-`;
-
-const StyledAppName = styled.div`
-  color: ${themeCssVariables.font.color.primary};
-  font-size: ${themeCssVariables.font.size.lg};
-  font-weight: ${themeCssVariables.font.weight.semiBold};
-`;
-
-const StyledAppDescription = styled.div`
-  color: ${themeCssVariables.font.color.secondary};
-  font-size: ${themeCssVariables.font.size.md};
-`;
-
-const StyledContentContainer = styled.div`
-  display: flex;
-  gap: ${themeCssVariables.spacing[8]};
-`;
-
-const StyledMainContent = styled.div`
-  flex: 1;
-  min-width: 0;
-`;
-
-const StyledSidebar = styled.div`
-  flex-shrink: 0;
-  width: 180px;
-`;
-
-const StyledSidebarSection = styled.div`
-  padding: ${themeCssVariables.spacing[3]} 0;
-
-  &:first-of-type {
-    padding-top: 0;
-  }
-`;
-
-const StyledSidebarLabel = styled.div`
-  color: ${themeCssVariables.font.color.tertiary};
-  font-size: ${themeCssVariables.font.size.sm};
-  margin-bottom: ${themeCssVariables.spacing[2]};
-`;
-
-const StyledSidebarValue = styled.div`
-  color: ${themeCssVariables.font.color.primary};
-  font-size: ${themeCssVariables.font.size.md};
-  font-weight: ${themeCssVariables.font.weight.medium};
-`;
-
-const StyledContentItem = styled.div`
-  align-items: center;
-  color: ${themeCssVariables.font.color.primary};
-  display: flex;
-  font-size: ${themeCssVariables.font.size.sm};
-  gap: ${themeCssVariables.spacing[2]};
-  margin-bottom: ${themeCssVariables.spacing[2]};
-
-  &:last-of-type {
-    margin-bottom: 0;
-  }
-`;
-
-const StyledLink = styled.a`
-  align-items: center;
-  color: ${themeCssVariables.font.color.primary};
-  display: flex;
-  font-size: ${themeCssVariables.font.size.sm};
-  gap: ${themeCssVariables.spacing[2]};
-  margin-bottom: ${themeCssVariables.spacing[2]};
-  text-decoration: none;
-
-  &:hover {
-    text-decoration: underline;
-  }
-
-  &:last-of-type {
-    margin-bottom: 0;
-  }
-`;
-
-const StyledScreenshotsContainer = styled.div`
-  align-items: center;
-  background-color: ${themeCssVariables.background.secondary};
-  border: 1px solid ${themeCssVariables.border.color.medium};
-  border-radius: ${themeCssVariables.border.radius.md};
-  display: flex;
-  height: 300px;
-  justify-content: center;
-  margin-bottom: ${themeCssVariables.spacing[4]};
-  overflow: hidden;
-`;
-
-const StyledScreenshotImage = styled.img`
-  height: 100%;
-  object-fit: contain;
-  width: 100%;
-`;
-
-const StyledScreenshotThumbnails = styled.div`
-  display: flex;
-  gap: ${themeCssVariables.spacing[2]};
-  margin-bottom: ${themeCssVariables.spacing[6]};
-`;
-
-const StyledThumbnail = styled.div<{ isSelected?: boolean }>`
-  align-items: center;
-  background-color: ${themeCssVariables.background.secondary};
-  border: 1px solid
-    ${({ isSelected }) =>
-      isSelected
-        ? themeCssVariables.color.blue
-        : themeCssVariables.border.color.medium};
-  border-radius: ${themeCssVariables.border.radius.sm};
-  cursor: pointer;
-  display: flex;
-  flex: 1;
-  height: 60px;
-  justify-content: center;
-  overflow: hidden;
-
-  &:hover {
-    border-color: ${themeCssVariables.color.blue};
-  }
-`;
-
-const StyledThumbnailImage = styled.img`
-  height: 100%;
-  object-fit: contain;
-  width: 100%;
-`;
-
-const StyledSectionTitle = styled.h2`
-  color: ${themeCssVariables.font.color.primary};
-  font-size: ${themeCssVariables.font.size.lg};
-  font-weight: ${themeCssVariables.font.weight.semiBold};
-  margin: 0 0 ${themeCssVariables.spacing[3]} 0;
-`;
-
-const StyledAboutText = styled.p`
-  color: ${themeCssVariables.font.color.secondary};
-  font-size: ${themeCssVariables.font.size.md};
-  line-height: 1.6;
-  margin: 0 0 ${themeCssVariables.spacing[6]} 0;
-  white-space: pre-line;
-`;
-
-const StyledProvidersList = styled.ul`
-  color: ${themeCssVariables.font.color.secondary};
-  font-size: ${themeCssVariables.font.size.md};
-  list-style-type: disc;
-  margin: 0;
-  padding-left: ${themeCssVariables.spacing[5]};
-`;
-
-const StyledProviderItem = styled.li`
-  margin-bottom: ${themeCssVariables.spacing[1]};
-`;
-
-const StyledUnlistedBanner = styled.div`
-  align-items: center;
-  background-color: ${themeCssVariables.background.transparent.lighter};
-  border: 1px solid ${themeCssVariables.border.color.medium};
-  border-radius: ${themeCssVariables.border.radius.sm};
-  color: ${themeCssVariables.font.color.secondary};
-  display: flex;
-  font-size: ${themeCssVariables.font.size.md};
-  gap: ${themeCssVariables.spacing[2]};
-  margin-bottom: ${themeCssVariables.spacing[4]};
-  padding: ${themeCssVariables.spacing[3]} ${themeCssVariables.spacing[4]};
-`;
+import { useNavigateSettings } from '~/hooks/useNavigateSettings';
+import { SettingsApplicationDetailAbout } from '~/pages/settings/applications/components/SettingsApplicationDetailAbout';
+import { SettingsApplicationLoadErrorBanner } from '@/settings/applications/components/SettingsApplicationLoadErrorBanner';
+import { SettingsApplicationNotFound } from '~/pages/settings/applications/components/SettingsApplicationNotFound';
+import { CUSTOM_APPLICATION_ILLUSTRATIONS } from '@/settings/applications/constants/CustomApplicationIllustrations';
+import { STANDARD_APPLICATION_ILLUSTRATIONS } from '@/settings/applications/constants/StandardApplicationIllustrations';
+import { getApplicationLookupStatus } from '~/pages/settings/applications/utils/getApplicationLookupStatus';
+import { isUuidFormat } from '~/pages/settings/applications/utils/isUuidFormat';
+import { useLingui } from '@lingui/react/macro';
 
 export const SettingsAvailableApplicationDetails = () => {
+  const { t } = useLingui();
   const { availableApplicationId = '' } = useParams<{
     availableApplicationId: string;
   }>();
 
-  const [selectedScreenshotIndex, setSelectedScreenshotIndex] = useState(0);
-
-  const { data: marketplaceApps } = useMarketplaceApps();
-  const { install, isInstalling } = useInstallMarketplaceApp();
-  const canInstallMarketplaceApps = useHasPermissionFlag(
-    PermissionFlagType.MARKETPLACE_APPS,
+  const navigateSettings = useNavigateSettings();
+  const handleInstallCompleted = useCallback(
+    (installedApplication: { id: string }) => {
+      navigateSettings(SettingsPath.ApplicationDetail, {
+        applicationId: installedApplication.id,
+      });
+    },
+    [navigateSettings],
   );
-  const { data: installedAppData } = useQuery(
+  const {
+    requestInstall,
+    install,
+    isInstalling,
+    installProgress,
+    modalInstanceId,
+  } = useInstallMarketplaceAppWithPermissionValidation({
+    universalIdentifier: availableApplicationId,
+    onCompleted: handleInstallCompleted,
+  });
+  const { copyMarketplaceAppLink } = useCopyMarketplaceAppLink();
+
+  const canInstallMarketplaceApps = useHasPermissionFlag(
+    PermissionFlagType.APPLICATIONS,
+  );
+
+  const { data: applicationData } = useQuery(
     FindOneApplicationByUniversalIdentifierDocument,
     {
       variables: { universalIdentifier: availableApplicationId },
-      skip: !availableApplicationId,
+      skip: !isUuidFormat(availableApplicationId),
     },
   );
 
-  const listedApp = marketplaceApps?.find(
-    (app) => app.id === availableApplicationId,
-  );
-
-  const { data: singleAppData } = useQuery(FindOneMarketplaceAppDocument, {
+  const {
+    data: detailData,
+    error: detailError,
+    loading: isDetailLoading,
+    refetch: refetchDetail,
+  } = useQuery(FindMarketplaceAppDetailDocument, {
     variables: { universalIdentifier: availableApplicationId },
-    skip: isDefined(listedApp) || !availableApplicationId,
+    skip: !isUuidFormat(availableApplicationId),
   });
 
-  const singleApp = singleAppData?.findOneMarketplaceApp;
+  const application = applicationData?.findOneApplication;
 
-  const application = isDefined(listedApp)
-    ? listedApp
-    : isDefined(singleApp)
-      ? {
-          ...singleApp,
-          content: {
-            objects: (singleApp.objects ?? []).length,
-            fields:
-              (singleApp.objects ?? []).reduce(
-                (count, appObject) => count + appObject.fields.length,
-                0,
-              ) + (singleApp.fields ?? []).length,
-            functions: (singleApp.logicFunctions ?? []).length,
-            frontComponents: (singleApp.frontComponents ?? []).length,
-          },
-        }
-      : undefined;
-
-  const isUnlisted = !isDefined(listedApp) && isDefined(application);
-
-  const isAlreadyInstalled = isDefined(installedAppData?.findOneApplication);
-
-  const handleInstall = async () => {
-    if (isDefined(application)) {
-      await install({
-        universalIdentifier: application.id,
-      });
-    }
-  };
-
-  const activeTabId = useAtomComponentStateValue(
-    activeTabIdComponentState,
-    AVAILABLE_APPLICATION_DETAIL_ID,
+  const contentLink = useMarketplaceApplicationContentLink(
+    isUuidFormat(availableApplicationId) ? availableApplicationId : undefined,
   );
 
-  const tabs = [
-    { id: 'about', title: t`About`, Icon: IconInfoCircle },
-    { id: 'content', title: t`Content`, Icon: IconBox },
-    { id: 'permissions', title: t`Permissions`, Icon: IconLock },
-    { id: 'settings', title: t`Settings`, Icon: IconSettings },
-  ];
+  const detail = detailData?.findMarketplaceAppDetail;
 
-  const getInitials = (name: string) => {
-    return name.charAt(0).toUpperCase();
-  };
+  const detailLookupStatus = getApplicationLookupStatus({
+    identifier: availableApplicationId,
+    isLoading: isDetailLoading,
+    error: detailError,
+    result: detail,
+  });
+  const isNotFound = detailLookupStatus === 'not-found';
+  const isUnavailable = detailLookupStatus === 'unavailable';
 
-  const hasScreenshots =
-    application?.screenshots && application.screenshots.length > 0;
+  const displayName = detail?.name ?? t`Application details`;
 
-  const renderActiveTabContent = () => {
-    if (!application) return null;
+  const currentVersion = application?.version;
+  const latestAvailableVersion = detail?.latestAvailableVersion;
 
-    switch (activeTabId) {
-      case 'about':
-        return (
-          <>
-            {hasScreenshots && (
-              <>
-                <StyledScreenshotsContainer>
-                  <StyledScreenshotImage
-                    src={application.screenshots[selectedScreenshotIndex]}
-                    alt={`${application.name} screenshot ${selectedScreenshotIndex + 1}`}
-                  />
-                </StyledScreenshotsContainer>
-                <StyledScreenshotThumbnails>
-                  {application.screenshots
-                    .slice(0, 6)
-                    .map((screenshot, index) => (
-                      <StyledThumbnail
-                        key={index}
-                        isSelected={index === selectedScreenshotIndex}
-                        onClick={() => setSelectedScreenshotIndex(index)}
-                      >
-                        <StyledThumbnailImage
-                          src={screenshot}
-                          alt={`${application.name} thumbnail ${index + 1}`}
-                        />
-                      </StyledThumbnail>
-                    ))}
-                </StyledScreenshotThumbnails>
-              </>
-            )}
+  const isNpmApp = detail?.sourceType === ApplicationRegistrationSourceType.NPM;
+  const sourcePackageUrl =
+    isNpmApp && detail?.sourcePackage
+      ? `https://www.npmjs.com/package/${detail.sourcePackage}`
+      : undefined;
 
-            <StyledContentContainer>
-              <StyledMainContent>
-                <Section>
-                  <StyledSectionTitle>{t`About`}</StyledSectionTitle>
-                  <StyledAboutText>
-                    {application.aboutDescription}
-                  </StyledAboutText>
+  const currentWorkspace = useAtomStateValue(currentWorkspaceState);
 
-                  <StyledSectionTitle>{t`Providers`}</StyledSectionTitle>
-                  <StyledProvidersList>
-                    {application.providers.map((provider) => (
-                      <StyledProviderItem key={provider}>
-                        {provider}
-                      </StyledProviderItem>
-                    ))}
-                  </StyledProvidersList>
-                </Section>
-              </StyledMainContent>
+  // Read from the workspace state so built-in apps are known before the application query resolves
+  const installedApplication = currentWorkspace?.installedApplications.find(
+    (workspaceApplication) =>
+      workspaceApplication.universalIdentifier === availableApplicationId,
+  );
 
-              <StyledSidebar>
-                <StyledSidebarSection>
-                  <StyledSidebarLabel>{t`Created by`}</StyledSidebarLabel>
-                  <StyledSidebarValue>{application.author}</StyledSidebarValue>
-                </StyledSidebarSection>
-
-                <StyledSidebarSection>
-                  <StyledSidebarLabel>{t`Category`}</StyledSidebarLabel>
-                  <StyledSidebarValue>
-                    {application.category}
-                  </StyledSidebarValue>
-                </StyledSidebarSection>
-
-                <StyledSidebarSection>
-                  <StyledSidebarLabel>{t`Content`}</StyledSidebarLabel>
-                  <StyledContentItem>
-                    <IconLayoutGrid size={16} />
-                    {application.content.objects} {t`objects`}
-                  </StyledContentItem>
-                  <StyledContentItem>
-                    <IconColumns size={16} />
-                    {application.content.fields} {t`fields`}
-                  </StyledContentItem>
-                  <StyledContentItem>
-                    <IconApps size={16} />
-                    {application.content.frontComponents} {t`front components`}
-                  </StyledContentItem>
-                  <StyledContentItem>
-                    <IconCommand size={16} />
-                    {application.content.functions} {t`functions`}
-                  </StyledContentItem>
-                </StyledSidebarSection>
-
-                <StyledSidebarSection>
-                  <StyledSidebarLabel>{t`Latest`}</StyledSidebarLabel>
-                  <StyledSidebarValue>{application.version}</StyledSidebarValue>
-                </StyledSidebarSection>
-
-                <StyledSidebarSection>
-                  <StyledSidebarLabel>{t`Developers links`}</StyledSidebarLabel>
-                  <StyledLink
-                    href={application.websiteUrl ?? undefined}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <IconWorld size={16} />
-                    {t`Website`}
-                  </StyledLink>
-                  <StyledLink
-                    href={application.termsUrl ?? undefined}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <IconFileText size={16} />
-                    {t`Terms / Privacy`}
-                  </StyledLink>
-                </StyledSidebarSection>
-              </StyledSidebar>
-            </StyledContentContainer>
-          </>
-        );
-      case 'content':
-        return (
-          <SettingsAvailableApplicationDetailContentTab
-            application={application}
-          />
-        );
-      case 'permissions':
-        return (
-          <SettingsApplicationPermissionsTab
-            marketplaceAppDefaultRole={application.defaultRole}
-            marketplaceAppObjects={application.objects}
-          />
-        );
-      case 'settings':
-        return <div>{t`Settings tab`}</div>;
-      default:
-        return null;
+  const getBuiltInApplicationContent = () => {
+    if (isTwentyStandardApplication(installedApplication)) {
+      return {
+        description: getStandardApplicationDescription(),
+        readme: getStandardApplicationReadme(),
+        illustrations: STANDARD_APPLICATION_ILLUSTRATIONS,
+      };
     }
+
+    if (isWorkspaceCustomApplication(installedApplication, currentWorkspace)) {
+      return {
+        description: getCustomApplicationDescription(),
+        readme: getCustomApplicationReadme(),
+        illustrations: CUSTOM_APPLICATION_ILLUSTRATIONS,
+      };
+    }
+
+    return undefined;
   };
 
-  if (!application) {
-    return null;
-  }
+  const builtInApplicationContent = getBuiltInApplicationContent();
+
+  const isUnlisted =
+    isDefined(detail) &&
+    !detail.isListed &&
+    !isDefined(builtInApplicationContent);
+
+  const defaultRole = getMarketplaceAppDefaultRoleManifest(detail);
+
+  const renderContent = () => {
+    if (isUnavailable) {
+      return (
+        <SettingsApplicationLoadErrorBanner
+          onRetry={() => refetchDetail().catch(() => undefined)}
+        />
+      );
+    }
+
+    if (isNotFound) {
+      return (
+        <SettingsApplicationNotFound
+          message={t`This application is not available on the marketplace. It may have been removed or the link is incorrect.`}
+          linkTo={getSettingsPath(
+            SettingsPath.Applications,
+            undefined,
+            undefined,
+            'marketplace',
+          )}
+          linkLabel={t`Browse the marketplace`}
+          LinkIcon={IconShoppingBag}
+        />
+      );
+    }
+
+    if (!isDefined(detail)) {
+      return <SettingsSectionSkeletonLoader />;
+    }
+
+    return (
+      <SettingsApplicationDetailAbout
+        applicationId={application?.id}
+        logoUrl={detail.logoUrl}
+        displayName={displayName}
+        description={
+          builtInApplicationContent?.description ??
+          detail.description ??
+          undefined
+        }
+        aboutDescription={
+          builtInApplicationContent?.readme ??
+          detail.aboutDescription ??
+          undefined
+        }
+        pricingDescription={detail.pricingDescription ?? undefined}
+        billsCredits={detail.billsCredits}
+        screenshots={
+          builtInApplicationContent?.illustrations ?? detail.galleryImages
+        }
+        author={detail.author ?? undefined}
+        version={currentVersion ?? latestAvailableVersion ?? undefined}
+        installCount={detail.installCount}
+        category={detail.category ?? undefined}
+        developerLinks={{
+          websiteUrl: detail.websiteUrl ?? undefined,
+          termsUrl: detail.termsUrl ?? undefined,
+          emailSupport: detail.emailSupport ?? undefined,
+          issueReportUrl: detail.issueReportUrl ?? undefined,
+          sourcePackageUrl,
+        }}
+        contentLink={contentLink}
+        onShare={() => copyMarketplaceAppLink(detail.universalIdentifier)}
+      />
+    );
+  };
 
   return (
-    <SubMenuTopBarContainer
-      title={application.name}
-      links={[
-        {
-          children: t`Workspace`,
-          href: getSettingsPath(SettingsPath.Workspace),
-        },
-        {
-          children: t`Applications`,
-          href: getSettingsPath(SettingsPath.Applications),
-        },
-        { children: application.name },
-      ]}
-    >
-      <SettingsPageContainer>
-        {isUnlisted && (
-          <StyledUnlistedBanner>
-            <IconEyeOff size={16} />
-            {t`This application is not listed on the marketplace. It was shared via a direct link.`}
-          </StyledUnlistedBanner>
-        )}
-        <StyledHeader>
-          <StyledHeaderLeft>
-            <StyledLogo>
-              {application.logo ? (
-                <StyledLogoImage
-                  src={application.logo}
-                  alt={application.name}
-                />
-              ) : (
-                <StyledLogoPlaceholder>
-                  {getInitials(application.name)}
-                </StyledLogoPlaceholder>
-              )}
-            </StyledLogo>
-            <StyledHeaderInfo>
-              <StyledAppName>{application.name}</StyledAppName>
-              <StyledAppDescription>
-                {application.description}
-              </StyledAppDescription>
-            </StyledHeaderInfo>
-          </StyledHeaderLeft>
-          {canInstallMarketplaceApps && (
-            <Button
-              Icon={isAlreadyInstalled ? IconCheck : IconDownload}
-              title={
-                isAlreadyInstalled
-                  ? t`Installed`
-                  : isInstalling
-                    ? t`Installing...`
-                    : t`Install`
-              }
-              variant={isAlreadyInstalled ? 'secondary' : 'primary'}
-              accent={isAlreadyInstalled ? 'default' : 'blue'}
-              onClick={handleInstall}
-              disabled={isAlreadyInstalled || isInstalling}
+    <CurrentApplicationContext.Provider value={application?.id ?? null}>
+      <SettingsPageLayout
+        links={[
+          {
+            children: t`Workspace`,
+            href: getSettingsPath(SettingsPath.General),
+          },
+          {
+            children: t`Apps`,
+            href: getSettingsPath(SettingsPath.Applications),
+          },
+          { children: displayName },
+        ]}
+        title={displayName}
+        icon={
+          isDefined(detail) ? (
+            <AppChip
+              applicationId={application?.id}
+              logoUrl={detail.logoUrl}
+              fallbackApplicationData={{
+                name: displayName,
+              }}
+              size="md"
+              chipOnly
             />
+          ) : undefined
+        }
+        actionButton={
+          isDefined(detail) ? (
+            <SettingsApplicationActionButton
+              installedApplicationId={application?.id}
+              canInstallMarketplaceApps={canInstallMarketplaceApps}
+              onInstall={requestInstall}
+              isInstalling={isInstalling}
+              installProgress={installProgress}
+            />
+          ) : undefined
+        }
+      >
+        <SettingsPageContainer overflow="visible">
+          {isUnlisted && (
+            <InlineBanner
+              status="warning"
+              icon={<IconEyeOff aria-hidden="true" />}
+            >{t`This application is not listed on the marketplace and has not been reviewed by Twenty. Use at your own risk.`}</InlineBanner>
           )}
-        </StyledHeader>
-
-        <TabList
-          tabs={tabs}
-          componentInstanceId={AVAILABLE_APPLICATION_DETAIL_ID}
-          behaveAsLinks={false}
-        />
-
-        {renderActiveTabContent()}
-      </SettingsPageContainer>
-    </SubMenuTopBarContainer>
+          {renderContent()}
+        </SettingsPageContainer>
+      </SettingsPageLayout>
+      <SettingsApplicationInstallPermissionValidationModal
+        modalInstanceId={modalInstanceId}
+        appDisplayName={displayName}
+        appLogoUrl={detail?.logoUrl ?? undefined}
+        defaultRole={defaultRole}
+        appObjects={detail?.objects ?? undefined}
+        requestedCapabilities={detail?.requestedCapabilities}
+        requestedIframeMediaPermissions={
+          detail?.requestedIframeMediaPermissions
+        }
+        billsCredits={detail?.billsCredits}
+        isListed={detail?.isListed}
+        onAuthorize={install}
+        isInstalling={isInstalling}
+      />
+    </CurrentApplicationContext.Provider>
   );
 };

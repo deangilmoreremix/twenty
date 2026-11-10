@@ -1,10 +1,10 @@
 import request from 'supertest';
 
-export const makeUnauthenticatedAPIRequest = async (query: string) => {
+export const makeUnauthenticatedApiRequest = async (query: string) => {
   const client = request(`http://localhost:${APP_PORT}`);
 
   return client
-    .post('/metadata')
+    .post('/admin-panel')
     .send({
       query,
     })

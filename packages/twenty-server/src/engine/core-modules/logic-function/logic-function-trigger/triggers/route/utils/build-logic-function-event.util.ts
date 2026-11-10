@@ -1,51 +1,88 @@
+import { type RawBodyRequest } from '@nestjs/common';
 import { type Request } from 'express';
 import { type LogicFunctionEvent } from 'twenty-shared/types';
+import { isDefined } from 'twenty-shared/utils';
+import { isObject, isString } from '@sniptt/guards';
 
-/**
- * Filters HTTP headers from Express request based on allowed header names
- * Header names are case-insensitive as per HTTP specification
- */
+import { type SERVER_ROUTE_FORWARDABLE_CREDENTIAL_HEADER_NAME } from 'src/engine/metadata-modules/logic-function/constants/server-route-forwardable-credential-header-name.constant';
+import { isCredentialRequestHeaderName } from 'src/engine/metadata-modules/logic-function/utils/is-credential-request-header-name.util';
+
+const normalizeHeaderValue = (
+  headerValue: string | string[] | undefined,
+): string | undefined =>
+  Array.isArray(headerValue) ? headerValue.join(', ') : headerValue;
+
 export const filterRequestHeaders = ({
   requestHeaders,
   forwardedRequestHeaders,
+  forwardAllHeaders = false,
+  forwardableCredentialHeaderName,
 }: {
   requestHeaders: Request['headers'];
   forwardedRequestHeaders: string[];
+  forwardAllHeaders?: boolean;
+  forwardableCredentialHeaderName?: typeof SERVER_ROUTE_FORWARDABLE_CREDENTIAL_HEADER_NAME;
 }): Record<string, string | undefined> => {
-  const lowercaseForwardedHeaders = forwardedRequestHeaders.map((h) =>
-    h.toLowerCase(),
-  );
+  if (forwardAllHeaders) {
+    const allHeaders: Record<string, string | undefined> = {};
+
+    for (const [headerName, headerValue] of Object.entries(requestHeaders)) {
+      if (
+        !isDefined(headerValue) ||
+        isCredentialRequestHeaderName(headerName)
+      ) {
+        continue;
+      }
+
+      allHeaders[headerName] = normalizeHeaderValue(headerValue);
+    }
+
+    return allHeaders;
+  }
+
+  const lowercaseForwardedHeaders = forwardedRequestHeaders
+    .map((headerName) => headerName.toLowerCase())
+    .filter(
+      (headerName) =>
+        !isCredentialRequestHeaderName(headerName) ||
+        headerName === forwardableCredentialHeaderName,
+    );
 
   const filteredHeaders: Record<string, string | undefined> = {};
 
   for (const headerName of lowercaseForwardedHeaders) {
     const headerValue = requestHeaders[headerName];
 
-    if (headerValue !== undefined) {
-      filteredHeaders[headerName] = Array.isArray(headerValue)
-        ? headerValue.join(', ')
-        : headerValue;
+    if (isDefined(headerValue)) {
+      filteredHeaders[headerName] = normalizeHeaderValue(headerValue);
     }
   }
 
   return filteredHeaders;
 };
 
-/**
- * Extracts the body from Express request as an object
- * Express body-parser middleware parses JSON bodies automatically
- * Returns null if body is empty/undefined
- */
-export const extractBody = (request: Request): object | null => {
-  if (request.body === undefined || request.body === null) {
+export const extractRawBody = (
+  request: Pick<RawBodyRequest<Request>, 'rawBody'>,
+): string | undefined => {
+  const rawBody = request.rawBody;
+
+  if (!isDefined(rawBody)) {
+    return undefined;
+  }
+
+  return rawBody.toString('utf-8');
+};
+
+export const extractBody = (request: Pick<Request, 'body'>): object | null => {
+  if (!isDefined(request.body)) {
     return null;
   }
 
-  if (typeof request.body === 'object' && !Buffer.isBuffer(request.body)) {
+  if (isObject(request.body) && !Buffer.isBuffer(request.body)) {
     return request.body;
   }
 
-  if (typeof request.body === 'string') {
+  if (isString(request.body)) {
     try {
       return JSON.parse(request.body);
     } catch {
@@ -64,12 +101,8 @@ export const extractBody = (request: Request): object | null => {
   return { raw: String(request.body) };
 };
 
-/**
- * Converts Express query parameters to a normalized string format
- * Arrays are joined with commas (e.g., ['1', '2', '3'] → '1,2,3')
- */
 export const normalizeQueryStringParameters = (
-  query: Request['query'],
+  query: Record<string, unknown>,
 ): Record<string, string | undefined> => {
   const normalized: Record<string, string | undefined> = {};
 
@@ -94,10 +127,6 @@ export const normalizeQueryStringParameters = (
   return normalized;
 };
 
-/**
- * Normalizes path parameters to string format
- * Arrays are joined with commas (e.g., ['1', '2', '3'] → '1,2,3')
- */
 export const normalizePathParameters = (
   pathParams: Record<string, string | string[] | undefined>,
 ): Record<string, string | undefined> => {
@@ -118,27 +147,37 @@ export const normalizePathParameters = (
   return normalized;
 };
 
-/**
- * Builds an AWS HTTP API v2 compatible event from an Express request
- * @see https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-develop-integrations-lambda.html
- */
 export const buildLogicFunctionEvent = ({
   request,
   pathParameters,
   forwardedRequestHeaders,
+  forwardAllHeaders = false,
+  forwardableCredentialHeaderName,
+  userWorkspaceId,
 }: {
-  request: Request;
+  request: Pick<
+    RawBodyRequest<Request>,
+    'headers' | 'query' | 'body' | 'method' | 'path' | 'rawBody'
+  >;
   pathParameters: Record<string, string | string[] | undefined>;
   forwardedRequestHeaders: string[];
+  forwardAllHeaders?: boolean;
+  forwardableCredentialHeaderName?: typeof SERVER_ROUTE_FORWARDABLE_CREDENTIAL_HEADER_NAME;
+  userWorkspaceId: string | null;
 }): LogicFunctionEvent => {
+  const rawBody = extractRawBody(request);
+
   return {
     headers: filterRequestHeaders({
       requestHeaders: request.headers,
       forwardedRequestHeaders,
+      forwardAllHeaders,
+      forwardableCredentialHeaderName,
     }),
     queryStringParameters: normalizeQueryStringParameters(request.query),
     pathParameters: normalizePathParameters(pathParameters),
     body: extractBody(request),
+    ...(isDefined(rawBody) ? { rawBody } : {}),
     isBase64Encoded: false,
     requestContext: {
       http: {
@@ -146,5 +185,6 @@ export const buildLogicFunctionEvent = ({
         path: request.path,
       },
     },
+    userWorkspaceId,
   };
 };

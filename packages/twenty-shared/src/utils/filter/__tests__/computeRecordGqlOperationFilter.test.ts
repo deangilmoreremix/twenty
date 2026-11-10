@@ -21,13 +21,12 @@ describe('computeRecordGqlOperationFilter', () => {
         id: 'uuid-filter',
         fieldMetadataId: companyIdField.id,
         value: uuidValue,
-        type: 'UUID',
         operand: ViewFilterOperand.IS,
       },
     ];
 
     const filter = computeRecordGqlOperationFilter({
-      fields: [companyIdField],
+      fieldMetadataItems: [companyIdField],
       recordFilters,
       recordFilterGroups: [],
       filterValueDependencies: {

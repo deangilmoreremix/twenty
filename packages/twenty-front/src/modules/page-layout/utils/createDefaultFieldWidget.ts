@@ -1,4 +1,5 @@
 import { type PageLayoutWidget } from '@/page-layout/types/PageLayoutWidget';
+import { buildDraftPageLayoutWidget } from '@/page-layout/utils/buildDraftPageLayoutWidget';
 import {
   FieldDisplayMode,
   PageLayoutTabLayoutMode,
@@ -9,44 +10,34 @@ import {
 export const createDefaultFieldWidget = ({
   id,
   pageLayoutTabId,
+  title,
   fieldMetadataId,
+  fieldDisplayMode = FieldDisplayMode.CARD,
   objectMetadataId,
   positionIndex,
 }: {
   id: string;
   pageLayoutTabId: string;
+  title: string;
   fieldMetadataId: string;
+  fieldDisplayMode?: FieldDisplayMode;
   objectMetadataId: string;
   positionIndex: number;
-}): PageLayoutWidget => {
-  return {
-    __typename: 'PageLayoutWidget',
+}): PageLayoutWidget =>
+  buildDraftPageLayoutWidget({
     id,
     pageLayoutTabId,
-    title: '',
+    title,
     type: WidgetType.FIELD,
     configuration: {
       __typename: 'FieldConfiguration',
       configurationType: WidgetConfigurationType.FIELD,
       fieldMetadataId,
-      fieldDisplayMode: FieldDisplayMode.CARD,
-    },
-    gridPosition: {
-      __typename: 'GridPosition',
-      row: 0,
-      column: 0,
-      rowSpan: 1,
-      columnSpan: 12,
+      fieldDisplayMode,
     },
     position: {
-      __typename: 'PageLayoutWidgetVerticalListPosition',
       layoutMode: PageLayoutTabLayoutMode.VERTICAL_LIST,
       index: positionIndex,
     },
-    objectMetadataId: objectMetadataId ?? null,
-    isOverridden: false,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    deletedAt: null,
-  };
-};
+    objectMetadataId,
+  });

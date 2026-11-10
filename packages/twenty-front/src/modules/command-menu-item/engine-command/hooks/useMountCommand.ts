@@ -8,6 +8,7 @@ import { isDefined } from 'twenty-shared/utils';
 import {
   type CommandMenuItemAvailabilityType,
   type EngineComponentKey,
+  type CommandMenuItemPayload,
 } from '~/generated-metadata/graphql';
 
 type MountCommandParams = {
@@ -16,8 +17,13 @@ type MountCommandParams = {
   engineComponentKey: EngineComponentKey;
   frontComponentId?: string;
   workflowVersionId?: string;
+  coreWorkflowVersionId?: string;
   availabilityType?: CommandMenuItemAvailabilityType;
   availabilityObjectMetadataId?: string | null;
+  payload?: CommandMenuItemPayload | null;
+  navigationTargetObjectMetadataId?: string | null;
+  creationTargetObjectMetadataId?: string;
+  isInSidePanel?: boolean;
 };
 
 export const useMountCommand = () => {
@@ -34,22 +40,33 @@ export const useMountCommand = () => {
       engineComponentKey,
       frontComponentId,
       workflowVersionId,
+      coreWorkflowVersionId,
       availabilityType,
       availabilityObjectMetadataId,
+      payload,
+      navigationTargetObjectMetadataId,
+      creationTargetObjectMetadataId,
+      isInSidePanel,
     }: MountCommandParams) => {
       const headlessEngineCommandContextApi = buildHeadlessCommandContextApi({
         store,
         contextStoreInstanceId,
         engineComponentKey,
+        payload,
+        navigationTargetObjectMetadataId,
+        creationTargetObjectMetadataId,
+        isInSidePanel,
       });
 
       const commandState = isDefined(frontComponentId)
         ? { ...headlessEngineCommandContextApi, frontComponentId }
-        : isDefined(workflowVersionId) && isDefined(availabilityType)
+        : (isDefined(workflowVersionId) || isDefined(coreWorkflowVersionId)) &&
+            isDefined(availabilityType)
           ? await enrichHeadlessCommandContextApiWithWorkflowVersionTriggerInformation(
               {
                 headlessEngineCommandContextApi,
                 workflowVersionId,
+                coreWorkflowVersionId,
                 availabilityType,
                 availabilityObjectMetadataId,
               },

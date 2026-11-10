@@ -1,26 +1,26 @@
+import { GettingStartedOpenedSection } from '@/getting-started/components/GettingStartedOpenedSection';
 import { NavigationDrawerOpenedSection } from '@/navigation-menu-item/display/sections/components/NavigationDrawerOpenedSection';
 import { NavigationDrawerWorkspaceSectionSkeletonLoader } from '@/object-metadata/components/NavigationDrawerWorkspaceSectionSkeletonLoader';
 
-import { NavigationDrawerOtherSection } from '@/navigation/components/NavigationDrawerOtherSection';
 import { styled } from '@linaria/react';
 import { lazy, Suspense } from 'react';
 
-import { themeCssVariables } from 'twenty-ui/theme-constants';
+import { themeCssVariables } from 'twenty-ui/theme';
 
 const FavoritesSectionDispatcher = lazy(() =>
-  import(
-    '@/navigation-menu-item/display/sections/favorites/components/FavoritesSectionDispatcher'
-  ).then((module) => ({
-    default: module.FavoritesSectionDispatcher,
-  })),
+  import('@/navigation-menu-item/display/sections/favorites/components/FavoritesSectionDispatcher').then(
+    (module) => ({
+      default: module.FavoritesSectionDispatcher,
+    }),
+  ),
 );
 
 const WorkspaceSectionDispatcher = lazy(() =>
-  import(
-    '@/navigation-menu-item/display/sections/workspace/components/WorkspaceSectionDispatcher'
-  ).then((module) => ({
-    default: module.WorkspaceSectionDispatcher,
-  })),
+  import('@/navigation-menu-item/display/sections/workspace/components/WorkspaceSectionDispatcher').then(
+    (module) => ({
+      default: module.WorkspaceSectionDispatcher,
+    }),
+  ),
 );
 
 const StyledScrollableItemsContainer = styled.div`
@@ -33,11 +33,11 @@ export const MainNavigationDrawerScrollableItems = () => {
   return (
     <StyledScrollableItemsContainer>
       <NavigationDrawerOpenedSection />
+      <GettingStartedOpenedSection />
       <Suspense fallback={<NavigationDrawerWorkspaceSectionSkeletonLoader />}>
         <FavoritesSectionDispatcher />
         <WorkspaceSectionDispatcher />
       </Suspense>
-      <NavigationDrawerOtherSection />
     </StyledScrollableItemsContainer>
   );
 };

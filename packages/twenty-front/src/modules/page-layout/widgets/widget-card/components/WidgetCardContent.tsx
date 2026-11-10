@@ -1,49 +1,52 @@
+import { type WidgetContentPadding } from '@/page-layout/widgets/utils/getWidgetContentPadding';
+import { isWidgetCardFlushInViewMode } from '@/page-layout/widgets/utils/isWidgetCardFlushInViewMode';
 import { styled } from '@linaria/react';
-import { type WidgetCardVariant } from '~/modules/page-layout/widgets/types/WidgetCardVariant';
-import { themeCssVariables } from 'twenty-ui/theme-constants';
+import { themeCssVariables } from 'twenty-ui/theme';
+import { type WidgetCardVariant } from '@/page-layout/widgets/types/WidgetCardVariant';
+
+const VERTICAL_LIST_IFRAME_HEIGHT = '40rem';
 
 type WidgetCardContentStyledProps = {
   variant: WidgetCardVariant;
   hasHeader: boolean;
   isEditable: boolean;
+  isFixedHeight: boolean;
+  contentPadding: WidgetContentPadding;
 };
 
 const StyledWidgetCardContent = styled.div<WidgetCardContentStyledProps>`
-  border: ${({ variant, isEditable }) =>
-    variant === 'record-page' || (variant === 'side-column' && isEditable)
-      ? `1px solid ${themeCssVariables.border.color.medium}`
-      : 'none'};
-  border-radius: ${({ variant, isEditable }) =>
-    variant === 'record-page' || (variant === 'side-column' && isEditable)
-      ? themeCssVariables.border.radius.md
-      : '0'};
   box-sizing: border-box;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
 
-  height: 100%;
+  height: ${({ isFixedHeight }) =>
+    isFixedHeight ? VERTICAL_LIST_IFRAME_HEIGHT : 'var(--widget-height, 100%)'};
 
-  margin-top: ${({ hasHeader }) =>
-    hasHeader ? themeCssVariables.spacing[2] : '0'};
+  margin-top: ${({ hasHeader, variant }) =>
+    hasHeader && variant === 'framed' ? themeCssVariables.spacing[2] : '0'};
 
-  overflow: hidden;
+  min-height: ${({ isFixedHeight }) =>
+    isFixedHeight ? VERTICAL_LIST_IFRAME_HEIGHT : '0'};
 
-  padding: ${({ variant, isEditable }) => {
-    if (variant === 'dashboard') return themeCssVariables.spacing[2];
-    if (
-      variant === 'record-page' ||
-      (variant === 'side-column' && isEditable)
-    ) {
-      return themeCssVariables.spacing[2];
-    }
-    return '0';
-  }};
+  overflow: ${({ isFixedHeight }) =>
+    isFixedHeight ? 'clip' : 'var(--widget-card-content-overflow, hidden)'};
+
+  padding-block: ${({ contentPadding, hasHeader, isEditable, variant }) =>
+    contentPadding === 'none'
+      ? '0'
+      : hasHeader && isWidgetCardFlushInViewMode({ isEditable, variant })
+        ? `${themeCssVariables.spacing[3]} ${themeCssVariables.spacing[2]}`
+        : themeCssVariables.spacing[2]};
+  padding-inline: ${({ contentPadding }) =>
+    contentPadding === 'none' ? '0' : 'var(--widget-card-padding-inline)'};
 
   &:empty {
-    margin-top: ${({ hasHeader, variant, isEditable }) => {
-      if (hasHeader && variant === 'side-column' && !isEditable) return '0';
-      return hasHeader ? themeCssVariables.spacing[2] : '0';
-    }};
+    margin-top: 0;
+    padding: 0;
+    padding-bottom: ${({ hasHeader, variant }) =>
+      hasHeader && variant === 'flush'
+        ? 'var(--widget-card-title-padding-top)'
+        : '0'};
   }
 `;
 
@@ -52,7 +55,8 @@ type WidgetCardContentProps = {
   hasHeader: boolean;
   isEditable: boolean;
   hasInteractiveContent?: boolean;
-  className?: string;
+  isFixedHeight?: boolean;
+  contentPadding?: WidgetContentPadding;
   children?: React.ReactNode;
 };
 
@@ -61,7 +65,8 @@ export const WidgetCardContent = ({
   hasHeader,
   isEditable,
   hasInteractiveContent = false,
-  className,
+  isFixedHeight = false,
+  contentPadding = 'default',
   children,
 }: WidgetCardContentProps) => {
   const handleContentClick = (event: React.MouseEvent) => {
@@ -77,7 +82,8 @@ export const WidgetCardContent = ({
       variant={variant}
       hasHeader={hasHeader}
       isEditable={isEditable}
-      className={className}
+      isFixedHeight={isFixedHeight}
+      contentPadding={contentPadding}
       onClick={handleContentClick}
     >
       {children}

@@ -12,81 +12,236 @@
  */
 
 export const DOCUMENTATION_PATHS = {
-  DEVELOPERS_CONTRIBUTE_CAPABILITIES_BACKEND_DEVELOPMENT_BEST_PRACTICES_SERVER:
-    '/developers/contribute/capabilities/backend-development/best-practices-server',
-  DEVELOPERS_CONTRIBUTE_CAPABILITIES_BACKEND_DEVELOPMENT_CUSTOM_OBJECTS:
-    '/developers/contribute/capabilities/backend-development/custom-objects',
-  DEVELOPERS_CONTRIBUTE_CAPABILITIES_BACKEND_DEVELOPMENT_FEATURE_FLAGS:
-    '/developers/contribute/capabilities/backend-development/feature-flags',
-  DEVELOPERS_CONTRIBUTE_CAPABILITIES_BACKEND_DEVELOPMENT_FOLDER_ARCHITECTURE_SERVER:
-    '/developers/contribute/capabilities/backend-development/folder-architecture-server',
-  DEVELOPERS_CONTRIBUTE_CAPABILITIES_BACKEND_DEVELOPMENT_QUEUE:
-    '/developers/contribute/capabilities/backend-development/queue',
-  DEVELOPERS_CONTRIBUTE_CAPABILITIES_BACKEND_DEVELOPMENT_SERVER_COMMANDS:
-    '/developers/contribute/capabilities/backend-development/server-commands',
-  DEVELOPERS_CONTRIBUTE_CAPABILITIES_BACKEND_DEVELOPMENT_ZAPIER:
-    '/developers/contribute/capabilities/backend-development/zapier',
-  DEVELOPERS_CONTRIBUTE_CAPABILITIES_BUG_AND_REQUESTS:
-    '/developers/contribute/capabilities/bug-and-requests',
-  DEVELOPERS_CONTRIBUTE_CAPABILITIES_FRONTEND_DEVELOPMENT_BEST_PRACTICES_FRONT:
-    '/developers/contribute/capabilities/frontend-development/best-practices-front',
-  DEVELOPERS_CONTRIBUTE_CAPABILITIES_FRONTEND_DEVELOPMENT_FOLDER_ARCHITECTURE_FRONT:
-    '/developers/contribute/capabilities/frontend-development/folder-architecture-front',
-  DEVELOPERS_CONTRIBUTE_CAPABILITIES_FRONTEND_DEVELOPMENT_FRONTEND_COMMANDS:
-    '/developers/contribute/capabilities/frontend-development/frontend-commands',
-  DEVELOPERS_CONTRIBUTE_CAPABILITIES_FRONTEND_DEVELOPMENT_HOTKEYS:
-    '/developers/contribute/capabilities/frontend-development/hotkeys',
-  DEVELOPERS_CONTRIBUTE_CAPABILITIES_FRONTEND_DEVELOPMENT_STORYBOOK:
-    '/developers/contribute/capabilities/frontend-development/storybook',
-  DEVELOPERS_CONTRIBUTE_CAPABILITIES_FRONTEND_DEVELOPMENT_STYLE_GUIDE:
-    '/developers/contribute/capabilities/frontend-development/style-guide',
-  DEVELOPERS_CONTRIBUTE_CAPABILITIES_FRONTEND_DEVELOPMENT_WORK_WITH_FIGMA:
-    '/developers/contribute/capabilities/frontend-development/work-with-figma',
   DEVELOPERS_CONTRIBUTE_CAPABILITIES_LOCAL_SETUP:
     '/developers/contribute/capabilities/local-setup',
-  DEVELOPERS_CONTRIBUTE_CONTRIBUTE: '/developers/contribute/contribute',
+  DEVELOPERS_CONTRIBUTE_COMMANDS: '/developers/contribute/commands',
+  DEVELOPERS_CONTRIBUTE_STYLE_GUIDE: '/developers/contribute/style-guide',
   DEVELOPERS_EXTEND_API: '/developers/extend/api',
-  DEVELOPERS_EXTEND_APPS_BUILDING: '/developers/extend/apps/building',
-  DEVELOPERS_EXTEND_APPS_GETTING_STARTED:
-    '/developers/extend/apps/getting-started',
-  DEVELOPERS_EXTEND_APPS_PUBLISHING: '/developers/extend/apps/publishing',
+  DEVELOPERS_EXTEND_APPS_CONFIG_APPLICATION:
+    '/developers/extend/apps/config/application',
+  DEVELOPERS_EXTEND_APPS_CONFIG_INSTALL_HOOKS:
+    '/developers/extend/apps/config/install-hooks',
+  DEVELOPERS_EXTEND_APPS_CONFIG_OVERVIEW:
+    '/developers/extend/apps/config/overview',
+  DEVELOPERS_EXTEND_APPS_CONFIG_PUBLIC_ASSETS:
+    '/developers/extend/apps/config/public-assets',
+  DEVELOPERS_EXTEND_APPS_CONFIG_ROLES: '/developers/extend/apps/config/roles',
+  DEVELOPERS_EXTEND_APPS_DATA_EXTENDING_OBJECTS:
+    '/developers/extend/apps/data/extending-objects',
+  DEVELOPERS_EXTEND_APPS_DATA_OBJECTS: '/developers/extend/apps/data/objects',
+  DEVELOPERS_EXTEND_APPS_DATA_OVERVIEW: '/developers/extend/apps/data/overview',
+  DEVELOPERS_EXTEND_APPS_DATA_RELATIONS:
+    '/developers/extend/apps/data/relations',
+  DEVELOPERS_EXTEND_APPS_DATA_SYSTEM_FIELDS:
+    '/developers/extend/apps/data/system-fields',
+  DEVELOPERS_EXTEND_APPS_DATA_TIMELINE_ACTIVITY_TYPES:
+    '/developers/extend/apps/data/timeline-activity-types',
+  DEVELOPERS_EXTEND_APPS_DATA_VALIDATION_RULES:
+    '/developers/extend/apps/data/validation-rules',
+  DEVELOPERS_EXTEND_APPS_GETTING_STARTED_CONCEPTS:
+    '/developers/extend/apps/getting-started/concepts',
+  DEVELOPERS_EXTEND_APPS_GETTING_STARTED_GOOD_PRACTICES:
+    '/developers/extend/apps/getting-started/good-practices',
+  DEVELOPERS_EXTEND_APPS_GETTING_STARTED_LOCAL_SERVER:
+    '/developers/extend/apps/getting-started/local-server',
+  DEVELOPERS_EXTEND_APPS_GETTING_STARTED_PROJECT_STRUCTURE:
+    '/developers/extend/apps/getting-started/project-structure',
+  DEVELOPERS_EXTEND_APPS_GETTING_STARTED_QUICK_START:
+    '/developers/extend/apps/getting-started/quick-start',
+  DEVELOPERS_EXTEND_APPS_GETTING_STARTED_SCAFFOLDING:
+    '/developers/extend/apps/getting-started/scaffolding',
+  DEVELOPERS_EXTEND_APPS_GETTING_STARTED_TROUBLESHOOTING:
+    '/developers/extend/apps/getting-started/troubleshooting',
+  DEVELOPERS_EXTEND_APPS_LAYOUT_COMMAND_MENU_ITEMS:
+    '/developers/extend/apps/layout/command-menu-items',
+  DEVELOPERS_EXTEND_APPS_LAYOUT_FRONT_COMPONENTS:
+    '/developers/extend/apps/layout/front-components',
+  DEVELOPERS_EXTEND_APPS_LAYOUT_NAVIGATION_MENU_ITEMS:
+    '/developers/extend/apps/layout/navigation-menu-items',
+  DEVELOPERS_EXTEND_APPS_LAYOUT_OVERVIEW:
+    '/developers/extend/apps/layout/overview',
+  DEVELOPERS_EXTEND_APPS_LAYOUT_PAGE_LAYOUTS:
+    '/developers/extend/apps/layout/page-layouts',
+  DEVELOPERS_EXTEND_APPS_LAYOUT_VIEWS: '/developers/extend/apps/layout/views',
+  DEVELOPERS_EXTEND_APPS_LOGIC_BACKGROUND_JOBS:
+    '/developers/extend/apps/logic/background-jobs',
+  DEVELOPERS_EXTEND_APPS_LOGIC_CONNECTIONS:
+    '/developers/extend/apps/logic/connections',
+  DEVELOPERS_EXTEND_APPS_LOGIC_CREDITS: '/developers/extend/apps/logic/credits',
+  DEVELOPERS_EXTEND_APPS_LOGIC_INBOX: '/developers/extend/apps/logic/inbox',
+  DEVELOPERS_EXTEND_APPS_LOGIC_KEY_VALUE_STORE:
+    '/developers/extend/apps/logic/key-value-store',
+  DEVELOPERS_EXTEND_APPS_LOGIC_LOGIC_FUNCTIONS:
+    '/developers/extend/apps/logic/logic-functions',
+  DEVELOPERS_EXTEND_APPS_LOGIC_MESSAGING_CHANNELS:
+    '/developers/extend/apps/logic/messaging-channels',
+  DEVELOPERS_EXTEND_APPS_LOGIC_OVERVIEW:
+    '/developers/extend/apps/logic/overview',
+  DEVELOPERS_EXTEND_APPS_LOGIC_SKILLS_AND_AGENTS:
+    '/developers/extend/apps/logic/skills-and-agents',
+  DEVELOPERS_EXTEND_APPS_LOGIC_WORKFLOWS:
+    '/developers/extend/apps/logic/workflows',
+  DEVELOPERS_EXTEND_APPS_OPERATIONS_CLI:
+    '/developers/extend/apps/operations/cli',
+  DEVELOPERS_EXTEND_APPS_OPERATIONS_MARKETPLACE_REVIEW:
+    '/developers/extend/apps/operations/marketplace-review',
+  DEVELOPERS_EXTEND_APPS_OPERATIONS_MONITORING:
+    '/developers/extend/apps/operations/monitoring',
+  DEVELOPERS_EXTEND_APPS_OPERATIONS_OVERVIEW:
+    '/developers/extend/apps/operations/overview',
+  DEVELOPERS_EXTEND_APPS_OPERATIONS_PUBLISHING:
+    '/developers/extend/apps/operations/publishing',
+  DEVELOPERS_EXTEND_APPS_OPERATIONS_SYNC_AND_RECOVERY:
+    '/developers/extend/apps/operations/sync-and-recovery',
+  DEVELOPERS_EXTEND_APPS_OPERATIONS_TESTING:
+    '/developers/extend/apps/operations/testing',
+  DEVELOPERS_EXTEND_APPS_OPERATIONS_TRANSLATIONS:
+    '/developers/extend/apps/operations/translations',
+  DEVELOPERS_EXTEND_APPS_TUTORIALS_DOCUMENT_GENERATOR_AI_AGENT:
+    '/developers/extend/apps/tutorials/document-generator/ai-agent',
+  DEVELOPERS_EXTEND_APPS_TUTORIALS_DOCUMENT_GENERATOR_BUILDING_THE_UI:
+    '/developers/extend/apps/tutorials/document-generator/building-the-ui',
+  DEVELOPERS_EXTEND_APPS_TUTORIALS_DOCUMENT_GENERATOR_DATA_MODEL:
+    '/developers/extend/apps/tutorials/document-generator/data-model',
+  DEVELOPERS_EXTEND_APPS_TUTORIALS_DOCUMENT_GENERATOR_GENERATING_DOCUMENTS:
+    '/developers/extend/apps/tutorials/document-generator/generating-documents',
+  DEVELOPERS_EXTEND_APPS_TUTORIALS_DOCUMENT_GENERATOR_HTTP_ROUTES:
+    '/developers/extend/apps/tutorials/document-generator/http-routes',
+  DEVELOPERS_EXTEND_APPS_TUTORIALS_DOCUMENT_GENERATOR_OVERVIEW:
+    '/developers/extend/apps/tutorials/document-generator/overview',
+  DEVELOPERS_EXTEND_APPS_TUTORIALS_DOCUMENT_GENERATOR_PUBLISHING:
+    '/developers/extend/apps/tutorials/document-generator/publishing',
+  DEVELOPERS_EXTEND_OAUTH: '/developers/extend/oauth',
   DEVELOPERS_EXTEND_WEBHOOKS: '/developers/extend/webhooks',
   DEVELOPERS_INTRODUCTION: '/developers/introduction',
-  DEVELOPERS_SELF_HOST_CAPABILITIES_CLOUD_PROVIDERS:
-    '/developers/self-host/capabilities/cloud-providers',
   DEVELOPERS_SELF_HOST_CAPABILITIES_DOCKER_COMPOSE:
     '/developers/self-host/capabilities/docker-compose',
+  DEVELOPERS_SELF_HOST_CAPABILITIES_SECURITY:
+    '/developers/self-host/capabilities/security',
   DEVELOPERS_SELF_HOST_CAPABILITIES_SETUP:
     '/developers/self-host/capabilities/setup',
   DEVELOPERS_SELF_HOST_CAPABILITIES_TROUBLESHOOTING:
     '/developers/self-host/capabilities/troubleshooting',
   DEVELOPERS_SELF_HOST_CAPABILITIES_UPGRADE_GUIDE:
     '/developers/self-host/capabilities/upgrade-guide',
-  DEVELOPERS_SELF_HOST_SELF_HOST: '/developers/self-host/self-host',
-  TWENTY_UI_DISPLAY_APP_TOOLTIP: '/twenty-ui/display/app-tooltip',
-  TWENTY_UI_DISPLAY_CHECKMARK: '/twenty-ui/display/checkmark',
-  TWENTY_UI_DISPLAY_CHIP: '/twenty-ui/display/chip',
-  TWENTY_UI_DISPLAY_ICONS: '/twenty-ui/display/icons',
-  TWENTY_UI_DISPLAY_SOON_PILL: '/twenty-ui/display/soon-pill',
-  TWENTY_UI_DISPLAY_TAG: '/twenty-ui/display/tag',
-  TWENTY_UI_INPUT_BLOCK_EDITOR: '/twenty-ui/input/block-editor',
-  TWENTY_UI_INPUT_BUTTONS: '/twenty-ui/input/buttons',
-  TWENTY_UI_INPUT_CHECKBOX: '/twenty-ui/input/checkbox',
-  TWENTY_UI_INPUT_COLOR_SCHEME: '/twenty-ui/input/color-scheme',
-  TWENTY_UI_INPUT_ICON_PICKER: '/twenty-ui/input/icon-picker',
-  TWENTY_UI_INPUT_IMAGE_INPUT: '/twenty-ui/input/image-input',
-  TWENTY_UI_INPUT_RADIO: '/twenty-ui/input/radio',
-  TWENTY_UI_INPUT_SELECT: '/twenty-ui/input/select',
-  TWENTY_UI_INPUT_TEXT: '/twenty-ui/input/text',
-  TWENTY_UI_INPUT_TOGGLE: '/twenty-ui/input/toggle',
-  TWENTY_UI_INTRODUCTION: '/twenty-ui/introduction',
-  TWENTY_UI_NAVIGATION: '/twenty-ui/navigation',
-  TWENTY_UI_NAVIGATION_BREADCRUMB: '/twenty-ui/navigation/breadcrumb',
-  TWENTY_UI_NAVIGATION_LINKS: '/twenty-ui/navigation/links',
-  TWENTY_UI_NAVIGATION_MENU_ITEM: '/twenty-ui/navigation/menu-item',
-  TWENTY_UI_NAVIGATION_NAVIGATION_BAR: '/twenty-ui/navigation/navigation-bar',
-  TWENTY_UI_NAVIGATION_STEP_BAR: '/twenty-ui/navigation/step-bar',
-  TWENTY_UI_PROGRESS_BAR: '/twenty-ui/progress-bar',
+  GETTING_STARTED_CORE_CONCEPTS_AI: '/getting-started/core-concepts/ai',
+  GETTING_STARTED_CORE_CONCEPTS_APPS: '/getting-started/core-concepts/apps',
+  GETTING_STARTED_CORE_CONCEPTS_CALENDAR_AND_EMAIL:
+    '/getting-started/core-concepts/calendar-and-email',
+  GETTING_STARTED_CORE_CONCEPTS_DASHBOARDS:
+    '/getting-started/core-concepts/dashboards',
+  GETTING_STARTED_CORE_CONCEPTS_DATA_MODEL:
+    '/getting-started/core-concepts/data-model',
+  GETTING_STARTED_CORE_CONCEPTS_GLOSSARY:
+    '/getting-started/core-concepts/glossary',
+  GETTING_STARTED_CORE_CONCEPTS_LAYOUT: '/getting-started/core-concepts/layout',
+  GETTING_STARTED_CORE_CONCEPTS_WORKFLOWS:
+    '/getting-started/core-concepts/workflows',
+  GETTING_STARTED_INTRODUCTION: '/getting-started/introduction',
+  GETTING_STARTED_KEY_FEATURES: '/getting-started/key-features',
+  GETTING_STARTED_QUICKSTART: '/getting-started/quickstart',
+  UI_ACCESSIBILITY: '/ui/accessibility',
+  UI_COMPONENTS_CODE_EDITOR_CODE_EDITOR:
+    '/ui/components/code-editor/code-editor',
+  UI_COMPONENTS_DATA_DISPLAY_ASSISTANT_AVATAR:
+    '/ui/components/data-display/assistant-avatar',
+  UI_COMPONENTS_DATA_DISPLAY_AVATAR_GROUP:
+    '/ui/components/data-display/avatar-group',
+  UI_COMPONENTS_DATA_DISPLAY_COMMAND_BLOCK:
+    '/ui/components/data-display/command-block',
+  UI_COMPONENTS_DATA_DISPLAY_DETAILS_ROW:
+    '/ui/components/data-display/details-row',
+  UI_COMPONENTS_DATA_DISPLAY_JSON_TREE: '/ui/components/data-display/json-tree',
+  UI_COMPONENTS_DATA_DISPLAY_METRIC_ROW:
+    '/ui/components/data-display/metric-row',
+  UI_COMPONENTS_DATA_DISPLAY_STACK_ICON:
+    '/ui/components/data-display/stack-icon',
+  UI_COMPONENTS_DATA_DISPLAY_TINTED_ICON_TILE:
+    '/ui/components/data-display/tinted-icon-tile',
+  UI_COMPONENTS_FEEDBACK_CALLOUT: '/ui/components/feedback/callout',
+  UI_COMPONENTS_FEEDBACK_INLINE_BANNER: '/ui/components/feedback/inline-banner',
+  UI_COMPONENTS_FEEDBACK_TOAST: '/ui/components/feedback/toast',
+  UI_COMPONENTS_INPUT_COUNTRY_SELECT: '/ui/components/input/country-select',
+  UI_COMPONENTS_INPUT_CURRENCY_PICKER: '/ui/components/input/currency-picker',
+  UI_COMPONENTS_INPUT_FORM_FIELD_ROW: '/ui/components/input/form-field-row',
+  UI_COMPONENTS_INPUT_ICON_BUTTON: '/ui/components/input/icon-button',
+  UI_COMPONENTS_INPUT_IMAGE_INPUT: '/ui/components/input/image-input',
+  UI_COMPONENTS_INPUT_LIGHT_BUTTON: '/ui/components/input/light-button',
+  UI_COMPONENTS_INPUT_LIGHT_ICON_BUTTON:
+    '/ui/components/input/light-icon-button',
+  UI_COMPONENTS_INPUT_MAIN_BUTTON: '/ui/components/input/main-button',
+  UI_COMPONENTS_INPUT_NUMBER_STEPPER: '/ui/components/input/number-stepper',
+  UI_COMPONENTS_INPUT_PHONE_COUNTRY_PICKER:
+    '/ui/components/input/phone-country-picker',
+  UI_COMPONENTS_INPUT_REACTION_BUTTON: '/ui/components/input/reaction-button',
+  UI_COMPONENTS_INPUT_SEARCH_INPUT: '/ui/components/input/search-input',
+  UI_COMPONENTS_INPUT_SEGMENTED_CONTROL:
+    '/ui/components/input/segmented-control',
+  UI_COMPONENTS_LAYOUT_ANIMATED_ICON_CROSSFADE:
+    '/ui/components/layout/animated-icon-crossfade',
+  UI_COMPONENTS_LAYOUT_OVERFLOWING_LIST:
+    '/ui/components/layout/overflowing-list',
+  UI_COMPONENTS_LAYOUT_SECTION: '/ui/components/layout/section',
+  UI_COMPONENTS_NAVIGATION_DROPDOWN: '/ui/components/navigation/dropdown',
+  UI_COMPONENTS_NAVIGATION_LIST_ITEM_BUTTON:
+    '/ui/components/navigation/list-item-button',
+  UI_COMPONENTS_NAVIGATION_TAB_BUTTON: '/ui/components/navigation/tab-button',
+  UI_COMPONENTS_OVERVIEW: '/ui/components/overview',
+  UI_COMPONENTS_SETTINGS_SETTINGS_ROW: '/ui/components/settings/settings-row',
+  UI_DARK_MODE: '/ui/dark-mode',
+  UI_GETTING_STARTED: '/ui/getting-started',
+  UI_ICONS: '/ui/icons',
+  UI_PRIMITIVES_ACCESSIBILITY_VISUALLY_HIDDEN:
+    '/ui/primitives/accessibility/visually-hidden',
+  UI_PRIMITIVES_DATA_DISPLAY_AVATAR: '/ui/primitives/data-display/avatar',
+  UI_PRIMITIVES_DATA_DISPLAY_BADGE: '/ui/primitives/data-display/badge',
+  UI_PRIMITIVES_DATA_DISPLAY_CHIP: '/ui/primitives/data-display/chip',
+  UI_PRIMITIVES_DATA_DISPLAY_COLOR_SAMPLE:
+    '/ui/primitives/data-display/color-sample',
+  UI_PRIMITIVES_DATA_DISPLAY_STATUS: '/ui/primitives/data-display/status',
+  UI_PRIMITIVES_DATA_DISPLAY_TAG: '/ui/primitives/data-display/tag',
+  UI_PRIMITIVES_FEEDBACK_BANNER: '/ui/primitives/feedback/banner',
+  UI_PRIMITIVES_FEEDBACK_LOADER: '/ui/primitives/feedback/loader',
+  UI_PRIMITIVES_FEEDBACK_PROGRESS: '/ui/primitives/feedback/progress',
+  UI_PRIMITIVES_FEEDBACK_PROGRESS_BAR: '/ui/primitives/feedback/progress-bar',
+  UI_PRIMITIVES_FEEDBACK_PROGRESS_RING: '/ui/primitives/feedback/progress-ring',
+  UI_PRIMITIVES_FEEDBACK_SKELETON: '/ui/primitives/feedback/skeleton',
+  UI_PRIMITIVES_INPUT_BUTTON: '/ui/primitives/input/button',
+  UI_PRIMITIVES_INPUT_BUTTON_GROUP: '/ui/primitives/input/button-group',
+  UI_PRIMITIVES_INPUT_CHECKBOX: '/ui/primitives/input/checkbox',
+  UI_PRIMITIVES_INPUT_FIELD: '/ui/primitives/input/field',
+  UI_PRIMITIVES_INPUT_INPUT: '/ui/primitives/input/input',
+  UI_PRIMITIVES_INPUT_INPUT_GROUP: '/ui/primitives/input/input-group',
+  UI_PRIMITIVES_INPUT_NUMBER_FIELD: '/ui/primitives/input/number-field',
+  UI_PRIMITIVES_INPUT_RADIO: '/ui/primitives/input/radio',
+  UI_PRIMITIVES_INPUT_RADIO_GROUP: '/ui/primitives/input/radio-group',
+  UI_PRIMITIVES_INPUT_SELECT: '/ui/primitives/input/select',
+  UI_PRIMITIVES_INPUT_SLIDER: '/ui/primitives/input/slider',
+  UI_PRIMITIVES_INPUT_SWITCH: '/ui/primitives/input/switch',
+  UI_PRIMITIVES_INPUT_TEXTAREA: '/ui/primitives/input/textarea',
+  UI_PRIMITIVES_LAYOUT_COLLAPSIBLE: '/ui/primitives/layout/collapsible',
+  UI_PRIMITIVES_LAYOUT_DIRECTION_PROVIDER:
+    '/ui/primitives/layout/direction-provider',
+  UI_PRIMITIVES_LAYOUT_RESIZE_HANDLE: '/ui/primitives/layout/resize-handle',
+  UI_PRIMITIVES_LAYOUT_SEPARATOR: '/ui/primitives/layout/separator',
+  UI_PRIMITIVES_NAVIGATION_BREADCRUMB: '/ui/primitives/navigation/breadcrumb',
+  UI_PRIMITIVES_NAVIGATION_LIST_ITEM: '/ui/primitives/navigation/list-item',
+  UI_PRIMITIVES_NAVIGATION_TABS: '/ui/primitives/navigation/tabs',
+  UI_PRIMITIVES_OVERVIEW: '/ui/primitives/overview',
+  UI_PRIMITIVES_SURFACES_ALERT_DIALOG: '/ui/primitives/surfaces/alert-dialog',
+  UI_PRIMITIVES_SURFACES_CARD: '/ui/primitives/surfaces/card',
+  UI_PRIMITIVES_SURFACES_DIALOG: '/ui/primitives/surfaces/dialog',
+  UI_PRIMITIVES_SURFACES_POPOVER: '/ui/primitives/surfaces/popover',
+  UI_PRIMITIVES_SURFACES_TOOLTIP: '/ui/primitives/surfaces/tooltip',
+  UI_PRIMITIVES_TYPOGRAPHY_HEADING: '/ui/primitives/typography/heading',
+  UI_PRIMITIVES_TYPOGRAPHY_OVERFLOWING_TEXT_WITH_TOOLTIP:
+    '/ui/primitives/typography/overflowing-text-with-tooltip',
+  UI_PRIMITIVES_TYPOGRAPHY_SHORTCUT: '/ui/primitives/typography/shortcut',
+  UI_PRIMITIVES_TYPOGRAPHY_TEXT: '/ui/primitives/typography/text',
+  UI_SSR: '/ui/ssr',
+  UI_TESTING: '/ui/testing',
+  UI_THEMING: '/ui/theming',
+  UI_TOKENS: '/ui/tokens',
   USER_GUIDE_AI_CAPABILITIES_AI_AGENTS: '/user-guide/ai/capabilities/ai-agents',
   USER_GUIDE_AI_CAPABILITIES_AI_CHATBOT:
     '/user-guide/ai/capabilities/ai-chatbot',
@@ -94,15 +249,19 @@ export const DOCUMENTATION_PATHS = {
     '/user-guide/ai/capabilities/permissions-access-control',
   USER_GUIDE_AI_HOW_TOS_AI_FAQ: '/user-guide/ai/how-tos/ai-faq',
   USER_GUIDE_AI_OVERVIEW: '/user-guide/ai/overview',
+  USER_GUIDE_BILLING_CAPABILITIES_CREDITS:
+    '/user-guide/billing/capabilities/credits',
   USER_GUIDE_BILLING_CAPABILITIES_PRICING_PLANS:
     '/user-guide/billing/capabilities/pricing-plans',
-  USER_GUIDE_BILLING_CAPABILITIES_WORKFLOW_CREDITS:
-    '/user-guide/billing/capabilities/workflow-credits',
+  USER_GUIDE_BILLING_CAPABILITIES_USAGE_LIMITS:
+    '/user-guide/billing/capabilities/usage-limits',
   USER_GUIDE_BILLING_HOW_TOS_BILLING_FAQ:
     '/user-guide/billing/how-tos/billing-faq',
   USER_GUIDE_BILLING_OVERVIEW: '/user-guide/billing/overview',
   USER_GUIDE_CALENDAR_EMAILS_CAPABILITIES_CALENDAR:
     '/user-guide/calendar-emails/capabilities/calendar',
+  USER_GUIDE_CALENDAR_EMAILS_CAPABILITIES_EMAIL_CHANNELS:
+    '/user-guide/calendar-emails/capabilities/email-channels',
   USER_GUIDE_CALENDAR_EMAILS_CAPABILITIES_MAILBOX:
     '/user-guide/calendar-emails/capabilities/mailbox',
   USER_GUIDE_CALENDAR_EMAILS_HOW_TOS_CAN_I_BOOK_MEETINGS_FROM_TWENTY:
@@ -113,6 +272,12 @@ export const DOCUMENTATION_PATHS = {
     '/user-guide/calendar-emails/how-tos/can-i-track-email-activity-on-all-objects',
   USER_GUIDE_CALENDAR_EMAILS_HOW_TOS_CONNECT_SEVERAL_MAILBOXES_PER_USER:
     '/user-guide/calendar-emails/how-tos/connect-several-mailboxes-per-user',
+  USER_GUIDE_CALENDAR_EMAILS_HOW_TOS_FORWARD_A_SHARED_INBOX_FROM_ANY_MAIL_PROVIDER:
+    '/user-guide/calendar-emails/how-tos/forward-a-shared-inbox-from-any-mail-provider',
+  USER_GUIDE_CALENDAR_EMAILS_HOW_TOS_FORWARD_A_SHARED_INBOX_FROM_GOOGLE_WORKSPACE:
+    '/user-guide/calendar-emails/how-tos/forward-a-shared-inbox-from-google-workspace',
+  USER_GUIDE_CALENDAR_EMAILS_HOW_TOS_FORWARD_A_SHARED_INBOX_FROM_MICROSOFT_365:
+    '/user-guide/calendar-emails/how-tos/forward-a-shared-inbox-from-microsoft-365',
   USER_GUIDE_CALENDAR_EMAILS_HOW_TOS_I_DONT_SEE_EMAILS_ON_RECORDS:
     '/user-guide/calendar-emails/how-tos/i-dont-see-emails-on-records',
   USER_GUIDE_CALENDAR_EMAILS_HOW_TOS_LIMIT_EMAILS_IMPORTED:
@@ -166,6 +331,8 @@ export const DOCUMENTATION_PATHS = {
     '/user-guide/data-model/capabilities/objects',
   USER_GUIDE_DATA_MODEL_CAPABILITIES_RELATION_FIELDS:
     '/user-guide/data-model/capabilities/relation-fields',
+  USER_GUIDE_DATA_MODEL_CAPABILITIES_VALIDATION_RULES:
+    '/user-guide/data-model/capabilities/validation-rules',
   USER_GUIDE_DATA_MODEL_HOW_TOS_CREATE_CUSTOM_FIELDS:
     '/user-guide/data-model/how-tos/create-custom-fields',
   USER_GUIDE_DATA_MODEL_HOW_TOS_CREATE_CUSTOM_OBJECTS:
@@ -179,19 +346,25 @@ export const DOCUMENTATION_PATHS = {
   USER_GUIDE_DATA_MODEL_HOW_TOS_DATA_MODEL_FAQ:
     '/user-guide/data-model/how-tos/data-model-faq',
   USER_GUIDE_DATA_MODEL_OVERVIEW: '/user-guide/data-model/overview',
-  USER_GUIDE_GETTING_STARTED_CAPABILITIES_GLOSSARY:
-    '/user-guide/getting-started/capabilities/glossary',
-  USER_GUIDE_GETTING_STARTED_CAPABILITIES_IMPLEMENTATION_SERVICES:
-    '/user-guide/getting-started/capabilities/implementation-services',
-  USER_GUIDE_GETTING_STARTED_CAPABILITIES_WHAT_IS_TWENTY:
-    '/user-guide/getting-started/capabilities/what-is-twenty',
-  USER_GUIDE_GETTING_STARTED_HOW_TOS_CONFIGURE_YOUR_WORKSPACE:
-    '/user-guide/getting-started/how-tos/configure-your-workspace',
-  USER_GUIDE_GETTING_STARTED_HOW_TOS_CREATE_WORKSPACE:
-    '/user-guide/getting-started/how-tos/create-workspace',
-  USER_GUIDE_GETTING_STARTED_HOW_TOS_NAVIGATE_AROUND_TWENTY:
-    '/user-guide/getting-started/how-tos/navigate-around-twenty',
+  USER_GUIDE_EMAIL_CAMPAIGNS_HOW_TOS_CREATE_A_CAMPAIGN_WITH_AI:
+    '/user-guide/email-campaigns/how-tos/create-a-campaign-with-ai',
+  USER_GUIDE_EMAIL_CAMPAIGNS_HOW_TOS_EMAIL_CAMPAIGN_BEST_PRACTICES:
+    '/user-guide/email-campaigns/how-tos/email-campaign-best-practices',
+  USER_GUIDE_EMAIL_CAMPAIGNS_HOW_TOS_MANAGE_UNSUBSCRIBES_AND_TOPICS:
+    '/user-guide/email-campaigns/how-tos/manage-unsubscribes-and-topics',
+  USER_GUIDE_EMAIL_CAMPAIGNS_HOW_TOS_SEND_YOUR_FIRST_CAMPAIGN:
+    '/user-guide/email-campaigns/how-tos/send-your-first-campaign',
+  USER_GUIDE_EMAIL_CAMPAIGNS_HOW_TOS_SET_UP_A_SENDING_DOMAIN:
+    '/user-guide/email-campaigns/how-tos/set-up-a-sending-domain',
+  USER_GUIDE_EMAIL_CAMPAIGNS_OVERVIEW: '/user-guide/email-campaigns/overview',
   USER_GUIDE_INTRODUCTION: '/user-guide/introduction',
+  USER_GUIDE_LAYOUT_CAPABILITIES_NAVIGATION:
+    '/user-guide/layout/capabilities/navigation',
+  USER_GUIDE_LAYOUT_CAPABILITIES_RECORD_PAGES:
+    '/user-guide/layout/capabilities/record-pages',
+  USER_GUIDE_LAYOUT_OVERVIEW: '/user-guide/layout/overview',
+  USER_GUIDE_LEGAL_HOW_TOS_LEGAL_FAQ: '/user-guide/legal/how-tos/legal-faq',
+  USER_GUIDE_LEGAL_OVERVIEW: '/user-guide/legal/overview',
   USER_GUIDE_PERMISSIONS_ACCESS_CAPABILITIES_PERMISSIONS:
     '/user-guide/permissions-access/capabilities/permissions',
   USER_GUIDE_PERMISSIONS_ACCESS_CAPABILITIES_SSO_CONFIGURATION:
@@ -200,6 +373,8 @@ export const DOCUMENTATION_PATHS = {
     '/user-guide/permissions-access/how-tos/permissions-faq',
   USER_GUIDE_PERMISSIONS_ACCESS_OVERVIEW:
     '/user-guide/permissions-access/overview',
+  USER_GUIDE_SETTINGS_CAPABILITIES_COMMUNITY_SETTINGS:
+    '/user-guide/settings/capabilities/community-settings',
   USER_GUIDE_SETTINGS_CAPABILITIES_DOMAINS_SETTINGS:
     '/user-guide/settings/capabilities/domains-settings',
   USER_GUIDE_SETTINGS_CAPABILITIES_EXPERIENCE_SETTINGS:
@@ -208,8 +383,6 @@ export const DOCUMENTATION_PATHS = {
     '/user-guide/settings/capabilities/member-management',
   USER_GUIDE_SETTINGS_CAPABILITIES_PROFILE_SETTINGS:
     '/user-guide/settings/capabilities/profile-settings',
-  USER_GUIDE_SETTINGS_CAPABILITIES_UPDATES_SETTINGS:
-    '/user-guide/settings/capabilities/updates-settings',
   USER_GUIDE_SETTINGS_CAPABILITIES_WORKSPACE_SETTINGS:
     '/user-guide/settings/capabilities/workspace-settings',
   USER_GUIDE_SETTINGS_HOW_TOS_SETTINGS_FAQ:
@@ -241,7 +414,6 @@ export const DOCUMENTATION_PATHS = {
     '/user-guide/views-pipelines/how-tos/show-expected-amount-in-pipeline',
   USER_GUIDE_VIEWS_PIPELINES_HOW_TOS_TRACK_TIME_IN_STAGE:
     '/user-guide/views-pipelines/how-tos/track-time-in-stage',
-  USER_GUIDE_VIEWS_PIPELINES_OVERVIEW: '/user-guide/views-pipelines/overview',
   USER_GUIDE_WORKFLOWS_CAPABILITIES_SEND_EMAILS_FROM_WORKFLOWS:
     '/user-guide/workflows/capabilities/send-emails-from-workflows',
   USER_GUIDE_WORKFLOWS_CAPABILITIES_USE_BRANCHES_IN_WORKFLOWS:

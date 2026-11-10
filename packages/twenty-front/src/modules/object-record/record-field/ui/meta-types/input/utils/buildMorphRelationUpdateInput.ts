@@ -2,7 +2,8 @@ import { type FieldMetadataItemRelation } from '@/object-metadata/types/FieldMet
 import { type EnrichedObjectMetadataItem } from '@/object-metadata/types/EnrichedObjectMetadataItem';
 import { buildRecordWithAllMorphObjectIdsToNull } from '@/object-record/record-field/ui/meta-types/input/utils/buildRecordWithAllMorphObjectIdsToNull';
 import { type RelationType } from 'twenty-shared/types';
-import { computeMorphRelationFieldName } from 'twenty-shared/utils';
+import { computeMorphRelationGqlFieldName } from 'twenty-shared/utils';
+import { doNotTranslate } from 'twenty-shared/i18n';
 
 export const buildMorphRelationUpdateInput = ({
   morphRelations,
@@ -41,11 +42,13 @@ export const buildMorphRelationUpdateInput = ({
 
   if (!targetObjectMetadataItem) {
     throw new Error(
-      `Target object metadata item not found for id ${targetObjectMetadataId}`,
+      doNotTranslate(
+        `Target object metadata item not found for id ${targetObjectMetadataId}`,
+      ),
     );
   }
 
-  const computedFieldName = computeMorphRelationFieldName({
+  const computedFieldName = computeMorphRelationGqlFieldName({
     fieldName,
     relationType,
     targetObjectMetadataNameSingular: targetObjectMetadataItem.nameSingular,
@@ -54,7 +57,7 @@ export const buildMorphRelationUpdateInput = ({
 
   const updateInput: Record<string, string | null> = {
     ...allMorphForeignKeysNulled,
-    [`${computedFieldName}Id`]: targetRecordId,
+    [doNotTranslate(`${computedFieldName}Id`)]: targetRecordId,
   };
 
   return { updateInput, allMorphForeignKeysNulled };

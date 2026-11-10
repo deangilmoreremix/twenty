@@ -1,53 +1,64 @@
-import { Logger } from '@nestjs/common';
-
+import * as Sentry from '@sentry/node';
 import { type Request } from 'express';
 import { DocumentNode, parse } from 'graphql';
 import { type Plugin } from 'graphql-yoga';
-import { FeatureFlagKey } from 'twenty-shared/types';
 
+import { msg } from '@lingui/core/macro';
 import { isNull } from '@sniptt/guards';
-import { type DirectExecutionService } from 'src/engine/api/graphql/direct-execution/direct-execution.service';
-import { queryTimingContextStorage } from 'src/engine/core-modules/graphql/storage/query-timing-context.storage';
-import { computeSkipWorkspaceSchemaCreation } from 'src/engine/api/graphql/direct-execution/utils/compute-skip-workspace-schema-creation.util';
+import { isDefined } from 'twenty-shared/utils';
+import {
+  type DirectExecutionResult,
+  type DirectExecutionService,
+} from 'src/engine/api/graphql/direct-execution/direct-execution.service';
+import { classifyTopLevelFields } from 'src/engine/api/graphql/direct-execution/utils/classify-top-level-fields.util';
+import { captureExecutedRootResolvers } from 'src/engine/api/graphql/utils/capture-executed-root-resolvers.util';
+import { extractTopLevelFieldsSafely } from 'src/engine/api/graphql/utils/extract-top-level-fields-safely.util';
 import { findOperationDefinition } from 'src/engine/api/graphql/direct-execution/utils/find-operation-definition.util';
-import { hasOnlyGeneratedWorkspaceResolvers } from 'src/engine/api/graphql/direct-execution/utils/has-only-generated-workspace-resolvers.util';
+import { isDevelopmentToolingRequest } from 'src/engine/api/graphql/direct-execution/utils/is-development-tooling-request.util';
 import { isSubscriptionOperation } from 'src/engine/api/graphql/direct-execution/utils/is-subscription-operation.util';
 import { type FeatureFlagService } from 'src/engine/core-modules/feature-flag/services/feature-flag.service';
-
-const logger = new Logger('GraphQLQueryTiming');
+import { AuthExceptionCode } from 'src/engine/core-modules/auth/auth.exception';
+import {
+  AuthenticationError,
+  UserInputError,
+} from 'src/engine/core-modules/graphql/utils/graphql-errors.util';
 
 export type DirectExecutionPluginConfig = {
   directExecutionService: DirectExecutionService;
   featureFlagService: FeatureFlagService;
+  isProductionEnvironment: boolean;
 };
 
 export function useDirectExecution(
   config: DirectExecutionPluginConfig,
-): Plugin {
+): Plugin<Record<string, unknown>, { req: Request }> {
   return {
     onRequest: async ({ endResponse, serverContext }) => {
-      const req = (serverContext as unknown as { req: Request }).req;
+      const req = serverContext.req;
 
-      if (!req.workspace?.id || !req.body?.query) {
-        return;
+      if (!isDefined(req.workspace)) {
+        if (
+          !config.isProductionEnvironment &&
+          isDevelopmentToolingRequest(req)
+        ) {
+          return;
+        }
+
+        const result: DirectExecutionResult = {
+          errors: [
+            new AuthenticationError('Authentication required', {
+              subCode: AuthExceptionCode.UNAUTHENTICATED,
+              userFriendlyMessage: msg`You must be authenticated to perform this action.`,
+            }).toJSON(),
+          ],
+        };
+
+        config.directExecutionService.recordOperationMetrics(result);
+
+        return endResponse(Response.json(result));
       }
 
-      const isDirectExecutionEnabled =
-        await config.featureFlagService.isFeatureEnabled(
-          FeatureFlagKey.IS_DIRECT_GRAPHQL_EXECUTION_ENABLED,
-          req.workspace.id,
-        );
-
-      if (!isDirectExecutionEnabled) {
-        return;
-      }
-
-      const generatedWorkspaceResolverNames =
-        await config.directExecutionService.getGeneratedWorkspaceResolverNames(
-          req.workspace.id,
-        );
-
-      if (!generatedWorkspaceResolverNames) {
+      if (!req.body?.query) {
         return;
       }
 
@@ -61,66 +72,76 @@ export function useDirectExecution(
         return;
       }
 
+      const topLevelFields = extractTopLevelFieldsSafely(
+        document,
+        operationName,
+      );
+
+      captureExecutedRootResolvers({ request: req, topLevelFields });
+
+      const operationDefinition = findOperationDefinition(
+        document,
+        operationName,
+      );
+
       if (
-        !findOperationDefinition(document, operationName) ||
+        !operationDefinition ||
         isSubscriptionOperation(document, operationName)
       ) {
         return;
       }
 
-      if (
-        computeSkipWorkspaceSchemaCreation(
-          queryString,
-          document,
-          operationName,
-          generatedWorkspaceResolverNames,
-        )
-      ) {
-        req.skipWorkspaceSchemaCreation = true;
-      }
+      const workspaceResolverNames =
+        await config.directExecutionService.getWorkspaceResolverNames(
+          req.workspace.id,
+        );
 
-      if (
-        !hasOnlyGeneratedWorkspaceResolvers(
-          document,
-          operationName,
-          generatedWorkspaceResolverNames,
-        )
-      ) {
+      if (!workspaceResolverNames) {
         return;
       }
 
-      const isTimingEnabled = await config.featureFlagService.isFeatureEnabled(
-        FeatureFlagKey.IS_GRAPHQL_QUERY_TIMING_ENABLED,
-        req.workspace.id,
-      );
+      const { hasIntrospectionFields, hasWorkspaceFields, hasCoreFields } =
+        classifyTopLevelFields(topLevelFields, workspaceResolverNames);
 
-      const resolvedOperationName = operationName ?? 'Anonymous';
-
-      if (isTimingEnabled) {
-        const startTime = performance.now();
-
-        const timedResult = await queryTimingContextStorage.run(true, () =>
-          config.directExecutionService.execute(req, document),
+      if (hasCoreFields && hasWorkspaceFields) {
+        const error = new UserInputError(
+          'This query cannot be executed as a single request. Please split it into separate queries.',
         );
 
-        const durationMs = (performance.now() - startTime).toFixed(2);
+        const result = { errors: [error.toJSON()] };
 
-        logger.log(
-          `[direct-execution] ${resolvedOperationName} — ${durationMs}ms (workspace: ${req.workspace.id})`,
-        );
+        config.directExecutionService.recordOperationMetrics(result);
 
-        if (isNull(timedResult)) {
-          return;
-        }
-
-        return endResponse(Response.json(timedResult));
+        return endResponse(Response.json(result));
       }
 
-      const result = await config.directExecutionService.execute(req, document);
+      if (hasCoreFields) {
+        return;
+      }
+
+      if (Sentry.isInitialized()) {
+        const transactionName =
+          operationName || operationDefinition.name?.value || '';
+
+        Sentry.setTags({
+          operationName: transactionName,
+          operation: operationDefinition.operation,
+        });
+        Sentry.getCurrentScope().setTransactionName(transactionName);
+      }
+
+      const result = await config.directExecutionService.execute(
+        req,
+        document,
+        hasIntrospectionFields,
+        hasWorkspaceFields,
+      );
 
       if (isNull(result)) {
         return;
       }
+
+      config.directExecutionService.recordOperationMetrics(result);
 
       return endResponse(Response.json(result));
     },

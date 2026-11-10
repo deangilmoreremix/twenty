@@ -124,7 +124,6 @@ describe('upsertFieldsWidget', () => {
     });
 
     it('should hard-delete groups not included in the input', async () => {
-      // First, create a group via upsert
       const groupToDeleteId = uuidv4();
       const groupToKeepId = uuidv4();
 
@@ -165,7 +164,6 @@ describe('upsertFieldsWidget', () => {
         },
       });
 
-      // Now upsert again without the first group
       await upsertFieldsWidget({
         expectToFail: false,
         input: {
@@ -197,7 +195,6 @@ describe('upsertFieldsWidget', () => {
 
       expect(deletedGroup.length).toBe(0);
 
-      // Verify the kept group is still active
       const { data: keptGroupData } = await findViewFieldGroups({
         viewId: testSetup.viewId,
         gqlFields: 'id',
@@ -242,7 +239,6 @@ describe('upsertFieldsWidget', () => {
         },
       });
 
-      // Verify the view field was updated
       const { data: fieldsData } = await findViewFields({
         viewId: testSetup.viewId,
         gqlFields: 'id isVisible position viewFieldGroupId',
@@ -283,7 +279,6 @@ describe('upsertFieldsWidget', () => {
     });
 
     it('should hard-delete all existing groups when using flat fields', async () => {
-      // First create a group via upsert
       const groupId = uuidv4();
       const targetField = testSetup.viewFields[0];
 
@@ -309,7 +304,6 @@ describe('upsertFieldsWidget', () => {
         },
       });
 
-      // Verify group exists
       const { data: groupBeforeData } = await findViewFieldGroups({
         viewId: testSetup.viewId,
         gqlFields: 'id',
@@ -322,7 +316,6 @@ describe('upsertFieldsWidget', () => {
 
       expect(groupBefore).toBeDefined();
 
-      // Now upsert with flat fields
       await upsertFieldsWidget({
         expectToFail: false,
         input: {
@@ -337,16 +330,19 @@ describe('upsertFieldsWidget', () => {
         },
       });
 
-      // Verify all groups are soft-deleted
-      const { data: activeGroupsData } = await findViewFieldGroups({
+      // Verify custom group is hard-deleted (not just deactivated)
+      const { data: allGroupsData } = await findViewFieldGroups({
         viewId: testSetup.viewId,
-        gqlFields: 'id',
+        gqlFields: 'id isActive',
         expectToFail: false,
       });
 
-      expect(activeGroupsData.getViewFieldGroups.length).toBe(0);
+      const specificGroup = allGroupsData.getViewFieldGroups.find(
+        (g: { id: string }) => g.id === groupId,
+      );
 
-      // Verify the field's viewFieldGroupId is null
+      expect(specificGroup).toBeUndefined();
+
       const { data: updatedFieldData } = await findViewFields({
         viewId: testSetup.viewId,
         gqlFields: 'id viewFieldGroupId',
@@ -371,7 +367,6 @@ describe('upsertFieldsWidget', () => {
 
       const groupId = uuidv4();
 
-      // First assign the field to a group so it has a non-null viewFieldGroupId
       await upsertFieldsWidget({
         expectToFail: false,
         input: {
@@ -394,7 +389,6 @@ describe('upsertFieldsWidget', () => {
         },
       });
 
-      // Now switch to flat fields with different position and visibility
       await upsertFieldsWidget({
         expectToFail: false,
         input: {

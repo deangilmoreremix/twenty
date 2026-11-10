@@ -1,12 +1,14 @@
-import { useIcons } from 'twenty-ui/display';
-import { MenuItem } from 'twenty-ui/navigation';
+import { ObjectMetadataIcon } from '@/object-metadata/components/ObjectMetadataIcon';
+import { type EnrichedObjectMetadataItem } from '@/object-metadata/types/EnrichedObjectMetadataItem';
+import { isDefined } from 'twenty-shared/utils';
+import { ListItemButton } from 'twenty-ui/components/navigation';
+import { ListItem } from 'twenty-ui/primitives/navigation';
 
 type WorkflowAiAgentPermissionsObjectRowProps = {
-  objectMetadata: {
-    id: string;
-    icon?: string | null;
-    labelPlural: string;
-  };
+  objectMetadata: Pick<
+    EnrichedObjectMetadataItem,
+    'id' | 'icon' | 'labelPlural' | 'nameSingular' | 'color' | 'isSystem'
+  >;
   onClick?: () => void;
   readonly: boolean;
 };
@@ -16,16 +18,17 @@ export const WorkflowAiAgentPermissionsObjectRow = ({
   onClick,
   readonly,
 }: WorkflowAiAgentPermissionsObjectRowProps) => {
-  const { getIcon } = useIcons();
-  const IconComponent = getIcon(objectMetadata.icon);
+  const startIcon = <ObjectMetadataIcon objectMetadataItem={objectMetadata} />;
+
+  if (readonly || !isDefined(onClick)) {
+    return (
+      <ListItem startIcon={startIcon}>{objectMetadata.labelPlural}</ListItem>
+    );
+  }
 
   return (
-    <MenuItem
-      LeftIcon={IconComponent}
-      withIconContainer
-      text={objectMetadata.labelPlural}
-      hasSubMenu={!readonly}
-      onClick={!readonly ? onClick : undefined}
-    />
+    <ListItemButton startIcon={startIcon} hasSubmenu onClick={onClick}>
+      {objectMetadata.labelPlural}
+    </ListItemButton>
   );
 };

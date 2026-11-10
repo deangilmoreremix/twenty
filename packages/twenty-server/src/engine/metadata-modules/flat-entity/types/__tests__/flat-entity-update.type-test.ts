@@ -1,7 +1,7 @@
 import {
-  type HasAllProperties,
   type Equal,
   type Expect,
+  type HasAllProperties,
 } from 'twenty-shared/testing';
 
 import { type FlatEntityUpdate } from 'src/engine/metadata-modules/flat-entity/types/flat-entity-update.type';
@@ -17,11 +17,16 @@ type Assertions = [
       | 'description'
       | 'isActive'
       | 'defaultValue'
-      | 'standardOverrides'
+      | 'overrides'
       | 'options'
       | 'settings'
       | 'isUnique'
+      | 'isSearchable'
+      | 'isAuditLogged'
       | 'isLabelSyncedWithName'
+      | 'isUIEditable'
+      | 'disabledFieldPermissionActions'
+      | 'isNullable'
       | 'universalSettings'
     >
   >,
@@ -39,9 +44,10 @@ type Assertions = [
       keyof FlatEntityUpdate<'objectMetadata'>,
       | 'icon'
       | 'color'
+      | 'openRecordIn'
       | 'description'
       | 'isActive'
-      | 'standardOverrides'
+      | 'overrides'
       | 'isLabelSyncedWithName'
       | 'nameSingular'
       | 'namePlural'
@@ -49,6 +55,12 @@ type Assertions = [
       | 'labelPlural'
       | 'labelIdentifierFieldMetadataId'
       | 'labelIdentifierFieldMetadataUniversalIdentifier'
+      | 'imageIdentifierFieldMetadataId'
+      | 'imageIdentifierFieldMetadataUniversalIdentifier'
+      | 'isSearchable'
+      | 'isUIEditable'
+      | 'isUICreatable'
+      | 'disabledObjectPermissionActions'
     >
   >,
 
@@ -57,6 +69,7 @@ type Assertions = [
       FlatEntityUpdate<'objectMetadata'>,
       {
         labelIdentifierFieldMetadataUniversalIdentifier?: never;
+        imageIdentifierFieldMetadataUniversalIdentifier?: never;
       }
     >
   >,

@@ -2,12 +2,24 @@ import { currentWorkspaceState } from '@/auth/states/currentWorkspaceState';
 import { isCloudflareIntegrationEnabledState } from '@/client-config/states/isCloudflareIntegrationEnabledState';
 import { isMultiWorkspaceEnabledState } from '@/client-config/states/isMultiWorkspaceEnabledState';
 import { SettingsCard } from '@/settings/components/SettingsCard';
+import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomStateValue';
+import { styled } from '@linaria/react';
 import { useLingui } from '@lingui/react/macro';
 import { SettingsPath } from 'twenty-shared/types';
 import { getSettingsPath } from 'twenty-shared/utils';
-import { IconWorld, Status } from 'twenty-ui/display';
-import { UndecoratedLink } from 'twenty-ui/navigation';
-import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomStateValue';
+import { IconWorld, IconWorldWww } from 'twenty-ui/icon';
+import { Status } from 'twenty-ui/primitives/data-display';
+import { MOBILE_VIEWPORT, themeCssVariables } from 'twenty-ui/theme';
+
+const StyledContainer = styled.div`
+  display: flex;
+  flex-direction: row;
+  gap: ${themeCssVariables.spacing[2]};
+
+  @media (max-width: ${MOBILE_VIEWPORT}px) {
+    flex-direction: column;
+  }
+`;
 
 export const SettingsWorkspaceDomainCard = () => {
   const { t } = useLingui();
@@ -24,26 +36,27 @@ export const SettingsWorkspaceDomainCard = () => {
   }
 
   return (
-    <>
-      <UndecoratedLink to={getSettingsPath(SettingsPath.Subdomain)}>
-        <SettingsCard title={t`Subdomain`} Icon={<IconWorld />} />
-      </UndecoratedLink>
+    <StyledContainer>
+      <SettingsCard
+        title={t`Subdomain`}
+        Icon={<IconWorldWww />}
+        to={getSettingsPath(SettingsPath.Subdomain)}
+      />
       {isCloudflareIntegrationEnabled && (
-        <UndecoratedLink to={getSettingsPath(SettingsPath.CustomDomain)}>
-          <SettingsCard
-            title={t`Custom Domain`}
-            Icon={<IconWorld />}
-            Status={
-              currentWorkspace?.customDomain &&
-              currentWorkspace?.isCustomDomainEnabled ? (
-                <Status text={t`Active`} color="turquoise" />
-              ) : currentWorkspace?.customDomain ? (
-                <Status text={t`Inactive`} color="orange" />
-              ) : undefined
-            }
-          />
-        </UndecoratedLink>
+        <SettingsCard
+          to={getSettingsPath(SettingsPath.CustomDomain)}
+          title={t`Custom Domain`}
+          Icon={<IconWorld />}
+          Status={
+            currentWorkspace?.customDomain &&
+            currentWorkspace?.isCustomDomainEnabled ? (
+              <Status color="turquoise">{t`Active`}</Status>
+            ) : currentWorkspace?.customDomain ? (
+              <Status color="orange">{t`Inactive`}</Status>
+            ) : undefined
+          }
+        />
       )}
-    </>
+    </StyledContainer>
   );
 };
